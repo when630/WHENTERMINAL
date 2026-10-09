@@ -1,10 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { MODE_CYCLE, MODE_LABEL, openConversations, STATUS_LABEL, type UsageInfo, type SlashCommandInfo, type AgentMode, type PermissionDecision, type PermissionRequest, type Project } from '@shared/types'
-import { emptyConversation, type ConversationMap, type TranscriptItem } from './state'
+import { emptyConversation, STAGES, type ConversationMap, type TaskInfo, type TranscriptItem } from './state'
 import { HOME_ROW } from './keys'
 import { Keys } from './KeyHint'
 import { useKeymap } from './settings'
-import { usePresence } from './motion'
+import { Roll, usePresence } from './motion'
+import { useNow } from './time'
 import { Markdown } from './Markdown'
 import { AttachButton, useAttach } from './attach'
 import { WorktreePanel } from './WorktreePanel'
@@ -41,6 +42,8 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
   const closeArmed = closeArmedId === conversationId
   const confirm = usePresence(clearArmed ? 'clear' : closeArmed ? 'close' : null)
   const compacting = usePresence(state.compacting ? true : null)
+  // 작업 중 줄: 생각하는 중·도구 사이처럼 화면에 새로 그려지는 게 없을 때도 일하고 있음을 보인다
+  const working = usePresence((state.status === 'running' || state.status === 'queued') && !state.compacting ? true : null)
 
   // 이 대화를 연 시점에 이미 있던 기록은 그대로 두고, 새로 들어오는 항목만 등장 애니메이션
   const seen = useRef<{ id: string; count: number }>({ id: '', count: 0 })
@@ -82,7 +85,7 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
     // 새 항목은 부드럽게, 스트리밍으로 글자가 늘어날 때는 바로 따라간다 (부드러운 스크롤이 겹치면 끌려 다님)
     const streaming = lastItem?.type === 'assistant' && lastItem.streaming
     el.scrollTo({ top: el.scrollHeight, behavior: streaming ? 'instant' : 'smooth' })
-  }, [state.items.length, lastItem, !!permission.item, compacting.item])
+  }, [state.items.length, lastItem, !!permission.item, compacting.item, working.item])
   // 권한 요청이 오면 입력창에서 포커스를 빼서 Y/A/N이 바로 먹게 한다
   useEffect(() => {
     if (pending) inputRef.current?.blur()
@@ -313,6 +316,7 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
         </div>
       </header>
 
+      <div className={`chat-body ${busy || state.status === 'queued' ? 'open' : ''}`}>
       {showChanges && conv?.worktree ? (
         <WorktreePanel
           projectId={project.id}
@@ -335,6 +339,7 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
           {state.items.map((item, idx) => (
             <Item key={idx} item={item} n={item.type === 'tool' ? ++toolCount : 0} root={project.path} enter={idx >= seen.current.count} />
           ))}
+          {working.item && <Working status={state.status} activity={state.task?.activity} startedAt={state.task?.startedAt} leaving={working.leaving} />}
           {compacting.item && <div className={`msg compacting ${compacting.leaving ? 'leaving' : ''}`}>컴팩트 중 · 지금까지의 대화를 요약하고 있어요</div>}
           {permission.item && (
             <PermissionBox
@@ -346,6 +351,8 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
           )}
         </main>
       )}
+        {state.task && <StatusPanel task={state.task} status={state.status} />}
+      </div>
 
       {confirm.item && (
         <div className={`confirm ${confirm.leaving ? 'leaving' : ''}`} role="alert">
@@ -378,7 +385,7 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
             aria-autocomplete="list"
             aria-expanded={menuOpen}
             rows={2}
-            placeholder="메시지 입력 · / 명령 · @ 파일"
+            placeholder={busy ? '작업 중 · 입력하면 다음 차례로 보냅니다' : '메시지 입력 · / 명령 · @ 파일'}
             onChange={(e) => {
               setDraft(e.target.value)
               setCaret(e.target.selectionStart)
@@ -409,6 +416,67 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
         <span><Keys keys={km.compact} /> 컴팩트</span>
         {pending && <span><Keys keys={`${km.allow} ${km.always} ${km.deny}`} /> 허용 · 항상 · 거절</span>}
       </footer>
+    </div>
+  )
+}
+
+function clock(ms: number): string {
+  const sec = Math.max(0, Math.floor(ms / 1000))
+  const mm = String(Math.floor(sec / 60) % 60).padStart(2, '0')
+  const ss = String(sec % 60).padStart(2, '0')
+  return sec >= 3600 ? `${Math.floor(sec / 3600)}:${mm}:${ss}` : `${mm}:${ss}`
+}
+
+/** 오른쪽 상태 패널: 실행 중에만 펼쳐지고, 끝나면 마지막 단계를 잠깐 보여 준 뒤 접힌다 */
+function StatusPanel({ task, status }: { task: TaskInfo; status: string }): React.JSX.Element {
+  const now = useNow(1000)
+  const waiting = status === 'waiting_approval'
+  const live = status === 'running' || waiting || status === 'queued'
+  const stage = Math.min(task.stage, STAGES.length - 1)
+  const word = status === 'queued' ? '대기' : waiting ? '확인' : STAGES[stage]
+  const ms = task.durationMs ?? (task.finishedAt ?? now) - task.startedAt
+  return (
+    <aside className={`status-panel ${waiting ? 'waiting' : ''} ${live ? 'live' : ''}`} aria-label="작업 상태">
+      <div className="sp-head">
+        <span className="sp-k">STAGE</span>
+        <span className="sp-word"><Roll text={word} /></span>
+      </div>
+      <div className="sp-meter" aria-label={`진행 단계: ${STAGES[stage]}`}>
+        {STAGES.map((name, i) => (
+          <span key={name} className={i < task.stage ? 'done' : i === stage && live ? 'cur' : ''} title={name}>
+            <i />
+            <em>{name}</em>
+          </span>
+        ))}
+      </div>
+      <dl className="sp-stats">
+        <div><dt>도구</dt><dd>{task.tools}<small>회</small></dd></div>
+        <div><dt>경과</dt><dd>{clock(ms)}</dd></div>
+        <div><dt>파일</dt><dd>{task.files.length}<small>개</small></dd></div>
+      </dl>
+      <div className="sp-eq" aria-hidden="true">
+        {Array.from({ length: 12 }, (_, i) => <i key={i} style={{ animationDelay: `${-((i * 7) % 11) * 0.13}s` }} />)}
+      </div>
+      <p className="sp-act">{waiting ? '확인을 기다리는 중' : task.activity}</p>
+      {task.files.length > 0 && (
+        <ul className="sp-files">
+          {task.files.map((f) => <li key={f} title={f}>{f.split(/[\\/]/).pop()}</li>)}
+        </ul>
+      )}
+    </aside>
+  )
+}
+
+/** 대화 맨 아래 작업 중 줄. 1초마다 다시 그려지므로 따로 떼어 둔다 */
+function Working({ status, activity, startedAt, leaving }: { status: string; activity?: string; startedAt?: number; leaving: boolean }): React.JSX.Element {
+  const now = useNow(1000)
+  return (
+    <div className={`working ${status === 'queued' ? 'queued' : ''} ${leaving ? 'leaving' : ''}`} role="status" aria-live="polite">
+      <span className="working-sq" aria-hidden="true" />
+      <span className="working-act">{activity ?? '작업 중'}</span>
+      {startedAt !== undefined && <span className="working-t">{clock(now - startedAt)}</span>}
+      <span className="working-k"><Keys keys="esc" /> 중단</span>
+      <span className="working-bar" aria-hidden="true"><i /></span>
     </div>
   )
 }
