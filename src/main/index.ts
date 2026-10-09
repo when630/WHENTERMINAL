@@ -182,7 +182,12 @@ function bootstrap(): void {
   ipcMain.handle(IPC.saveTask, (_e, projectId: string, conversationId: string, task: StoredTask) => {
     if (store.saveTask(projectId, conversationId, task)) projectsChanged()
   })
-  ipcMain.handle(IPC.startTask, (_e, projectId: string, text: string) => {
+  ipcMain.handle(IPC.startTask, (_e, projectId: string, text: string, continueId?: string) => {
+    const existing = continueId ? store.getConversation(projectId, continueId) : undefined
+    if (existing && !existing.closedAt) {
+      manager.send(projectId, existing.id, text)
+      return existing.id
+    }
     const conv = store.conversationForTask(projectId, text, (c) => !manager.hasSession(c.id))
     projectsChanged()
     manager.send(projectId, conv.id, text)

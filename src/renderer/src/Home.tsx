@@ -25,7 +25,9 @@ interface Props {
   dispatchOrigin: RefObject<DispatchOrigin | null>
   sheetCloseRef: RefObject<(() => void) | null>
   onDispatchIndex: (i: number) => void
-  onDispatch: (text: string) => void
+  onDispatch: (text: string, continueId?: string) => void
+  /** '이어서'로 보낼 대화 (이 프로젝트에서 가장 최근에 쓴 대화). 없으면 새 대화만 */
+  continueTarget: { id: string; title: string } | null
   onSelect: (conversationId: string) => void
   onOpenTask: (ref: TaskRef) => void
   onOpenReport: (conversationId: string) => void
@@ -127,7 +129,10 @@ export function Home(props: Props): React.JSX.Element {
 function Dispatch(props: Props & { scrollRef: RefObject<HTMLDivElement | null> }): React.JSX.Element {
   const km = useKeymap()
   const [text, setText] = useState('')
+  const [cont, setCont] = useState(false)
   const p = props.projects[props.dispatchIndex]
+  const target = props.continueTarget
+  const altEnter = useRef(false)
   if (props.projects.length === 0) {
     return (
       <div className="ask ask-empty">
@@ -145,13 +150,17 @@ function Dispatch(props: Props & { scrollRef: RefObject<HTMLDivElement | null> }
       autoComplete="off"
       onSubmit={(e) => {
         e.preventDefault()
+        // Alt+Enter는 전환 상태와 상관없이 '이어서'. 표시는 이번 제출에서만 쓰고 바로 지운다
+        const viaAlt = altEnter.current
+        altEnter.current = false
         const t = text.trim()
         if (!t) return
+        const asContinue = (cont || viaAlt) && target
         const input = props.inputRef.current
         const root = props.scrollRef.current
-        if (input && root) props.dispatchOrigin.current = { box: boxIn(input.closest('.ask')!, root), at: performance.now() }
+        if (input && root && !asContinue) props.dispatchOrigin.current = { box: boxIn(input.closest('.ask')!, root), at: performance.now() }
         setText('')
-        props.onDispatch(t)
+        props.onDispatch(t, asContinue ? target.id : undefined)
       }}
     >
       <div className="ask-row">
@@ -168,6 +177,12 @@ function Dispatch(props: Props & { scrollRef: RefObject<HTMLDivElement | null> }
               e.preventDefault()
               cycle(e.shiftKey ? -1 : 1)
             }
+            // Alt+Enter: 입력창은 Alt+Enter로 폼을 제출하지 않으므로(macOS) 직접 제출한다
+            if (e.key === 'Enter' && e.altKey && !e.nativeEvent.isComposing) {
+              e.preventDefault()
+              altEnter.current = true
+              e.currentTarget.form?.requestSubmit()
+            }
           }}
         />
         <button type="submit" className="btn-pri" disabled={!text.trim()}>
@@ -180,7 +195,23 @@ function Dispatch(props: Props & { scrollRef: RefObject<HTMLDivElement | null> }
           <Roll text={p?.name ?? ''} className="proj-name" />
         </button>
         <span><Keys keys="tab" /> 프로젝트 바꾸기</span>
-        <span>끝나면 보고함으로 보고서가 옵니다</span>
+        <span className="ask-mode seg" role="radiogroup" aria-label="보낼 곳">
+          <button type="button" role="radio" aria-checked={!cont || !target} className={!cont || !target ? 'on' : ''} onClick={() => setCont(false)}>
+            새 대화
+          </button>
+          <button type="button" role="radio" aria-checked={cont && !!target} className={cont && target ? 'on' : ''} disabled={!target} onClick={() => setCont(true)} title={target ? `이어 보낼 대화: ${target.title}` : '이어 보낼 대화가 없어요'}>
+            이어서
+          </button>
+        </span>
+        <span className="ask-target">
+          {target ? (
+            <>
+              <Keys keys="alt enter" /> 이어서 · {target.title}
+            </>
+          ) : (
+            '끝나면 보고함으로 보고서가 옵니다'
+          )}
+        </span>
       </div>
     </form>
   )

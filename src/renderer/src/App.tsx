@@ -165,11 +165,25 @@ export function App(): React.JSX.Element {
     setFocusInput((n) => n + 1)
   }, [])
 
-  const dispatch = useCallback((text: string) => {
+  const dispatch = useCallback((text: string, continueId?: string) => {
     const p = projects[dispatchIndex]
     if (!p) return
-    void window.api.startTask(p.id, text).then((id) => setSelectedId(id))
+    void window.api.startTask(p.id, text, continueId).then((id) => setSelectedId(id))
   }, [projects, dispatchIndex])
+
+  // '이어서' 대상: 지시할 프로젝트에서 가장 최근에 쓴 열린 대화 (세션이 있거나 이번 실행에서 쓴 것)
+  const continueTarget = useMemo(() => {
+    const p = projects[Math.min(dispatchIndex, projects.length - 1)]
+    if (!p) return null
+    let best: { id: string; title: string; at: number } | null = null
+    for (const c of openConversations(p)) {
+      const s = convs[c.id]
+      if (!c.sessionId && !s?.items.length) continue
+      const at = s?.updatedAt || c.lastTask?.finishedAt || 0
+      if (!best || at > best.at) best = { id: c.id, title: c.title, at }
+    }
+    return best
+  }, [projects, dispatchIndex, convs])
 
   const confirmTwice = useCallback((kind: 'clear' | 'close', id: string, run: () => void) => {
     if (armTimer.current) clearTimeout(armTimer.current)
@@ -402,6 +416,7 @@ export function App(): React.JSX.Element {
               sheetCloseRef={sheetCloseRef}
               onDispatchIndex={setDispatchIndex}
               onDispatch={dispatch}
+            continueTarget={continueTarget}
               onSelect={setSelectedId}
               onOpenTask={(r) => openChat(r.project.id, r.conversationId)}
               onOpenReport={openReport}

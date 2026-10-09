@@ -205,6 +205,9 @@ kbd { display: inline-block; font: 500 11px/1 var(--mono); padding: 3px 5px; col
 .proj kbd { background: var(--sel-bg); color: var(--sel-fg); border-color: var(--sel-bg); }
 .proj:hover kbd { background: var(--paper); color: var(--ink); }
 .proj-name { width: 120px; height: 19px; }
+.ask-mode button { font: 700 12px/1 var(--font); padding: 6px 10px; }
+.ask-mode button:disabled { color: var(--gray-3); cursor: default; }
+.ask-target { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 46ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .roll { position: relative; display: block; overflow: hidden; }
 .roll > span { position: absolute; left: 0; right: 0; top: 0; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

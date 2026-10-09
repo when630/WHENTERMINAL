@@ -250,7 +250,8 @@ export interface WhenTerminalApi {
   /** 끝난 작업의 보고서(읽음·보관 포함)를 저장. 닫힌 대화의 보고서를 보관하면 대화도 지운다 */
   saveTask(projectId: string, conversationId: string, task: StoredTask): Promise<void>
   /** 홈의 작업 지시창: 쓰지 않은 대화가 있으면 재사용하고 없으면 새로 만들어 작업을 보낸다. 대화 ID 반환 */
-  startTask(projectId: string, text: string): Promise<string>
+  /** continueId가 있으면 그 대화에 이어서, 없으면 새 대화(또는 아직 안 쓴 대화)로 */
+  startTask(projectId: string, text: string, continueId?: string): Promise<string>
   send(projectId: string, conversationId: string, text: string): Promise<void>
   interrupt(projectId: string, conversationId: string): Promise<void>
   setMode(projectId: string, conversationId: string, mode: AgentMode): Promise<void>
