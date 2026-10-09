@@ -30,7 +30,7 @@ export async function readHistory(sessionId: string, dir: string): Promise<Histo
     if (m.type === 'system') {
       const raw = m as unknown as { subtype?: string; compact_metadata?: { trigger?: string; pre_tokens?: number } }
       const sub = raw.subtype ?? msg.subtype
-      if (sub === 'compact_boundary') items.push({ type: 'divider', text: `${(raw.compact_metadata ?? msg.compact_metadata)?.trigger === 'auto' ? '자동 컴팩트' : '컴팩트'} 이전 대화` })
+      if (sub === 'compact_boundary') items.push({ type: 'divider', text: `${(raw.compact_metadata ?? msg.compact_metadata)?.trigger === 'auto' ? 'AUTO COMPACT' : 'COMPACT'} · 이전 대화` })
       continue
     }
     const content = msg.content

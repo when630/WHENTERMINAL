@@ -18,7 +18,7 @@ test('하위 대화는 worktree에서: 변경 보기·합치기·충돌·버리�
 
   appendFileSync(join(wt.path, 'a.txt'), 'from worktree\n')
   writeFileSync(join(wt.path, 'new.md'), '# new\n')
-  await win.locator('.tb-btn', { hasText: '변경' }).click()
+  await win.locator('.tb-btn', { hasText: 'CHANGES' }).click()
   await expect(win.locator('.wt-files li')).toHaveCount(2)
 
   await win.locator('.wt-actions .btn-pri').click()
@@ -30,12 +30,12 @@ test('하위 대화는 worktree에서: 변경 보기·합치기·충돌·버리�
   writeFileSync(join(repo, 'a.txt'), 'main side\n')
   execSync('git commit -qam main-edit', { cwd: repo })
   writeFileSync(join(wt.path, 'a.txt'), 'worktree side\n')
-  await win.locator('.wt-actions .btn', { hasText: '새로 고침' }).click()
+  await win.locator('.wt-actions .btn', { hasText: 'REFRESH' }).click()
   await win.locator('.wt-actions .btn-pri').click()
   await expect(win.locator('.wt-msg.bad')).toContainText('CONFLICT')
   expect(execSync('git status --porcelain', { cwd: repo }).toString().trim()).toBe('')
 
-  await win.locator('.wt-actions .btn', { hasText: '버리기' }).click()
+  await win.locator('.wt-actions .btn', { hasText: 'DISCARD' }).click()
   await win.locator('.wt-actions .btn.armed').click()
   await expect(win.locator('.wt-panel')).toHaveCount(0)
   expect(existsSync(wt.path)).toBe(false)
@@ -45,5 +45,5 @@ test('하위 대화는 worktree에서: 변경 보기·합치기·충돌·버리�
 test('git이 아닌 폴더의 하위 대화는 플랜 모드로 시작', async ({ win }) => {
   await win.keyboard.press('Alt+KeyS')
   await win.locator('.tab.add').click()
-  await expect(win.locator('.meta-mode .meta-v')).toHaveText('플랜')
+  await expect(win.locator('.meta-mode .meta-v')).toHaveText('PLAN')
 })

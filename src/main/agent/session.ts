@@ -256,7 +256,7 @@ export class AgentSession {
           // 자동 컴팩트도 이 메시지로 알려온다
           if (msg.status === 'compacting') this.opts.emit({ kind: 'compacting', on: true })
           else if (msg.compact_result) {
-            if (msg.compact_result === 'failed') this.opts.emit({ kind: 'error', message: `컴팩트 실패: ${msg.compact_error ?? '알 수 없는 오류'}` })
+            if (msg.compact_result === 'failed') this.opts.emit({ kind: 'error', message: `컴팩트하지 못했어요: ${msg.compact_error ?? '알 수 없는 오류'}` })
             this.endCompacting()
           }
         } else if (msg.subtype === 'compact_boundary') {

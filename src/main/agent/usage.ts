@@ -7,12 +7,12 @@ type Raw = Awaited<ReturnType<Query['usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_O
 type RawWindow = { utilization: number | null; resets_at: string | null } | null | undefined
 
 const LABEL: Record<string, string> = {
-  five_hour: '5시간',
-  seven_day: '주간',
-  seven_day_opus: 'Opus 주간',
-  seven_day_sonnet: 'Sonnet 주간',
-  seven_day_oauth_apps: '앱 주간',
-  seven_day_overage_included: '주간 (추가 포함)',
+  five_hour: '5H',
+  seven_day: 'WEEKLY',
+  seven_day_opus: 'OPUS WEEKLY',
+  seven_day_sonnet: 'SONNET WEEKLY',
+  seven_day_oauth_apps: 'APPS WEEKLY',
+  seven_day_overage_included: 'WEEKLY + EXTRA',
 }
 
 const toMs = (iso: string | null): number | null => (iso ? Date.parse(iso) || null : null)
@@ -30,7 +30,7 @@ export function toUsage(raw: Raw): UsageInfo {
     add('seven_day', r.seven_day)
     // 서버가 모델별 주간 창을 목록으로 주면 그것을, 아니면 예전 Opus/Sonnet 칸을 쓴다
     if (r.model_scoped && r.model_scoped.length > 0) {
-      for (const m of r.model_scoped) add(`model:${m.display_name}`, m, `${m.display_name} 주간`)
+      for (const m of r.model_scoped) add(`model:${m.display_name}`, m, `${m.display_name.toUpperCase()} WEEKLY`)
     } else {
       add('seven_day_opus', r.seven_day_opus)
       add('seven_day_sonnet', r.seven_day_sonnet)

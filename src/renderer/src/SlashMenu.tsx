@@ -4,9 +4,9 @@ import { Keys } from './KeyHint'
 
 /** 앱이 직접 처리하는 명령. SDK 목록에 같은 이름이 있어도 이 설명을 쓴다 */
 const LOCAL: SlashCommandInfo[] = [
-  { name: 'compact', description: '지금까지의 대화를 요약해 컨텍스트를 줄입니다', argumentHint: '[요약할 때 중점]', builtin: true },
-  { name: 'close', description: '이 대화(세션)를 닫습니다. 실행 중이면 멈춥니다', argumentHint: '', builtin: true },
-  { name: 'clear', description: '컨텍스트를 비우고 다음 메시지부터 새 세션으로 시작합니다', argumentHint: '', aliases: ['reset', 'new'], builtin: true },
+  { name: 'compact', description: '지금까지의 대화를 요약해 컨텍스트를 줄여요', argumentHint: '[요약할 때 중점]', builtin: true },
+  { name: 'close', description: '이 대화(세션)를 닫아요. 실행 중이면 멈춰요', argumentHint: '', builtin: true },
+  { name: 'clear', description: '컨텍스트를 비우고 다음 메시지부터 새 세션으로 시작해요', argumentHint: '', aliases: ['reset', 'new'], builtin: true },
 ]
 
 const cache = new Map<string, SlashCommandInfo[]>()
@@ -62,9 +62,9 @@ export function SlashMenu({ items, index, loading, onHover, onPick }: Props): Re
   return (
     <div className="slash" role="listbox" aria-label="명령">
       <div className="slash-head">
-        <span>명령 {items.length}</span>
+        <span>COMMANDS {items.length}</span>
         <span className="slash-keys">
-          <Keys keys="ctrl N" />/<Keys keys="ctrl P" /> 이동 · <Keys keys="tab" /> 채우기 · <Keys keys="enter" /> 실행 · <Keys keys="esc" /> 닫기
+          <Keys keys="ctrl N" />/<Keys keys="ctrl P" /> MOVE · <Keys keys="tab" /> FILL · <Keys keys="enter" /> RUN · <Keys keys="esc" /> CLOSE
         </span>
       </div>
       {items.length === 0 && <div className="slash-empty">{loading ? '명령을 불러오는 중…' : '맞는 명령이 없어요'}</div>}
@@ -87,7 +87,7 @@ export function SlashMenu({ items, index, loading, onHover, onPick }: Props): Re
             {c.argumentHint && <span className="slash-arg">{c.argumentHint}</span>}
           </span>
           <span className="slash-desc">{c.description}</span>
-          {!c.builtin && <span className="slash-tag">사용자</span>}
+          {!c.builtin && <span className="slash-tag">USER</span>}
         </button>
       ))}
     </div>
@@ -105,9 +105,9 @@ export function FileMenu({ items, index, loading, onHover, onPick }: {
   return (
     <div className="slash" role="listbox" aria-label="파일">
       <div className="slash-head">
-        <span>파일 {items.length >= 50 ? '50+' : items.length}</span>
+        <span>FILES {items.length >= 50 ? '50+' : items.length}</span>
         <span className="slash-keys">
-          <Keys keys="ctrl N" />/<Keys keys="ctrl P" /> 이동 · <Keys keys="tab" /> 넣기 · <Keys keys="esc" /> 닫기
+          <Keys keys="ctrl N" />/<Keys keys="ctrl P" /> MOVE · <Keys keys="tab" /> INSERT · <Keys keys="esc" /> CLOSE
         </span>
       </div>
       {items.length === 0 && <div className="slash-empty">{loading ? '파일을 찾는 중…' : '맞는 파일이 없어요'}</div>}

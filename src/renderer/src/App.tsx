@@ -25,7 +25,7 @@ export function App(): React.JSX.Element {
   const [openReportId, setOpenReportId] = useState<string | null>(null)
   const [focusInput, setFocusInput] = useState(0)
   // 되돌릴 수 없는 동작(클리어·대화 닫기)은 3초 안에 두 번 눌러야 실행된다
-  const [armed, setArmed] = useState<{ kind: 'clear' | 'close'; id: string } | null>(null)
+  const [armed, setArmed] = useState<{ kind: 'clear' | 'close' | 'project'; id: string } | null>(null)
   const armTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const dispatchOrigin = useRef<DispatchOrigin | null>(null)
@@ -185,7 +185,7 @@ export function App(): React.JSX.Element {
     return best
   }, [projects, dispatchIndex, convs])
 
-  const confirmTwice = useCallback((kind: 'clear' | 'close', id: string, run: () => void) => {
+  const confirmTwice = useCallback((kind: 'clear' | 'close' | 'project', id: string, run: () => void) => {
     if (armTimer.current) clearTimeout(armTimer.current)
     if (armed?.kind === kind && armed.id === id) {
       setArmed(null)
@@ -215,6 +215,19 @@ export function App(): React.JSX.Element {
   const requestClose = useCallback((projectId: string, conversationId: string) => {
     confirmTwice('close', conversationId, () => void closeConversation(projectId, conversationId))
   }, [confirmTwice, closeConversation])
+
+  /** 프로젝트를 목록에서 닫는다 (폴더·파일은 그대로). 그 프로젝트를 보고 있었다면 홈으로 */
+  const removeProject = useCallback(async (projectId: string) => {
+    const ids = new Set(projects.find((p) => p.id === projectId)?.conversations.map((c) => c.id) ?? [])
+    await window.api.removeProject(projectId)
+    setConvs((prev) => Object.fromEntries(Object.entries(prev).filter(([id]) => !ids.has(id))))
+    setOpenReportId(null)
+    setView((v) => (v.screen === 'chat' && v.projectId === projectId ? { screen: 'home' } : v))
+  }, [projects])
+
+  const requestRemoveProject = useCallback((projectId: string) => {
+    confirmTwice('project', projectId, () => void removeProject(projectId))
+  }, [confirmTwice, removeProject])
 
   const goHome = (): void => {
     setOpenReportId(null)
@@ -335,6 +348,7 @@ export function App(): React.JSX.Element {
       })
     }
     if (is('closeConversation')) return take(() => requestClose(projectId, conversationId))
+    if (is('closeProject')) return take(() => requestRemoveProject(projectId))
     if (is('compact')) return take(() => void window.api.compact(projectId, conversationId))
     if (is('clear')) return take(() => requestClear(projectId, conversationId))
     if (is('cycleMode')) {
@@ -380,6 +394,8 @@ export function App(): React.JSX.Element {
         onOpenProject={openProject}
         onOpenConversation={openChat}
         onAddProject={() => void window.api.addProject()}
+        armedProjectId={armed?.kind === 'project' ? armed.id : null}
+        onRemoveProjectRequest={requestRemoveProject}
       />
       <div className="content">
         <Ticker running={running} reports={reports} hotkey={hotkey} />
@@ -396,6 +412,7 @@ export function App(): React.JSX.Element {
               usage={usage}
               clearArmed={armed?.kind === 'clear' && armed.id === view.conversationId}
               closeArmedId={armed?.kind === 'close' ? armed.id : null}
+              projectArmed={armed?.kind === 'project' && armed.id === chatProject.id}
               onClearRequest={() => requestClear(chatProject.id, view.conversationId)}
               onCloseRequest={(id) => requestClose(chatProject.id, id)}
               onClose={(id) => void closeConversation(chatProject.id, id)}

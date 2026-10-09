@@ -30,10 +30,10 @@ export class Notifier {
 
     if (event.kind === 'permission_request' && s.approval) {
       const r = event.request
-      this.show(conversationId, `확인 필요 · ${project.name}`, r.title ?? `${r.toolName} 실행 권한을 요청했어요`, projectId)
+      this.show(conversationId, `NEEDS YOU · ${project.name}`, r.title ?? `${r.toolName} 실행을 허락해 달라고 해요`, projectId)
       if (isMac && !focused) app.dock?.bounce('informational')
     } else if (event.kind === 'status' && s.done && (event.status === 'done' || event.status === 'error')) {
-      const head = event.status === 'done' ? '작업 끝남' : '작업 오류'
+      const head = event.status === 'done' ? 'DONE' : 'ERROR'
       this.show(conversationId, `${head} · ${project.name}`, conv.title, projectId)
     } else if (event.kind === 'permission_resolved') {
       // 앱에서 이미 응답했으면 남은 확인 알림을 치운다
@@ -56,6 +56,6 @@ export class Notifier {
 export function applyBadge(tray: Tray | null, waiting: number, unread: number): void {
   const n = waiting + unread
   app.setBadgeCount(n)
-  const parts = [waiting && `확인 대기 ${waiting}`, unread && `새 보고 ${unread}`].filter(Boolean)
+  const parts = [waiting && `NEEDS YOU ${waiting}`, unread && `NEW ${unread}`].filter(Boolean)
   tray?.setToolTip(parts.length ? `WHENTERMINAL · ${parts.join(' · ')}` : 'WHENTERMINAL')
 }

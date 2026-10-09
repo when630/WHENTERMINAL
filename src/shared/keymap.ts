@@ -6,7 +6,7 @@ export type ActionId =
   | 'summon' | 'goHome' | 'dispatch' | 'openSettings'
   | 'addProject' | 'focusAsk' | 'down' | 'up' | 'toRunning' | 'toReports' | 'open' | 'archive' | 'newTask'
   | 'allow' | 'always' | 'deny'
-  | 'nextConversation' | 'prevConversation' | 'closeConversation' | 'clear' | 'compact' | 'cycleMode' | 'interrupt'
+  | 'nextConversation' | 'prevConversation' | 'closeConversation' | 'closeProject' | 'clear' | 'compact' | 'cycleMode' | 'interrupt'
 
 export type ActionScope = 'system' | 'anywhere' | 'home' | 'chat' | 'approval'
 
@@ -18,37 +18,38 @@ export interface ActionDef {
 }
 
 export const SCOPE_LABEL: Record<ActionScope, string> = {
-  system: '시스템 전역',
-  anywhere: '앱 어디서나',
-  home: '홈',
-  chat: '대화창',
-  approval: '확인 요청 (홈·대화창)',
+  system: 'SYSTEM',
+  anywhere: 'ANYWHERE',
+  home: 'HOME',
+  chat: 'CHAT',
+  approval: 'APPROVAL',
 }
 
 export const ACTIONS: ActionDef[] = [
-  { id: 'summon', label: '어디서든 앱 호출', scope: 'system', default: 'Ctrl+Shift+Space' },
-  { id: 'goHome', label: '홈으로', scope: 'anywhere', default: 'Ctrl+H' },
-  { id: 'dispatch', label: '작업 지시', scope: 'anywhere', default: 'Ctrl+K' },
-  { id: 'openSettings', label: '설정 열기', scope: 'anywhere', default: 'Ctrl+,' },
-  { id: 'addProject', label: '프로젝트 추가', scope: 'home', default: 'Ctrl+N' },
-  { id: 'focusAsk', label: '작업 지시창으로', scope: 'home', default: 'I' },
-  { id: 'down', label: '아래 항목', scope: 'home', default: 'J' },
-  { id: 'up', label: '위 항목', scope: 'home', default: 'K' },
-  { id: 'toRunning', label: '진행 중 첫 항목', scope: 'home', default: 'H' },
-  { id: 'toReports', label: '보고함 첫 항목', scope: 'home', default: 'L' },
-  { id: 'open', label: '열기', scope: 'home', default: 'O' },
-  { id: 'archive', label: '보고서 보관', scope: 'home', default: 'E' },
-  { id: 'newTask', label: '보고서에서 새 작업', scope: 'home', default: 'I' },
-  { id: 'allow', label: '허용', scope: 'approval', default: 'Y' },
-  { id: 'always', label: '항상 허용', scope: 'approval', default: 'A' },
-  { id: 'deny', label: '거절', scope: 'approval', default: 'N' },
-  { id: 'nextConversation', label: '다음 하위 대화', scope: 'chat', default: 'Ctrl+Tab' },
-  { id: 'prevConversation', label: '이전 하위 대화', scope: 'chat', default: 'Ctrl+Shift+Tab' },
-  { id: 'closeConversation', label: '대화 닫기 (두 번)', scope: 'chat', default: 'Ctrl+W' },
-  { id: 'clear', label: '컨텍스트 비우기 (두 번)', scope: 'chat', default: 'Ctrl+L' },
-  { id: 'compact', label: '컴팩트', scope: 'chat', default: 'Ctrl+Shift+L' },
-  { id: 'cycleMode', label: '권한 모드 바꾸기', scope: 'chat', default: 'Shift+Tab' },
-  { id: 'interrupt', label: '실행 중단 (Esc 외 보조 키)', scope: 'chat', default: 'Ctrl+[' },
+  { id: 'summon', label: 'Summon app', scope: 'system', default: 'Ctrl+Shift+Space' },
+  { id: 'goHome', label: 'Go home', scope: 'anywhere', default: 'Ctrl+H' },
+  { id: 'dispatch', label: 'New task', scope: 'anywhere', default: 'Ctrl+K' },
+  { id: 'openSettings', label: 'Settings', scope: 'anywhere', default: 'Ctrl+,' },
+  { id: 'addProject', label: 'Add project', scope: 'home', default: 'Ctrl+N' },
+  { id: 'focusAsk', label: 'Focus task input', scope: 'home', default: 'I' },
+  { id: 'down', label: 'Next item', scope: 'home', default: 'J' },
+  { id: 'up', label: 'Previous item', scope: 'home', default: 'K' },
+  { id: 'toRunning', label: 'Jump to running', scope: 'home', default: 'H' },
+  { id: 'toReports', label: 'Jump to reports', scope: 'home', default: 'L' },
+  { id: 'open', label: 'Open', scope: 'home', default: 'O' },
+  { id: 'archive', label: 'Archive report', scope: 'home', default: 'E' },
+  { id: 'newTask', label: 'Follow-up task', scope: 'home', default: 'I' },
+  { id: 'allow', label: 'Allow', scope: 'approval', default: 'Y' },
+  { id: 'always', label: 'Always allow', scope: 'approval', default: 'A' },
+  { id: 'deny', label: 'Deny', scope: 'approval', default: 'N' },
+  { id: 'nextConversation', label: 'Next tab', scope: 'chat', default: 'Ctrl+Tab' },
+  { id: 'prevConversation', label: 'Previous tab', scope: 'chat', default: 'Ctrl+Shift+Tab' },
+  { id: 'closeConversation', label: 'Close tab (twice)', scope: 'chat', default: 'Ctrl+W' },
+  { id: 'clear', label: 'Clear (twice)', scope: 'chat', default: 'Ctrl+L' },
+  { id: 'compact', label: 'Compact', scope: 'chat', default: 'Ctrl+Shift+L' },
+  { id: 'closeProject', label: 'Close project (twice)', scope: 'chat', default: 'Ctrl+Shift+W' },
+  { id: 'cycleMode', label: 'Cycle mode', scope: 'chat', default: 'Shift+Tab' },
+  { id: 'interrupt', label: 'Interrupt (alt. to Esc)', scope: 'chat', default: 'Ctrl+[' },
 ]
 
 export type Keymap = Record<ActionId, string>
@@ -104,11 +105,11 @@ export function toAccelerator(binding: string): string {
 export type ThemeId = 'poster' | 'paper' | 'sage' | 'sumi' | 'night'
 
 export const THEMES: { id: ThemeId; name: string; note: string; colors: [string, string, string]; dark?: boolean }[] = [
-  { id: 'poster', name: '포스터', note: '흰 종이와 검정, 대비가 가장 강함', colors: ['#ffffff', '#0a0a0a', '#ff2a12'] },
-  { id: 'paper', name: '종이', note: '누런 미색과 먹색, 눈부심이 적음', colors: ['#f4efe6', '#2e2a25', '#c4553a'] },
-  { id: 'sage', name: '세이지', note: '옅은 초록빛 회색, 차분함', colors: ['#e8ece4', '#273029', '#b6533c'] },
-  { id: 'sumi', name: '먹', note: '따뜻한 어두운 회색, 밤에 편함', colors: ['#1f1e1c', '#d8d2c6', '#e07a5f'], dark: true },
-  { id: 'night', name: '밤', note: '푸른 어두운 회색, 차가운 톤', colors: ['#1a1e24', '#c5cdd6', '#e5806b'], dark: true },
+  { id: 'poster', name: 'POSTER', note: '흰 종이와 검정, 대비가 가장 강함', colors: ['#ffffff', '#0a0a0a', '#ff2a12'] },
+  { id: 'paper', name: 'PAPER', note: '누런 미색과 먹색, 눈부심이 적음', colors: ['#f4efe6', '#2e2a25', '#c4553a'] },
+  { id: 'sage', name: 'SAGE', note: '옅은 초록빛 회색, 차분함', colors: ['#e8ece4', '#273029', '#b6533c'] },
+  { id: 'sumi', name: 'SUMI', note: '따뜻한 어두운 회색, 밤에 편함', colors: ['#1f1e1c', '#d8d2c6', '#e07a5f'], dark: true },
+  { id: 'night', name: 'NIGHT', note: '푸른 어두운 회색, 차가운 톤', colors: ['#1a1e24', '#c5cdd6', '#e5806b'], dark: true },
 ]
 
 export interface NotifySettings {
@@ -125,11 +126,11 @@ export type AppIconId = 'wordmark' | 'prompt' | 'keycap' | 'bands' | 'question' 
 /** 앱 아이콘 (resources/icons/<id>.png, 원본은 build/icons/<id>.svg → npm run icons) */
 export const APP_ICONS: { id: AppIconId; name: string; note: string }[] = [
   { id: 'wordmark', name: 'WT_', note: '사이드바 로고와 같은 모양' },
-  { id: 'prompt', name: '프롬프트', note: '작은 크기에서 가장 또렷함' },
-  { id: 'keycap', name: '키캡 A', note: '키보드 중심 앱' },
-  { id: 'bands', name: '진행 띠', note: '홈 화면의 프로젝트 띠' },
-  { id: 'question', name: '물음표', note: 'Dock에서 가장 눈에 띔' },
-  { id: 'slots', name: '슬롯 9칸', note: 'A~L 프로젝트 자리' },
+  { id: 'prompt', name: 'PROMPT', note: '작은 크기에서 가장 또렷함' },
+  { id: 'keycap', name: 'KEYCAP', note: '키보드 중심 앱' },
+  { id: 'bands', name: 'BANDS', note: '홈 화면의 프로젝트 띠' },
+  { id: 'question', name: 'QUESTION', note: 'Dock에서 가장 눈에 띔' },
+  { id: 'slots', name: 'SLOTS', note: 'A~L 프로젝트 자리' },
 ]
 
 export interface Settings {

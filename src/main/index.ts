@@ -324,7 +324,7 @@ function buildMacMenu(): Menu {
       submenu: [
         { role: 'about' },
         { type: 'separator' },
-        { label: '설정…', accelerator: 'Command+,', click: () => win?.webContents.send(IPC.openSettings) },
+        { label: 'Settings…', accelerator: 'Command+,', click: () => win?.webContents.send(IPC.openSettings) },
         { type: 'separator' },
         { role: 'services' },
         { type: 'separator' },
@@ -400,9 +400,9 @@ function createTray(): void {
   tray.setToolTip('WHENTERMINAL')
   tray.setContextMenu(
     Menu.buildFromTemplate([
-      { label: '열기', click: showWindow },
+      { label: 'Open', click: showWindow },
       { type: 'separator' },
-      { label: '종료', click: () => app.quit() },
+      { label: 'Quit', click: () => app.quit() },
     ]),
   )
   tray.on('click', showWindow)

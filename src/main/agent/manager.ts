@@ -216,11 +216,14 @@ export class AgentManager {
     this.sessions.get(conversationId)?.respondPermission(requestId, decision)
   }
 
+  /** 프로젝트를 목록에서 닫기 전: 세션을 모두 끝내고(실행 중이면 중단) 대기열에서 빼고, 변경 없는 작업 공간은 정리한다. 프로젝트 폴더는 건드리지 않는다 */
   disposeProject(projectId: string): void {
     const project = this.store.get(projectId)
     for (const conv of project?.conversations ?? []) {
+      this.dropWaiting(conv.id)
       this.sessions.get(conv.id)?.dispose()
       this.sessions.delete(conv.id)
+      if (project && conv.worktree) void removeWorktreeIfClean(project.path, conv.worktree.path)
     }
   }
 
