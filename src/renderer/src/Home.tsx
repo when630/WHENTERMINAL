@@ -7,6 +7,7 @@ import { boxIn, EASE, Odo, reducedMotion, Roll, useLayoutMotion } from './motion
 import { STAGES, type TaskRef } from './state'
 import { elapsed, useNow } from './time'
 import { Markdown } from './Markdown'
+import { AttachButton, useAttach } from './attach'
 
 export interface DispatchOrigin {
   box: { x: number; y: number; w: number; h: number }
@@ -133,6 +134,7 @@ function Dispatch(props: Props & { scrollRef: RefObject<HTMLDivElement | null> }
   const p = props.projects[props.dispatchIndex]
   const target = props.continueTarget
   const altEnter = useRef(false)
+  const attach = useAttach({ inputRef: props.inputRef, value: text, setValue: setText, root: p?.path ?? '' })
   if (props.projects.length === 0) {
     return (
       <div className="ask ask-empty">
@@ -146,7 +148,8 @@ function Dispatch(props: Props & { scrollRef: RefObject<HTMLDivElement | null> }
   const cycle = (dir: number): void => props.onDispatchIndex((props.dispatchIndex + dir + props.projects.length) % props.projects.length)
   return (
     <form
-      className="ask"
+      className={`ask ${attach.dropping ? 'dropping' : ''}`}
+      {...attach.dropProps}
       autoComplete="off"
       onSubmit={(e) => {
         e.preventDefault()
@@ -165,6 +168,7 @@ function Dispatch(props: Props & { scrollRef: RefObject<HTMLDivElement | null> }
     >
       <div className="ask-row">
         <span className="ask-prompt" aria-hidden="true">&gt;</span>
+        <AttachButton onClick={attach.pick} />
         <label htmlFor="ask-input" className="sr-only">맡길 작업</label>
         <input
           id="ask-input"
@@ -172,6 +176,7 @@ function Dispatch(props: Props & { scrollRef: RefObject<HTMLDivElement | null> }
           value={text}
           placeholder="무엇을 맡길까요?"
           onChange={(e) => setText(e.target.value)}
+          onPaste={attach.onPaste}
           onKeyDown={(e) => {
             if (e.key === 'Tab') {
               e.preventDefault()

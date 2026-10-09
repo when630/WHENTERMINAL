@@ -244,7 +244,11 @@ function bootstrap(): void {
     return project ? searchFiles(cwdOf(project, store.getConversation(projectId, conversationId)), q) : []
   })
   ipcMain.handle(IPC.peek, (_e, projectId: string, conversationId: string) => manager.peek(projectId, conversationId))
-  ipcMain.handle(IPC.clear, (_e, projectId: string, conversationId: string) => manager.clear(projectId, conversationId))
+  ipcMain.handle(IPC.clear, (_e, projectId: string, conversationId: string) => {
+    manager.clear(projectId, conversationId)
+    // 저장된 세션 ID·컨텍스트 값이 지워졌으니 화면 목록도 갱신 (이전 값이 잠깐 보이지 않게)
+    projectsChanged()
+  })
   ipcMain.handle(
     IPC.respondPermission,
     (_e, _projectId: string, conversationId: string, requestId: string, decision: PermissionDecision) =>

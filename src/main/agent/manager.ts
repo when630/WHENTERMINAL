@@ -190,6 +190,8 @@ export class AgentManager {
     this.sessions.delete(conversationId)
     this.store.updateConversation(projectId, conversationId, { sessionId: undefined, contextPercent: undefined })
     this.broadcast({ projectId, conversationId, event: { kind: 'cleared' } })
+    // 비운 직후에도 컨텍스트가 보이도록 새 세션의 기본 사용량·모델을 바로 읽는다
+    void this.peek(projectId, conversationId)
   }
 
   async interrupt(projectId: string, conversationId: string): Promise<void> {

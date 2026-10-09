@@ -6,6 +6,7 @@ import { Keys } from './KeyHint'
 import { useKeymap } from './settings'
 import { usePresence } from './motion'
 import { Markdown } from './Markdown'
+import { AttachButton, useAttach } from './attach'
 import { ModelPicker } from './ModelPicker'
 import { FileMenu, rankCommands, SlashMenu, useSlashCommands } from './SlashMenu'
 
@@ -192,53 +193,7 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
     return false
   }
 
-  /** 커서 자리에 경로들을 넣는다. 작업 폴더 안이면 '@상대경로', 밖이면 전체 경로 (띄어쓰기가 있으면 따옴표) */
-  const insertPaths = (paths: string[]): void => {
-    if (!paths.length) return
-    const root = (conv?.worktree?.path ?? project.path).replace(/\\/g, '/').replace(/\/$/, '')
-    const refs = paths.map((raw) => {
-      const p = raw.replace(/\\/g, '/')
-      const inside = p.toLowerCase().startsWith(root.toLowerCase() + '/')
-      const shown = inside ? p.slice(root.length + 1) : raw
-      const quoted = /\s/.test(shown) ? `"${shown}"` : shown
-      return inside ? `@${quoted}` : quoted
-    })
-    const el = inputRef.current
-    const at = el ? el.selectionStart : draft.length
-    const before = draft.slice(0, at)
-    const piece = `${before && !/\s$/.test(before) ? ' ' : ''}${refs.join(' ')} `
-    const next = before + piece + draft.slice(at)
-    const pos = at + piece.length
-    setDraft(next)
-    setCaret(pos)
-    requestAnimationFrame(() => {
-      el?.focus()
-      el?.setSelectionRange(pos, pos)
-    })
-  }
-
-  const [dropping, setDropping] = useState(false)
-  const onDrop = (e: React.DragEvent): void => {
-    e.preventDefault()
-    setDropping(false)
-    insertPaths([...e.dataTransfer.files].map((f) => window.api.pathForFile(f)).filter(Boolean))
-  }
-  /** 이미지(스크린샷) 붙여넣기: 파일로 저장하고 그 경로를 넣는다. 글자 붙여넣기는 그대로 */
-  const onPaste = (e: React.ClipboardEvent): void => {
-    const files = [...e.clipboardData.files]
-    const images = files.filter((f) => f.type.startsWith('image/'))
-    if (!files.length) return
-    e.preventDefault()
-    // 파인더에서 복사한 파일은 실제 경로가 있으니 그대로, 스크린샷처럼 경로가 없는 이미지는 저장해서
-    void Promise.all(
-      files.map(async (f) => {
-        const real = window.api.pathForFile(f)
-        if (real) return real
-        if (!images.includes(f)) return ''
-        return window.api.saveImage(new Uint8Array(await f.arrayBuffer()), f.type.split('/')[1] ?? 'png')
-      }),
-    ).then((paths) => insertPaths(paths.filter(Boolean)))
-  }
+  const attach = useAttach({ inputRef, value: draft, setValue: setDraft, root: conv?.worktree?.path ?? project.path, onCaret: setCaret })
 
   const submit = (raw = draft): void => {
     const text = raw.trim()
@@ -384,28 +339,13 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
           )}
         </div>
       )}
-      <div
-        className={`composer ${dropping ? 'dropping' : ''}`}
-        onDragOver={(e) => {
-          if (![...e.dataTransfer.types].includes('Files')) return
-          e.preventDefault()
-          setDropping(true)
-        }}
-        onDragLeave={(e) => {
-          if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropping(false)
-        }}
-        onDrop={onDrop}
-      >
+      <div className={`composer ${attach.dropping ? 'dropping' : ''}`} {...attach.dropProps}>
         {slashOpen && (
           <SlashMenu items={menuItems} index={menuIndex} loading={slash.loading} onHover={setMenuIndex} onPick={(c) => pickCommand(c, true)} />
         )}
         {fileOpen && <FileMenu items={fileItems} index={menuIndex} loading={!files || files.q !== fileQuery} onHover={setMenuIndex} onPick={pickFile} />}
         <span className="composer-prompt" aria-hidden="true">&gt;</span>
-        <button type="button" className="attach" onClick={() => void window.api.pickFiles().then(insertPaths)} title="파일 첨부 (끌어다 놓기·이미지 붙여넣기도 돼요)" aria-label="파일 첨부">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="square" aria-hidden="true">
-            <path d="M10.5 4.5 5.2 9.8a1.6 1.6 0 0 0 2.3 2.3l5.6-5.6a3 3 0 0 0-4.3-4.3L3.2 7.8a4.4 4.4 0 0 0 6.2 6.2l4.1-4.1" />
-          </svg>
-        </button>
+        <AttachButton onClick={attach.pick} />
         <div className="composer-body">
           <label htmlFor="composer-input" className="sr-only">메시지</label>
           <textarea
@@ -423,7 +363,7 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
               setCaret(e.target.selectionStart)
             }}
             onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
-            onPaste={onPaste}
+            onPaste={attach.onPaste}
             onKeyDown={(e) => {
               if (menuKey(e)) {
                 e.preventDefault()
