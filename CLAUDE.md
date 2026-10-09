@@ -44,6 +44,12 @@
   - 전역 호출 키 후보에서 `Control+Space`를 뺀다. macOS 입력 소스 전환 키라 등록이 성공해도 한/영 전환을 가로챈다
   - 트레이 아이콘은 템플릿 이미지(검정+투명), Dock 아이콘 클릭(`activate`)으로 창 다시 열기
 - 구독 한도(사이드바): `src/main/agent/usage.ts`가 SDK `usage_EXPERIMENTAL…`(실험적 API, 이름이 바뀔 수 있음)로 5시간·주간·모델별 주간 창을 받는다. 살아 있는 세션이 없으면 `withProbe`로 CLI만 띄움. 앱 시작·작업 완료 2.5초 뒤·5분마다 갱신, `rate_limit_event`는 해당 창에 바로 반영
+- 기록·보고서: 대화창을 열 때 화면 기록이 비어 있으면 `getSessionMessages`로 되살린다(`agent/history.ts`). 끝난 작업의 보고서는 `Conversation.lastTask`에 저장하고, 보관 전 보고서가 있는 대화를 닫으면 `closedAt`으로 숨기기만 한다. 탭·목록은 `openConversations()` 기준
+- 답변은 `Markdown.tsx`(react-markdown, 원시 HTML 비허용). 링크는 메인이 외부 브라우저로만 연다 (`setWindowOpenHandler`, `will-navigate` 차단)
+- 알림(`main/notify.ts`): 확인 요청·작업 끝남. 누르면 `IPC.navigate`로 그 대화로. 배지는 렌더러가 `setBadge`로 보낸다
+- 대기열(OPEN-003): `AgentManager.send`가 `maxConcurrent`를 넘으면 `queued`로 두고, 상태가 끝나면 `drain()`. 확인 대기도 자리를 차지한다
+- 작업 공간(OPEN-002, `main/worktree.ts`): 탭 +로 만든 대화만 `userData/worktrees`에 git worktree(`wt/<id>`). 세션·기록·peek의 폴더는 `cwdOf()`. 닫을 때 깨끗하면 정리
+- 패키징: electron-builder(`package.json`의 `build`). SDK의 OS별 CLI 바이너리는 `asarUnpack`으로 풀고, 패키징한 앱에서는 `claudeExecutable()` 경로를 `pathToClaudeCodeExecutable`로 넘긴다. 렌더러에서만 쓰는 패키지는 devDependencies에 둘 것 (번들에 들어가므로)
 - 설정(`SettingsScreen.tsx`, `Ctrl+,` / macOS 메뉴 ⌘,): `userData/settings.json` (`src/main/settings.ts`). 첫 화면 전에 preload가 동기로 읽어(`initialSettings`) 테마 깜빡임이 없다
   - 테마: `:root[data-theme]`로 색 토큰만 바꾼다 (포스터·종이·세이지·먹·밤). 새 색을 쓸 때는 직접 색 대신 역할 토큰(`--sel-bg/fg`, `--on-signal`, `--code-bg/fg`, `--line`, `--shadow`)을 쓸 것
   - 단축키: 동작 목록·기본값은 `src/shared/keymap.ts`(`ACTIONS`), 판정은 `matches()`(keys.ts). App의 키 처리와 화면의 키 표시는 모두 `useKeymap()`을 거친다. 새 단축키는 ACTIONS에 추가하고 하드코딩하지 말 것

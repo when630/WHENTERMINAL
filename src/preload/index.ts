@@ -31,6 +31,7 @@ const api: WhenTerminalApi = {
   setModel: (projectId, conversationId, option) => ipcRenderer.invoke(IPC.setModel, projectId, conversationId, option),
   loadHistory: (projectId, conversationId) => ipcRenderer.invoke(IPC.loadHistory, projectId, conversationId),
   initialSettings: ipcRenderer.sendSync(IPC.getSettingsSync),
+  appInfo: ipcRenderer.sendSync(IPC.appInfo),
   setSettings: (settings) => ipcRenderer.invoke(IPC.setSettings, settings),
   onSettingsChanged: (cb) => subscribe(IPC.settingsChanged, cb),
   onOpenSettings: (cb) => subscribe(IPC.openSettings, () => cb()),

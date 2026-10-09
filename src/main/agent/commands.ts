@@ -2,6 +2,7 @@ import { query, type Query, type SlashCommand } from '@anthropic-ai/claude-agent
 import type { SlashCommandInfo } from '@shared/types'
 import { MessageQueue } from './message-queue'
 import { subscriptionEnv } from './session'
+import { claudeExecutable } from '../executable'
 
 const TTL_MS = 5 * 60_000
 const PROBE_TIMEOUT_MS = 20_000
@@ -46,7 +47,7 @@ export async function withProbe<T>(cwd: string, fn: (q: Query) => Promise<T>, re
   const queue = new MessageQueue()
   const q = query({
     prompt: queue,
-    options: { cwd, resume, env: subscriptionEnv(), settingSources: ['user', 'project', 'local'], systemPrompt: { type: 'preset', preset: 'claude_code' } },
+    options: { cwd, resume, pathToClaudeCodeExecutable: claudeExecutable(), env: subscriptionEnv(), settingSources: ['user', 'project', 'local'], systemPrompt: { type: 'preset', preset: 'claude_code' } },
   })
   let timer: ReturnType<typeof setTimeout> | undefined
   try {

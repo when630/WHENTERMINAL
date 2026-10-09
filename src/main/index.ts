@@ -48,6 +48,15 @@ function registerSummon(settings: Settings): string | undefined {
   return undefined
 }
 
+/** 로그인할 때 자동 실행. 개발 실행에서는 Electron 실행 파일이 등록되므로 패키징한 앱에서만 건드린다 */
+function applyLoginItem(s: Settings): void {
+  if (!app.isPackaged) return
+  app.setLoginItemSettings({ openAtLogin: s.openAtLogin, args: ['--hidden'] })
+}
+
+/** 로그인 자동 실행으로 켜졌으면 창 없이 트레이에만 */
+const startHidden = (): boolean => process.argv.includes('--hidden') || (isMac && app.getLoginItemSettings().wasOpenedAtLogin === true)
+
 const themeBackground = (s: Settings): string => THEMES.find((t) => t.id === s.theme)?.colors[0] ?? '#ffffff'
 
 let win: BrowserWindow | null = null
@@ -67,6 +76,10 @@ function bootstrap(): void {
   ipcMain.on(IPC.getSettingsSync, (e) => {
     e.returnValue = settingsStore.get()
   })
+  ipcMain.on(IPC.appInfo, (e) => {
+    e.returnValue = { packaged: app.isPackaged, version: app.getVersion(), platform: process.platform }
+  })
+  applyLoginItem(settingsStore.get())
   ipcMain.handle(IPC.setSettings, (_e, next: Settings) => {
     const before = settingsStore.get()
     let saved = settingsStore.set(next)
@@ -77,6 +90,7 @@ function bootstrap(): void {
       if (error) saved = settingsStore.set({ ...saved, keymap: { ...saved.keymap, summon: before.keymap.summon } })
     }
     win?.setBackgroundColor(themeBackground(saved))
+    if (saved.openAtLogin !== before.openAtLogin) applyLoginItem(saved)
     // 동시 실행 수를 늘렸으면 기다리던 대화를 바로 시작
     manager.drain()
     send(IPC.settingsChanged, saved)
@@ -285,7 +299,9 @@ function createWindow(): void {
       contextIsolation: true,
     },
   })
-  win.once('ready-to-show', () => win?.show())
+  win.once('ready-to-show', () => {
+    if (!startHidden()) win?.show()
+  })
   win.on('close', (e) => {
     if (!quitting) {
       e.preventDefault()

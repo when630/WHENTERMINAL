@@ -2,6 +2,7 @@ import { query, type SlashCommand, type CanUseTool, type PermissionResult, type 
 import { randomUUID } from 'node:crypto'
 import { isAgentMode, type AgentEvent, type AgentMode, type AgentStatus, type ContextInfo, type PermissionDecision, type RateLimitInfo } from '@shared/types'
 import { MessageQueue } from './message-queue'
+import { claudeExecutable } from '../executable'
 
 interface PendingPermission {
   resolve: (r: PermissionResult) => void
@@ -182,6 +183,7 @@ export class AgentSession {
         systemPrompt: { type: 'preset', preset: 'claude_code' },
         resume: this.sessionId,
         model: this.opts.model,
+        pathToClaudeCodeExecutable: claudeExecutable(),
       },
     })
     void this.consume(this.q)

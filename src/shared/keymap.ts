@@ -127,11 +127,13 @@ export interface Settings {
   maxConcurrent: number
   /** 탭의 +로 만든 하위 대화를 git worktree에서 실행 (OPEN-002). git 저장소가 아니면 플랜 모드로 시작 */
   worktree: boolean
+  /** 로그인할 때 자동 실행 (창은 숨긴 채 트레이에). 패키징한 앱에서만 동작 */
+  openAtLogin: boolean
   /** 기본값과 다른 키만 저장 */
   keymap: Partial<Keymap>
 }
 
-export const DEFAULT_SETTINGS: Settings = { theme: 'poster', maxConcurrent: 3, worktree: true, notify: { approval: true, done: true, whenFocused: false }, keymap: {} }
+export const DEFAULT_SETTINGS: Settings = { theme: 'poster', maxConcurrent: 3, worktree: true, openAtLogin: false, notify: { approval: true, done: true, whenFocused: false }, keymap: {} }
 
 export function effectiveKeymap(settings: Settings): Keymap {
   return { ...DEFAULT_KEYMAP, ...settings.keymap }

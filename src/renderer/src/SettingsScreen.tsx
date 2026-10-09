@@ -184,6 +184,29 @@ export function SettingsScreen({ settings, activeHotkey, onClose, onSaved }: Pro
           </div>
         </section>
 
+        <section className="set-sec set-sec-cont" aria-label="자동 실행">
+          <div className="krow">
+            <span className="krow-label">
+              로그인할 때 자동 실행
+              <span className="krow-note">
+                {window.api.appInfo.packaged ? '창은 숨긴 채 트레이에서 시작해요' : '패키징한 앱에서만 동작해요 (지금은 개발 실행)'}
+              </span>
+            </span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={settings.openAtLogin}
+              aria-label="로그인할 때 자동 실행"
+              className={`switch ${settings.openAtLogin ? 'on' : ''}`}
+              onClick={() => void save({ ...settings, openAtLogin: !settings.openAtLogin })}
+            >
+              <i />
+              <span>{settings.openAtLogin ? '켬' : '끔'}</span>
+            </button>
+            <span className="krow-side" />
+          </div>
+        </section>
+
         <section className="set-sec" aria-labelledby="set-notify">
           <h2 id="set-notify" className="col-h">알림</h2>
           {NOTIFY.map((n) => {

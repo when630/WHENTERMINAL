@@ -49,5 +49,6 @@ function sanitize(raw: unknown): Settings {
   }
   const maxConcurrent = Number.isInteger(o.maxConcurrent) && o.maxConcurrent! >= 0 && o.maxConcurrent! <= 16 ? o.maxConcurrent! : DEFAULT_SETTINGS.maxConcurrent
   const worktree = typeof o.worktree === 'boolean' ? o.worktree : DEFAULT_SETTINGS.worktree
-  return { theme, notify, maxConcurrent, worktree, keymap }
+  const openAtLogin = typeof o.openAtLogin === 'boolean' ? o.openAtLogin : DEFAULT_SETTINGS.openAtLogin
+  return { theme, notify, maxConcurrent, worktree, openAtLogin, keymap }
 }

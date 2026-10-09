@@ -12,29 +12,65 @@
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "smoke": "node scripts/sdk-smoke.mjs",
-    "test:session": "esbuild scripts/session-test.ts --bundle --platform=node --format=esm --packages=external --tsconfig=tsconfig.node.json --outfile=out/test/session-test.mjs && node out/test/session-test.mjs"
+    "test:session": "esbuild scripts/session-test.ts --bundle --platform=node --format=esm --packages=external --tsconfig=tsconfig.node.json --outfile=out/test/session-test.mjs && node out/test/session-test.mjs",
+    "dist": "npm run build && electron-builder",
+    "dist:mac": "npm run build && electron-builder --mac",
+    "dist:win": "npm run build && electron-builder --win",
+    "dist:dir": "npm run build && electron-builder --dir"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.293",
-    "@fontsource/archivo": "^5.3.0",
-    "@fontsource/black-han-sans": "^5.3.0",
-    "@fontsource/geist-mono": "^5.3.0",
-    "pretendard": "^1.3.9",
-    "react-markdown": "^10.1.0",
-    "remark-gfm": "^4.0.1",
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@fontsource/archivo": "^5.3.0",
+    "@fontsource/black-han-sans": "^5.3.0",
+    "@fontsource/geist-mono": "^5.3.0",
     "@types/node": "^22.20.5",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^5.2.0",
     "electron": "^44.7.0",
+    "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
     "esbuild": "^0.28.2",
+    "pretendard": "^1.3.9",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
     "typescript": "^7.0.2",
     "vite": "^7.3.7"
+  },
+  "build": {
+    "appId": "com.when630.whenterminal",
+    "productName": "WHENTERMINAL",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "out/**",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/@anthropic-ai/claude-agent-sdk-*/**"
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
   }
 }

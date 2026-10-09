@@ -221,6 +221,7 @@ export const IPC = {
   setModel: 'agent:set-model',
   loadHistory: 'agent:load-history',
   getSettingsSync: 'settings:get-sync',
+  appInfo: 'app:info',
   setSettings: 'settings:set',
   settingsChanged: 'settings:changed',
   openSettings: 'app:open-settings',
@@ -273,6 +274,8 @@ export interface WhenTerminalApi {
   loadHistory(projectId: string, conversationId: string): Promise<void>
   /** 첫 화면을 그리기 전에 테마를 적용하려고 동기로 읽는다 */
   initialSettings: Settings
+  /** 패키징 여부·버전·플랫폼 (자동 실행처럼 패키징한 앱에서만 되는 기능 안내용) */
+  appInfo: { packaged: boolean; version: string; platform: string }
   /** 설정 저장. 전역 호출 키를 등록하지 못하면 error에 이유가 오고 그 키는 저장되지 않는다 */
   setSettings(settings: Settings): Promise<{ settings: Settings; error?: string }>
   onSettingsChanged(cb: (s: Settings) => void): () => void
