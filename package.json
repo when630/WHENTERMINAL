@@ -69,7 +69,9 @@
       ],
       "files": [
         "!node_modules/@anthropic-ai/claude-agent-sdk-{win32,linux}-*{,/**}"
-      ]
+      ],
+      "identity": "-",
+      "hardenedRuntime": false
     },
     "win": {
       "target": [
