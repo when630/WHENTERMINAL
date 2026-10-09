@@ -10,7 +10,7 @@ export type TranscriptItem =
   | { type: 'divider'; text: string; at: number }
 
 /** 작업 진행 단계. SDK가 단계를 알려주지 않으므로 사용한 도구로 추정한다 (stageForTool) */
-export const STAGES = ['계획', '탐색', '수정', '검증', '보고'] as const
+export const STAGES = ['PLAN', 'EXPLORE', 'EDIT', 'VERIFY', 'REPORT'] as const
 
 
 export interface ConversationState {
@@ -55,14 +55,14 @@ export function stageForTool(name: string, input: unknown): number | null {
 export function activityForTool(name: string, input: unknown): string {
   const o = (input ?? {}) as Record<string, unknown>
   const file = str(o.file_path) || str(o.notebook_path)
-  if (EDIT.has(name)) return `수정 중 · ${baseName(file)}`
-  if (name === 'Read') return `읽는 중 · ${baseName(file)}`
-  if (name === 'Grep' || name === 'Glob') return `찾는 중 · ${str(o.pattern)}`
-  if (name === 'Bash' || name === 'PowerShell') return `실행 중 · ${str(o.command).split('\n')[0]}`
-  if (name === 'WebSearch') return `검색 중 · ${str(o.query)}`
-  if (name === 'WebFetch') return `웹 페이지 읽는 중`
-  if (name === 'TodoWrite') return '할 일 정리 중'
-  return `${name} 실행 중`
+  if (EDIT.has(name)) return `EDIT ${baseName(file)}`
+  if (name === 'Read') return `READ ${baseName(file)}`
+  if (name === 'Grep' || name === 'Glob') return `SEARCH ${str(o.pattern)}`
+  if (name === 'Bash' || name === 'PowerShell') return `RUN ${str(o.command).split('\n')[0]}`
+  if (name === 'WebSearch') return `WEB ${str(o.query)}`
+  if (name === 'WebFetch') return `FETCH ${str(o.url)}`
+  if (name === 'TodoWrite') return 'TODO'
+  return name.toUpperCase()
 }
 
 export function applyEvent(prev: ConversationState | undefined, event: AgentEvent): ConversationState {
@@ -91,12 +91,12 @@ export function applyEvent(prev: ConversationState | undefined, event: AgentEven
     case 'user':
       finalizeStreaming()
       s.items.push({ type: 'user', text: event.text, at: now })
-      s.task = { instruction: event.text, startedAt: now, stage: 0, activity: '작업 범위를 정리하는 중', tools: 0, files: [], unread: false, archived: false }
+      s.task = { instruction: event.text, startedAt: now, stage: 0, activity: 'STARTING', tools: 0, files: [], unread: false, archived: false }
       break
     case 'text_delta':
       if (last?.type === 'assistant' && last.streaming) s.items[s.items.length - 1] = { ...last, text: last.text + event.text }
       else s.items.push({ type: 'assistant', text: event.text, streaming: true, at: now })
-      if (s.task && s.task.stage < 1) task({ activity: '생각을 정리하는 중' })
+      if (s.task && s.task.stage < 1) task({ activity: 'WRITING' })
       break
     case 'assistant_text':
       if (last?.type === 'assistant' && last.streaming) s.items[s.items.length - 1] = { type: 'assistant', text: event.text, streaming: false, at: last.at }
@@ -122,19 +122,19 @@ export function applyEvent(prev: ConversationState | undefined, event: AgentEven
       const idx = s.items.findLastIndex((i) => i.type === 'tool' && i.toolUseId === event.toolUseId)
       if (idx >= 0) s.items[idx] = { ...(s.items[idx] as Extract<TranscriptItem, { type: 'tool' }>), result: event.content, isError: event.isError }
       // 남은 도구가 없으면 모델이 결과를 보고 다음 걸음을 고르는 중
-      if (!s.items.some((i) => i.type === 'tool' && i.result === undefined)) task({ activity: '다음 단계를 생각하는 중' })
+      if (!s.items.some((i) => i.type === 'tool' && i.result === undefined)) task({ activity: 'THINKING' })
       break
     }
     case 'permission_request':
       s.permissions.push(event.request)
-      task({ activity: '확인을 기다리는 중' })
+      task({ activity: 'WAITING FOR YOU' })
       break
     case 'permission_resolved':
       s.permissions = s.permissions.filter((p) => p.requestId !== event.requestId)
       break
     case 'result':
       finalizeStreaming()
-      task({ durationMs: event.durationMs, costUsd: event.costUsd, activity: '보고서를 보냈어요' })
+      task({ durationMs: event.durationMs, costUsd: event.costUsd, activity: 'REPORTED' })
       if (event.subtype !== 'success') s.items.push({ type: 'notice', text: `종료: ${event.subtype}`, tone: 'error', at: now })
       break
     case 'error':
@@ -145,7 +145,7 @@ export function applyEvent(prev: ConversationState | undefined, event: AgentEven
       s.context = event.context
       break
     case 'queue':
-      task({ activity: `차례를 기다리는 중 · ${event.position}번째` })
+      task({ activity: `QUEUED #${event.position}` })
       break
     case 'history':
       // 이미 이번 실행에서 대화가 시작됐으면 덮지 않는다
@@ -162,13 +162,13 @@ export function applyEvent(prev: ConversationState | undefined, event: AgentEven
       break
     case 'compacted': {
       const k = (n: number): string => (n >= 1000 ? `${Math.round(n / 1000)}K` : String(n))
-      const label = event.trigger === 'auto' ? '자동 컴팩트' : '컴팩트'
-      s.items.push({ type: 'divider', text: `${label} · ${k(event.preTokens)}${event.postTokens !== undefined ? ` → ${k(event.postTokens)}` : ''} 토큰`, at: now })
+      const label = event.trigger === 'auto' ? 'AUTO COMPACT' : 'COMPACT'
+      s.items.push({ type: 'divider', text: `${label} · ${k(event.preTokens)}${event.postTokens !== undefined ? ` → ${k(event.postTokens)}` : ''} tokens`, at: now })
       break
     }
     case 'cleared':
       // 화면 기록도 비운다. 보고서(task)는 보고함에 남긴다
-      s.items = [{ type: 'divider', text: '컨텍스트를 비웠어요 · 다음 메시지부터 새 세션', at: now }]
+      s.items = [{ type: 'divider', text: 'CLEARED · 컨텍스트를 비웠어요. 다음 메시지부터 새 세션이에요', at: now }]
       s.permissions = []
       s.status = 'idle'
       s.context = undefined

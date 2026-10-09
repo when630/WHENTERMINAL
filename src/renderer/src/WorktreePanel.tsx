@@ -10,7 +10,7 @@ interface Props {
   onDiscarded: (nextConversationId: string) => void
 }
 
-const STATUS_LABEL: Record<string, string> = { A: '새 파일', M: '수정', D: '삭제', R: '이름 바꿈', C: '복사' }
+const STATUS_LABEL: Record<string, string> = { A: 'NEW', M: 'MODIFIED', D: 'DELETED', R: 'RENAMED', C: 'COPIED' }
 
 /** unified diff → 파일별 묶음 */
 function splitDiff(diff: string): { path: string; lines: string[] }[] {
@@ -72,7 +72,7 @@ export function WorktreePanel({ projectId, conversationId, refreshKey, onClose, 
     <section className="wt-panel" aria-label="작업 공간 변경">
       <header className="wt-head">
         <div className="wt-title">
-          <span className="kr">변경</span>
+          <span className="kr">CHANGES</span>
           {data && (
             <span className="mono">
               {data.branch} → {data.target}
@@ -81,16 +81,16 @@ export function WorktreePanel({ projectId, conversationId, refreshKey, onClose, 
         </div>
         <div className="wt-actions">
           <button type="button" className="btn-pri" disabled={busy || !data || nothing} onClick={() => void merge()}>
-            {data?.dirty ? '커밋하고 합치기' : '합치기'}
+            {data?.dirty ? 'COMMIT & MERGE' : 'MERGE'}
           </button>
           <button type="button" className={`btn ${armed ? 'armed' : ''}`} disabled={busy || !data} onClick={() => void discard()}>
-            {armed ? '한 번 더 누르면 버려요' : '버리기'}
+            {armed ? 'DISCARD? 한 번 더' : 'DISCARD'}
           </button>
-          <button type="button" className="btn" disabled={busy} onClick={load} title="변경 다시 읽기">
-            새로 고침
+          <button type="button" className="btn" disabled={busy} onClick={load} title="변경을 다시 읽어요">
+            REFRESH
           </button>
           <button type="button" className="btn ghost" onClick={onClose}>
-            대화로 돌아가기
+            BACK TO CHAT
           </button>
         </div>
       </header>

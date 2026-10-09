@@ -1,3 +1,12 @@
+/* Archivo 900을 굵기 400 이름으로 다시 등록: --kr 자리(굵기 지정 없음)에서 영어 라벨이 Black Han Sans 라틴 대신 Archivo로 나오게 */
+@font-face {
+  font-family: 'WT Display';
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url('../../../node_modules/@fontsource/archivo/files/archivo-latin-900-normal.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
 /* WHENTERMINAL 디자인 토큰 — G안: 스위스 포스터. 흰 종이 + 검은 굵은 선 + 신호색 빨강 하나.
    크기·굵기 대비로 위계를 만들고, 색은 '사람이 봐야 할 것'(승인 대기·오류)에만 쓴다. */
 :root {
@@ -22,7 +31,8 @@
   --rule-thick: 6px solid var(--line);
   --font: 'Pretendard Variable', Pretendard, 'Apple SD Gothic Neo', 'Malgun Gothic', system-ui, sans-serif;
   --disp: 'Archivo', 'Pretendard Variable', sans-serif;
-  --kr: 'Black Han Sans', 'Pretendard Variable', sans-serif;
+  /* 큰 글자: 라틴·숫자는 Archivo 900, 한글은 Black Han Sans (WT Display는 한글이 없어 다음 글꼴로 넘어간다) */
+  --kr: 'WT Display', 'Black Han Sans', 'Pretendard Variable', sans-serif;
   --mono: 'Geist Mono', 'SF Mono', 'Cascadia Code', 'D2Coding', Consolas, monospace;
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
@@ -120,6 +130,15 @@ kbd { display: inline-block; font: 500 11px/1 var(--mono); padding: 3px 5px; col
 .side-label span { flex: 1; }
 .side-add { border: 0; background: none; padding: 0; font: 700 12px var(--font); letter-spacing: 0; }
 .side-add:hover { color: var(--signal); }
+.side-row { display: flex; align-items: stretch; border-bottom: var(--rule); }
+.side-row > .nav { flex: 1; min-width: 0; border-bottom: 0; }
+/* 프로젝트 닫기: 올려 두면 오른쪽 ×가 보이고, 한 번 누르면 빨갛게 넓어져 확인을 받는다 */
+.side-x { flex: none; width: 30px; padding: 0; border: 0; overflow: hidden; background: transparent; color: var(--ink); font: 900 18px/1 var(--disp); white-space: nowrap; opacity: 0; transition: opacity var(--t-fast) var(--ease-out), width var(--t-med) var(--ease-out), background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out); }
+.side-row:hover .side-x, .side-x:focus-visible { opacity: 0.55; }
+.side-row > .nav { padding-right: 6px; }
+.side-row:has(> .nav.on) .side-x { background: var(--sel-bg); color: var(--sel-fg); }
+.side-x:hover { opacity: 1; background: var(--signal) !important; color: var(--on-signal) !important; }
+.side-project.armed .side-x { opacity: 1; width: 84px; background: var(--signal); color: var(--on-signal); font: 14px/1 var(--kr); }
 .threads { display: flex; flex-direction: column; border-bottom: var(--rule); }
 .thread { display: flex; align-items: center; gap: 10px; padding: 6px 18px 6px 56px; border: 0; background: transparent; color: var(--ink); font-size: 12.5px; font-weight: 600; text-align: left; }
 .thread:hover { background: var(--wash); }
@@ -232,8 +251,9 @@ kbd { display: inline-block; font: 500 11px/1 var(--mono); padding: 3px 5px; col
 .band-meta { display: flex; gap: 10px; font: 600 11.5px/1.2 var(--disp); letter-spacing: 0.1em; text-transform: uppercase; }
 .band-title { font-size: 17px; font-weight: 800; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .band-side { flex: none; display: flex; align-items: center; gap: 12px; }
-.stage-word { font: 50px/1 var(--kr); }
-.stage-word .roll { width: 2.1em; height: 1.05em; }
+.stage-word { font: 34px/1 var(--kr); letter-spacing: -0.01em; }
+.stage-word .roll { width: 4.6em; height: 1.05em; }
+.stage-word .roll > span { text-align: right; }
 .q { display: inline-block; font: 64px/0.9 var(--kr); animation: q-pulse 1.6s var(--ease-io) infinite; }
 .act { display: flex; align-items: center; gap: 12px; font: 12.5px var(--mono); min-width: 0; }
 .act-text { flex: 1; min-width: 0; height: 19px; }
@@ -505,8 +525,8 @@ kbd { display: inline-block; font: 500 11px/1 var(--mono); padding: 3px 5px; col
 .status-panel > * { width: 260px; padding: 0 20px; box-sizing: border-box; }
 .sp-head { display: flex; align-items: flex-end; justify-content: space-between; }
 .sp-k { font: 600 11px/1 var(--disp); letter-spacing: 0.14em; }
-.sp-word { font: 34px/1 var(--kr); }
-.sp-word .roll { width: 3em; height: 1.05em; }
+.sp-word { font: 24px/1 var(--kr); }
+.sp-word .roll { width: 6.5em; height: 1.05em; }
 .sp-word .roll > span { text-align: right; }
 .sp-meter { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
 .sp-meter span { display: flex; flex-direction: column; gap: 6px; }
@@ -514,7 +534,7 @@ kbd { display: inline-block; font: 500 11px/1 var(--mono); padding: 3px 5px; col
 .sp-meter .done i { background: var(--ink); }
 .sp-meter .cur i { background: var(--ink); animation: blink-soft 1.4s var(--ease-io) infinite; }
 .status-panel.waiting .sp-meter .cur i { background: var(--signal); box-shadow: none; animation: none; }
-.sp-meter em { font: 10.5px/1 var(--mono); font-style: normal; color: var(--gray); text-align: center; }
+.sp-meter em { font: 9.5px/1 var(--mono); letter-spacing: -0.03em; font-style: normal; color: var(--gray); text-align: center; }
 .sp-meter .done em, .sp-meter .cur em { color: var(--ink); }
 .sp-stats { display: grid; grid-template-columns: repeat(3, 1fr); margin: 0; border-top: var(--rule); border-bottom: var(--rule); }
 .sp-stats > div { padding: 10px 0; }

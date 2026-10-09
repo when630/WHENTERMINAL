@@ -25,6 +25,7 @@
   - 컨텍스트 사용률은 응답이 끝날 때마다 `getContextUsage({ detail: 'summary' })`로 받아 `Conversation.contextPercent`에 저장
   - 컴팩트는 같은 세션에 `/compact`를 보낸다. 이때 오는 result는 작업 완료가 아니므로 상태·보고서를 바꾸지 않는다 (`manualCompact`)
   - 대화 닫기는 세션을 끝내고(실행 중이면 중단) 대화를 목록에서 뺀다. 마지막 대화면 빈 대화를 새로 만든다. `Ctrl+W` 두 번·탭 × 두 번, `/close`는 바로 닫음. 확인 로직은 클리어와 같은 `confirmTwice`(App.tsx)
+  - 프로젝트 닫기: 사이드바 ×를 두 번 또는 대화창에서 `Ctrl+Shift+W` 두 번(`confirmTwice`의 `project`). 세션을 모두 끝내고 대기열에서 빼고, 변경 없는 작업 공간만 정리한 뒤 목록에서 뺀다(`disposeProject` → `store.removeProject`). 프로젝트 폴더는 건드리지 않는다
   - 클리어는 세션을 닫고 `sessionId`를 지운다. 다음 메시지가 새 세션을 만든다. 실수 방지로 `Ctrl+L`을 3초 안에 두 번 눌러야 한다
 - `src/main/store.ts` — `userData/projects.json`에 프로젝트·대화·SDK 세션 ID 저장 (재시작 시 resume)
 - `src/renderer/src/App.tsx` — 전역 키 처리 (기획서 7장 단축키 맵)
@@ -64,7 +65,10 @@
 - 슬래시 명령 후보: 입력창에 `/`를 치면 `SlashMenu`. 목록은 살아 있는 세션의 `supportedCommands()`, 없으면 메시지 없이 CLI만 띄워 받아 프로젝트 폴더별로 5분 캐시 (`src/main/agent/commands.ts`). `/compact` `/clear`는 앱이 직접 처리
   - 메뉴가 열린 입력창에는 `data-menu-open`을 달아 App의 전역 키 처리(Esc 중단, Ctrl+K 등)를 건너뛴다
 - preload는 sandbox라 CJS(`index.cjs`)로 빌드됨. preload에서는 `electron` 외 모듈 import 금지 (`@shared` 상수는 번들에 포함되므로 허용)
-- UI 문구는 한국어
+- UI 문구: 라벨은 영어 대문자, 문장은 한국어 해요체
+  - 라벨(상태·모드·단계·버튼·제목·칸 이름·단축키 안내·진행 문구): `RUNNING` `NEEDS YOU` `COMPACT` `READ session.ts`. 설정의 항목 이름만 문장형 영어(`Clear (twice)`)
+  - 문장(안내·툴팁·확인 경고·오류 설명·빈 화면): 한국어 해요체. '-습니다' 쓰지 말 것
+  - 큰 글자 `--kr`은 `WT Display`(Archivo 900을 굵기 400으로 다시 등록, 라틴만) → Black Han Sans 순서라 영어는 Archivo, 한글은 Black Han Sans로 나온다
 - 디자인은 G안(스위스 포스터): 흰 종이 + 검은 굵은 선 + 신호색 빨강 하나. 토큰은 `src/renderer/src/styles.css` 맨 위
   - 빨강은 사람이 봐야 할 것(승인 대기·오류)에만 쓴다. 실행 중은 검정, 완료는 외곽선 글자
   - 큰 글자는 Archivo 900(라틴·숫자)과 Black Han Sans(한글), 본문은 Pretendard, 코드는 Geist Mono. 모두 npm 패키지로 번들한다 (오프라인 동작)

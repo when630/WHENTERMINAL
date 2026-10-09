@@ -13,9 +13,9 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { error: E
     if (!error) return this.props.children
     return (
       <div className="crash">
-        <div className="crash-title">화면 오류가 발생했습니다</div>
+        <div className="crash-title">화면에 문제가 생겼어요</div>
         <pre>{error.stack ?? error.message}</pre>
-        <button onClick={() => this.setState({ error: null })}>다시 시도</button>
+        <button onClick={() => this.setState({ error: null })}>RETRY</button>
       </div>
     )
   }

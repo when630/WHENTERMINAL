@@ -20,6 +20,9 @@ interface Props {
   onOpenProject: (index: number) => void
   onOpenConversation: (projectId: string, conversationId: string) => void
   onAddProject: () => void
+  /** 닫기 확인을 기다리는 프로젝트 (× 또는 단축키 한 번) */
+  armedProjectId: string | null
+  onRemoveProjectRequest: (projectId: string) => void
 }
 
 export function Sidebar(props: Props): React.JSX.Element {
@@ -33,15 +36,15 @@ export function Sidebar(props: Props): React.JSX.Element {
       </div>
 
       <button type="button" className={`nav nav-home ${activeProjectId === null && !props.settingsOpen ? 'on' : ''}`} onClick={props.onHome}>
-        <span className="nav-name">홈</span>
+        <span className="nav-name">HOME</span>
         {unreadTotal > 0 && <span className="pill">{unreadTotal}</span>}
         <Keys keys={km.goHome} />
       </button>
 
       <div className="side-label">
-        <span>프로젝트</span>
+        <span>PROJECTS</span>
         <button type="button" className="side-add" onClick={props.onAddProject} title="프로젝트 추가 (Ctrl+N)">
-          + 추가
+          + ADD
         </button>
       </div>
 
@@ -52,7 +55,8 @@ export function Sidebar(props: Props): React.JSX.Element {
         const live = p.conversations.map((c) => convs[c.id]).find((s) => s && isActive(s.status) && s.task)
         const progress = live?.task ? Math.min(1, (live.task.stage + 0.5) / STAGES.length) : 0
         return (
-          <div key={p.id} className="side-project">
+          <div key={p.id} className={`side-project ${props.armedProjectId === p.id ? 'armed' : ''}`}>
+            <div className="side-row">
             <button type="button" className={`nav ${on ? 'on' : ''}`} onClick={() => props.onOpenProject(i)} title={`${p.path}\n${ALT_LABEL}+${HOME_ROW[i] ?? '-'}`}>
               <span className="nav-key">{HOME_ROW[i] ?? ''}</span>
               <span className="nav-name">{p.name}</span>
@@ -65,6 +69,16 @@ export function Sidebar(props: Props): React.JSX.Element {
                 <span className={`dot dot-${status}`} title={STATUS_LABEL[status]} />
               )}
             </button>
+            <button
+              type="button"
+              className="side-x"
+              aria-label={props.armedProjectId === p.id ? '한 번 더 누르면 닫혀요' : `${p.name} 프로젝트 닫기`}
+              title={props.armedProjectId === p.id ? '한 번 더 누르면 목록에서 닫혀요. 폴더와 파일은 그대로예요' : `프로젝트 닫기 (${km.closeProject} 두 번)`}
+              onClick={() => props.onRemoveProjectRequest(p.id)}
+            >
+              {props.armedProjectId === p.id ? 'CLOSE?' : '×'}
+            </button>
+            </div>
             {on && openConversations(p).length > 1 && (
               <div className="threads">
                 {openConversations(p).map((c) => {
@@ -91,7 +105,7 @@ export function Sidebar(props: Props): React.JSX.Element {
       <span className="side-spacer" />
 
       <button type="button" className={`nav nav-settings ${props.settingsOpen ? 'on' : ''}`} onClick={props.onSettings}>
-        <span className="nav-name">설정</span>
+        <span className="nav-name">SETTINGS</span>
         <Keys keys={km.openSettings} />
       </button>
 
@@ -117,7 +131,7 @@ function Usage({ usage, onRefresh }: { usage: UsageInfo | null; onRefresh: () =>
   return (
     <div className="usage" aria-label="구독 한도">
       <div className="usage-head">
-        <span>구독 한도</span>
+        <span>USAGE</span>
         {usage?.plan && <span className="usage-plan">{usage.plan.toUpperCase()}</span>}
         <button type="button" className={`usage-refresh ${loading ? 'spin' : ''}`} onClick={refresh} aria-label="한도 새로 고침" title="새로 고침">
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="square" aria-hidden="true">

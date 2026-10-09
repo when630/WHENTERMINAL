@@ -17,13 +17,13 @@ export const STATUS_PRIORITY: Record<AgentStatus, number> = {
 }
 
 export const STATUS_LABEL: Record<AgentStatus, string> = {
-  idle: '유휴',
-  queued: '대기',
-  running: '실행 중',
-  waiting_approval: '승인 대기',
-  done: '완료',
-  error: '오류',
-  stopped: '중단',
+  idle: 'IDLE',
+  queued: 'QUEUED',
+  running: 'RUNNING',
+  waiting_approval: 'NEEDS YOU',
+  done: 'DONE',
+  error: 'ERROR',
+  stopped: 'STOPPED',
 }
 
 /**
@@ -33,10 +33,10 @@ export const STATUS_LABEL: Record<AgentStatus, string> = {
 export type AgentMode = 'default' | 'acceptEdits' | 'auto' | 'plan'
 export const MODE_CYCLE: AgentMode[] = ['default', 'acceptEdits', 'auto', 'plan']
 export const MODE_LABEL: Record<AgentMode, string> = {
-  default: '기본',
-  acceptEdits: '편집 자동 허용',
-  auto: '자동',
-  plan: '플랜',
+  default: 'DEFAULT',
+  acceptEdits: 'ACCEPT EDITS',
+  auto: 'AUTO',
+  plan: 'PLAN',
 }
 export const isAgentMode = (m: unknown): m is AgentMode => MODE_CYCLE.includes(m as AgentMode)
 

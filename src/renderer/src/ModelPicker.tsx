@@ -62,8 +62,8 @@ export function ModelPicker({ projectId, conversationId, current, choice, usage 
 
   return (
     <div className="model-pick" ref={boxRef}>
-      <button type="button" className={`meta ${open ? 'open' : ''}`} title={current?.id ?? '첫 응답 뒤에 표시'} aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
-        <span className="meta-k">모델</span>
+      <button type="button" className={`meta ${open ? 'open' : ''}`} title={current?.id ?? '첫 응답 뒤에 보여요'} aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+        <span className="meta-k">MODEL</span>
         <span className="meta-v model-v">{current?.label ?? '–'}</span>
         <span className="model-caret" aria-hidden="true">▾</span>
       </button>
@@ -85,11 +85,11 @@ export function ModelPicker({ projectId, conversationId, current, choice, usage 
                 onClick={() => pick(m)}
               >
                 <span className="model-name">
-                  {m.value === 'default' ? '기본값' : m.displayName}
-                  {on && <span className="model-now">사용 중</span>}
-                  {pct !== null && pct >= 80 && <span className={`model-limit ${pct >= 100 ? 'full' : ''}`}>한도 {pct}%</span>}
+                  {m.value === 'default' ? 'Default' : m.displayName}
+                  {on && <span className="model-now">IN USE</span>}
+                  {pct !== null && pct >= 80 && <span className={`model-limit ${pct >= 100 ? 'full' : ''}`}>LIMIT {pct}%</span>}
                 </span>
-                <span className="model-desc">{m.value === 'default' ? `설정을 따름 · ${m.displayName}` : m.description}</span>
+                <span className="model-desc">{m.value === 'default' ? `설정을 따라요 · ${m.displayName}` : m.description}</span>
               </button>
             )
           })}

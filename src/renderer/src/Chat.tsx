@@ -23,6 +23,8 @@ interface Props {
   clearArmed: boolean
   /** 닫기 확인을 기다리는 대화 ID (Ctrl+W 또는 탭의 × 한 번) */
   closeArmedId: string | null
+  /** 이 프로젝트 닫기 확인을 기다리는 중 */
+  projectArmed: boolean
   onClearRequest: () => void
   onCloseRequest: (conversationId: string) => void
   /** 확인 없이 바로 닫기 (/close로 직접 입력했을 때) */
@@ -31,7 +33,7 @@ interface Props {
   onRespond: (projectId: string, conversationId: string, requestId: string, decision: PermissionDecision) => void
 }
 
-export function Chat({ project, projects, conversationId, convs, mode, usage, clearArmed, closeArmedId, onClearRequest, onCloseRequest, onClose, onSelectConversation, onRespond }: Props): React.JSX.Element {
+export function Chat({ project, projects, conversationId, convs, mode, usage, clearArmed, closeArmedId, projectArmed, onClearRequest, onCloseRequest, onClose, onSelectConversation, onRespond }: Props): React.JSX.Element {
   const km = useKeymap()
   const state = convs[conversationId] ?? emptyConversation()
   const [draft, setDraft] = useState('')
@@ -40,7 +42,7 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
   const pending = state.permissions[0]
   const permission = usePresence(pending)
   const closeArmed = closeArmedId === conversationId
-  const confirm = usePresence(clearArmed ? 'clear' : closeArmed ? 'close' : null)
+  const confirm = usePresence(projectArmed ? 'project' : clearArmed ? 'clear' : closeArmed ? 'close' : null)
   const compacting = usePresence(state.compacting ? true : null)
   // 작업 중 줄: 생각하는 중·도구 사이처럼 화면에 새로 그려지는 게 없을 때도 일하고 있음을 보인다
   const working = usePresence((state.status === 'running' || state.status === 'queued') && !state.compacting ? true : null)
@@ -229,7 +231,7 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
             <b>{project.name}</b>
             {conv?.worktree ? (
               <span className="tb-wt" title={conv.worktree.path}>
-                <span className="wt-tag">작업 공간</span> {conv.worktree.branch} · {conv.worktree.path}
+                <span className="wt-tag">WORKTREE</span> {conv.worktree.branch} · {conv.worktree.path}
               </span>
             ) : (
               <span>{project.path}</span>
@@ -239,27 +241,27 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
         <div className="tb-right">
           {otherWaiting.map(({ p, i, n }) => (
             <span key={p.id} className="badge other">
-              <Keys keys={`alt ${HOME_ROW[i]}`} /> {p.name} 승인 대기 {n}
+              <Keys keys={`alt ${HOME_ROW[i]}`} /> {p.name} NEEDS YOU {n}
             </span>
           ))}
           {conv?.worktree && (
-            <button type="button" className={`tb-btn ${showChanges ? 'armed' : ''}`} onClick={() => setShowChanges((v) => !v)} title={`작업 공간 ${conv.worktree.branch}의 변경 보기·합치기`}>
-              변경
+            <button type="button" className={`tb-btn ${showChanges ? 'armed' : ''}`} onClick={() => setShowChanges((v) => !v)} title={`작업 공간 ${conv.worktree.branch}의 변경을 보고 합쳐요`}>
+              CHANGES
             </button>
           )}
-          <div className={`ctx ${hot ? 'hot' : ''}`} title={state.context ? `${state.context.tokens.toLocaleString()} / ${state.context.max.toLocaleString()} 토큰${autoAt ? ` · ${autoAt}%에서 자동 컴팩트` : ''}` : '첫 응답 뒤에 표시'}>
-            <span className="ctx-label">컨텍스트</span>
+          <div className={`ctx ${hot ? 'hot' : ''}`} title={state.context ? `${state.context.tokens.toLocaleString()} / ${state.context.max.toLocaleString()} 토큰${autoAt ? ` · ${autoAt}%에서 자동으로 컴팩트해요` : ''}` : '첫 응답 뒤에 보여요'}>
+            <span className="ctx-label">CONTEXT</span>
             <b>{ctxPercent !== undefined ? `${ctxPercent}%` : '–'}</b>
             <span className="ctx-bar" aria-hidden="true">
               <i style={{ width: `${Math.min(100, ctxPercent ?? 0)}%` }} />
               {autoAt !== undefined && <em style={{ left: `${autoAt}%` }} />}
             </span>
           </div>
-          <button type="button" className="tb-btn" disabled={!canCompact} onClick={() => compact()} title="대화를 요약해 컨텍스트를 줄입니다 (/compact)">
-            {state.compacting ? '컴팩트 중' : '컴팩트'} <Keys keys={km.compact} />
+          <button type="button" className="tb-btn" disabled={!canCompact} onClick={() => compact()} title="대화를 요약해 컨텍스트를 줄여요 (/compact)">
+            {state.compacting ? 'COMPACTING' : 'COMPACT'} <Keys keys={km.compact} />
           </button>
-          <button type="button" className={`tb-btn ${clearArmed ? 'armed' : ''}`} onClick={onClearRequest} title="컨텍스트를 비우고 새 세션으로 시작합니다 (/clear)">
-            {clearArmed ? '한 번 더' : '클리어'} <Keys keys={km.clear} />
+          <button type="button" className={`tb-btn ${clearArmed ? 'armed' : ''}`} onClick={onClearRequest} title="컨텍스트를 비우고 새 세션으로 시작해요 (/clear)">
+            {clearArmed ? 'AGAIN' : 'CLEAR'} <Keys keys={km.clear} />
           </button>
           <span className={`badge badge-${state.status}`}>{STATUS_LABEL[state.status]}</span>
         </div>
@@ -286,11 +288,11 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
                 <button
                   type="button"
                   className="tab-x"
-                  aria-label={armedHere ? '한 번 더 누르면 닫힘' : `${c.title} 닫기`}
-                  title={armedHere ? '한 번 더 누르면 닫힙니다' : '대화 닫기 (Ctrl+W 두 번)'}
+                  aria-label={armedHere ? '한 번 더 누르면 닫혀요' : `${c.title} 닫기`}
+                  title={armedHere ? '한 번 더 누르면 닫혀요' : '대화 닫기 (Ctrl+W 두 번)'}
                   onClick={() => onCloseRequest(c.id)}
                 >
-                  {armedHere ? '닫기?' : '×'}
+                  {armedHere ? 'CLOSE?' : '×'}
                 </button>
                 </span>
               )
@@ -308,7 +310,7 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
           <div className="tb-meta">
             <ModelPicker projectId={project.id} conversationId={conversationId} current={model} choice={conv?.modelChoice} usage={usage} />
             <button type="button" className={`meta meta-mode mode-${mode}`} onClick={cycleMode} title="권한 모드 바꾸기">
-              <span className="meta-k">모드</span>
+              <span className="meta-k">MODE</span>
               <span className="meta-v">{MODE_LABEL[mode]}</span>
               <Keys keys={km.cycleMode} />
             </button>
@@ -332,7 +334,7 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
         <main className="transcript" ref={scrollRef} onScroll={onScroll}>
           {state.items.length === 0 && (
             <div className="placeholder">
-              무엇을 할까요?
+              무엇을 맡길까요?
               <span className="mono">{project.path}</span>
             </div>
           )}
@@ -340,7 +342,7 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
             <Item key={idx} item={item} n={item.type === 'tool' ? ++toolCount : 0} root={project.path} enter={idx >= seen.current.count} />
           ))}
           {working.item && <Working status={state.status} activity={state.task?.activity} startedAt={state.task?.startedAt} leaving={working.leaving} />}
-          {compacting.item && <div className={`msg compacting ${compacting.leaving ? 'leaving' : ''}`}>컴팩트 중 · 지금까지의 대화를 요약하고 있어요</div>}
+          {compacting.item && <div className={`msg compacting ${compacting.leaving ? 'leaving' : ''}`}>COMPACTING · 지금까지의 대화를 요약하고 있어요</div>}
           {permission.item && (
             <PermissionBox
               key={permission.item.requestId}
@@ -356,13 +358,17 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
 
       {confirm.item && (
         <div className={`confirm ${confirm.leaving ? 'leaving' : ''}`} role="alert">
-          {confirm.item === 'close' ? (
+          {confirm.item === 'project' ? (
             <>
-              <Keys keys={km.closeConversation} /> 를 한 번 더 누르면 {state.status === 'running' || state.status === 'waiting_approval' ? '실행 중인 작업을 멈추고 ' : ''}이 대화를 닫습니다
+              <Keys keys={km.closeProject} /> 를 한 번 더 누르면 {project.name} 프로젝트를 목록에서 닫아요. 실행 중인 작업은 멈추고, 폴더와 파일은 그대로예요
+            </>
+          ) : confirm.item === 'close' ? (
+            <>
+              <Keys keys={km.closeConversation} /> 를 한 번 더 누르면 {state.status === 'running' || state.status === 'waiting_approval' ? '실행 중인 작업을 멈추고 ' : ''}이 대화를 닫아요
             </>
           ) : (
             <>
-              <Keys keys={km.clear} /> 을 한 번 더 누르면 컨텍스트를 비우고 새 세션으로 시작합니다
+              <Keys keys={km.clear} /> 을 한 번 더 누르면 컨텍스트를 비우고 새 세션으로 시작해요
             </>
           )}
         </div>
@@ -385,7 +391,7 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
             aria-autocomplete="list"
             aria-expanded={menuOpen}
             rows={2}
-            placeholder={busy ? '작업 중 · 입력하면 다음 차례로 보냅니다' : '메시지 입력 · / 명령 · @ 파일'}
+            placeholder={busy ? '작업 중이에요 · 지금 입력하면 다음 차례로 보내요' : '메시지 입력 · / 명령 · @ 파일'}
             onChange={(e) => {
               setDraft(e.target.value)
               setCaret(e.target.selectionStart)
@@ -407,14 +413,14 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
       </div>
 
       <footer className="hints">
-        <span><Keys keys={km.goHome} /> 홈</span>
-        <span><Keys keys={km.nextConversation} /> 하위 대화</span>
-        <span><Keys keys="alt A S D…" /> 다른 프로젝트</span>
-        <span><Keys keys="esc" /> 중단</span>
-        <span><Keys keys={km.clear} /> 클리어</span>
-        <span><Keys keys={km.closeConversation} /> 닫기</span>
-        <span><Keys keys={km.compact} /> 컴팩트</span>
-        {pending && <span><Keys keys={`${km.allow} ${km.always} ${km.deny}`} /> 허용 · 항상 · 거절</span>}
+        <span><Keys keys={km.goHome} /> HOME</span>
+        <span><Keys keys={km.nextConversation} /> TABS</span>
+        <span><Keys keys="alt A S D…" /> PROJECTS</span>
+        <span><Keys keys="esc" /> STOP</span>
+        <span><Keys keys={km.clear} /> CLEAR</span>
+        <span><Keys keys={km.closeConversation} /> CLOSE</span>
+        <span><Keys keys={km.compact} /> COMPACT</span>
+        {pending && <span><Keys keys={`${km.allow} ${km.always} ${km.deny}`} /> APPROVE</span>}
       </footer>
     </div>
   )
@@ -433,7 +439,7 @@ function StatusPanel({ task, status }: { task: TaskInfo; status: string }): Reac
   const waiting = status === 'waiting_approval'
   const live = status === 'running' || waiting || status === 'queued'
   const stage = Math.min(task.stage, STAGES.length - 1)
-  const word = status === 'queued' ? '대기' : waiting ? '확인' : STAGES[stage]
+  const word = status === 'queued' ? 'QUEUED' : waiting ? 'APPROVE' : STAGES[stage]
   const ms = task.durationMs ?? (task.finishedAt ?? now) - task.startedAt
   return (
     <aside className={`status-panel ${waiting ? 'waiting' : ''} ${live ? 'live' : ''}`} aria-label="작업 상태">
@@ -450,14 +456,14 @@ function StatusPanel({ task, status }: { task: TaskInfo; status: string }): Reac
         ))}
       </div>
       <dl className="sp-stats">
-        <div><dt>도구</dt><dd>{task.tools}<small>회</small></dd></div>
-        <div><dt>경과</dt><dd>{clock(ms)}</dd></div>
-        <div><dt>파일</dt><dd>{task.files.length}<small>개</small></dd></div>
+        <div><dt>TOOLS</dt><dd>{task.tools}</dd></div>
+        <div><dt>TIME</dt><dd>{clock(ms)}</dd></div>
+        <div><dt>FILES</dt><dd>{task.files.length}</dd></div>
       </dl>
       <div className="sp-eq" aria-hidden="true">
         {Array.from({ length: 12 }, (_, i) => <i key={i} style={{ animationDelay: `${-((i * 7) % 11) * 0.13}s` }} />)}
       </div>
-      <p className="sp-act">{waiting ? '확인을 기다리는 중' : task.activity}</p>
+      <p className="sp-act">{waiting ? 'WAITING FOR YOU' : task.activity}</p>
       {task.files.length > 0 && (
         <ul className="sp-files">
           {task.files.map((f) => <li key={f} title={f}>{f.split(/[\\/]/).pop()}</li>)}
@@ -473,9 +479,9 @@ function Working({ status, activity, startedAt, leaving }: { status: string; act
   return (
     <div className={`working ${status === 'queued' ? 'queued' : ''} ${leaving ? 'leaving' : ''}`} role="status" aria-live="polite">
       <span className="working-sq" aria-hidden="true" />
-      <span className="working-act">{activity ?? '작업 중'}</span>
+      <span className="working-act">{activity ?? 'WORKING'}</span>
       {startedAt !== undefined && <span className="working-t">{clock(now - startedAt)}</span>}
-      <span className="working-k"><Keys keys="esc" /> 중단</span>
+      <span className="working-k"><Keys keys="esc" /> STOP</span>
       <span className="working-bar" aria-hidden="true"><i /></span>
     </div>
   )
@@ -497,7 +503,7 @@ function Item({ item, n, root, enter }: { item: TranscriptItem; n: number; root:
     case 'divider':
       return <div className={`divider${e}`} role="separator">■ {item.text}</div>
     case 'tool': {
-      const status = item.result === undefined ? '실행 중' : item.isError ? '오류' : '완료'
+      const status = item.result === undefined ? 'RUNNING' : item.isError ? 'ERROR' : 'DONE'
       return (
         <details className={`tool ${item.isError ? 'error' : ''}${e}`}>
           <summary>
@@ -510,8 +516,8 @@ function Item({ item, n, root, enter }: { item: TranscriptItem; n: number; root:
             <ToolInput name={item.name} input={item.input} />
             {item.result !== undefined && (
               <>
-                <h5>결과</h5>
-                <pre>{item.result || '(출력 없음)'}</pre>
+                <h5>OUTPUT</h5>
+                <pre>{item.result || '(no output)'}</pre>
               </>
             )}
           </div>
@@ -537,7 +543,7 @@ function ToolInput({ name, input }: { name: string; input: unknown }): React.JSX
   if (edits.length === 0) {
     return (
       <>
-        <h5>입력</h5>
+        <h5>INPUT</h5>
         <pre>{JSON.stringify(input, null, 2)}</pre>
       </>
     )
@@ -548,12 +554,12 @@ function ToolInput({ name, input }: { name: string; input: unknown }): React.JSX
   ])
   return (
     <>
-      <h5>변경 · {typeof o.file_path === 'string' ? o.file_path : ''}</h5>
+      <h5>DIFF · {typeof o.file_path === 'string' ? o.file_path : ''}</h5>
       <div className="diff">
         {lines.slice(0, DIFF_LINE_LIMIT).map((l, i) => (
           <span key={i} className={l.k}>{l.k === 'add' ? '+ ' : '- '}{l.t}</span>
         ))}
-        {lines.length > DIFF_LINE_LIMIT && <span className="muted">… {lines.length - DIFF_LINE_LIMIT}줄 더</span>}
+        {lines.length > DIFF_LINE_LIMIT && <span className="muted">… +{lines.length - DIFF_LINE_LIMIT} lines</span>}
       </div>
     </>
   )
@@ -566,17 +572,17 @@ function PermissionBox({ req, leaving, onRespond }: { req: PermissionRequest; le
       <div className="permission-head">
         <span className="q" aria-hidden="true">?</span>
         <div>
-          <div className="permission-title">{req.title ?? `${req.toolName} 실행할까요`}</div>
+          <div className="permission-title">{req.title ?? `${req.toolName}, 실행할까요?`}</div>
           {req.description && <div className="permission-desc">{req.description}</div>}
         </div>
       </div>
       <pre>{JSON.stringify(req.input, null, 2)}</pre>
       <div className="permission-actions">
-        <button type="button" onClick={() => onRespond('allow')}>허용 {!req.defaultToNo && <Keys keys={km.allow} />}</button>
-        {!req.suppressAlwaysAllow && <button type="button" onClick={() => onRespond('always')}>항상 허용 {!req.defaultToNo && <Keys keys={km.always} />}</button>}
-        <button type="button" onClick={() => onRespond('deny')}>거절 <Keys keys={km.deny} /></button>
+        <button type="button" onClick={() => onRespond('allow')}>ALLOW {!req.defaultToNo && <Keys keys={km.allow} />}</button>
+        {!req.suppressAlwaysAllow && <button type="button" onClick={() => onRespond('always')}>ALWAYS ALLOW {!req.defaultToNo && <Keys keys={km.always} />}</button>}
+        <button type="button" onClick={() => onRespond('deny')}>DENY <Keys keys={km.deny} /></button>
       </div>
-      {req.defaultToNo && <div className="muted">이 요청은 단축키로 승인할 수 없습니다. 버튼을 클릭하세요.</div>}
+      {req.defaultToNo && <div className="muted">이 요청은 단축키로 허락할 수 없어요. 버튼을 직접 눌러 주세요.</div>}
     </div>
   )
 }
