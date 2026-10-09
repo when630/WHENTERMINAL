@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { cwdOf, IPC, type Conversation, type ModelOption, type StoredTask, type UsageInfo, type AgentEventEnvelope, type AgentMode, type PermissionDecision, type RateLimitInfo } from '@shared/types'
 import { newConversationId, ProjectStore } from './store'
-import { createWorktree, isGitRepo } from './worktree'
+import { createWorktree, discardWorktree, isGitRepo, mergeWorktree, worktreeChanges } from './worktree'
 import { searchFiles } from './files'
 import { SettingsStore } from './settings'
 import { applyBadge, Notifier } from './notify'
@@ -234,6 +234,31 @@ function bootstrap(): void {
     const file = join(dir, `screenshot-${stamp}-${Math.random().toString(36).slice(2, 6)}.${safeExt}`)
     writeFileSync(file, Buffer.from(data))
     return file
+  })
+  const worktreeOf = (projectId: string, conversationId: string) => {
+    const project = store.get(projectId)
+    const conv = store.getConversation(projectId, conversationId)
+    return project && conv?.worktree ? { project, conv, wt: conv.worktree } : null
+  }
+  ipcMain.handle(IPC.worktreeChanges, async (_e, projectId: string, conversationId: string) => {
+    const t = worktreeOf(projectId, conversationId)
+    return t ? worktreeChanges(t.project.path, t.wt) : null
+  })
+  ipcMain.handle(IPC.worktreeMerge, async (_e, projectId: string, conversationId: string) => {
+    const t = worktreeOf(projectId, conversationId)
+    if (!t) return { ok: false, message: '작업 공간이 없는 대화예요' }
+    return mergeWorktree(t.project.path, t.wt, t.conv.title)
+  })
+  ipcMain.handle(IPC.worktreeDiscard, async (_e, projectId: string, conversationId: string) => {
+    const t = worktreeOf(projectId, conversationId)
+    // 대화를 먼저 닫아 세션을 끝낸 뒤 작업 공간을 지운다 (보고서 때문에 남는 대화도 작업 공간은 없앤다)
+    const next = manager.closeConversation(projectId, conversationId)
+    if (t) {
+      await discardWorktree(t.project.path, t.wt)
+      store.updateConversation(projectId, conversationId, { worktree: undefined })
+    }
+    projectsChanged()
+    return next
   })
   ipcMain.handle(IPC.pickFiles, async () => {
     const res = await dialog.showOpenDialog(win!, { title: '첨부할 파일', properties: ['openFile', 'multiSelections'] })

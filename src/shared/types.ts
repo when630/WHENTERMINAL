@@ -117,6 +117,16 @@ export interface ContextInfo {
   autoCompactAt?: number
 }
 
+export interface WorktreeChanges {
+  branch: string
+  target: string
+  files: { path: string; status: string }[]
+  diff: string
+  truncated: boolean
+  dirty: boolean
+  ahead: number
+}
+
 /** 고를 수 있는 모델 (SDK ModelInfo) */
 export interface ModelOption {
   value: string
@@ -218,6 +228,9 @@ export const IPC = {
   peek: 'agent:peek',
   searchFiles: 'files:search',
   saveImage: 'files:save-image',
+  worktreeChanges: 'worktree:changes',
+  worktreeMerge: 'worktree:merge',
+  worktreeDiscard: 'worktree:discard',
   pickFiles: 'files:pick',
   listModels: 'agent:list-models',
   setModel: 'agent:set-model',
@@ -273,6 +286,12 @@ export interface WhenTerminalApi {
   pathForFile(file: File): string
   /** 붙여넣은 이미지(스크린샷)를 userData/attachments에 저장하고 경로를 돌려준다 */
   saveImage(data: Uint8Array, ext: string): Promise<string>
+  /** 작업 공간(worktree) 대화의 변경 요약과 diff */
+  worktreeChanges(projectId: string, conversationId: string): Promise<WorktreeChanges | null>
+  /** 커밋 안 한 변경을 커밋하고 프로젝트의 현재 브랜치에 합친다 */
+  worktreeMerge(projectId: string, conversationId: string): Promise<{ ok: boolean; message: string }>
+  /** 작업 공간과 브랜치를 지우고 대화를 닫는다. 옮겨 갈 대화 ID */
+  worktreeDiscard(projectId: string, conversationId: string): Promise<string>
   /** 파일 선택 창. 고른 파일들의 경로 (취소면 빈 배열) */
   pickFiles(): Promise<string[]>
   listModels(projectId: string): Promise<ModelOption[]>

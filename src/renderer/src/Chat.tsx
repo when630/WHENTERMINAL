@@ -7,6 +7,7 @@ import { useKeymap } from './settings'
 import { usePresence } from './motion'
 import { Markdown } from './Markdown'
 import { AttachButton, useAttach } from './attach'
+import { WorktreePanel } from './WorktreePanel'
 import { ModelPicker } from './ModelPicker'
 import { FileMenu, rankCommands, SlashMenu, useSlashCommands } from './SlashMenu'
 
@@ -193,6 +194,8 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
     return false
   }
 
+  const [showChanges, setShowChanges] = useState(false)
+  useEffect(() => setShowChanges(false), [conversationId])
   const attach = useAttach({ inputRef, value: draft, setValue: setDraft, root: conv?.worktree?.path ?? project.path, onCaret: setCaret })
 
   const submit = (raw = draft): void => {
@@ -236,6 +239,11 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
               <Keys keys={`alt ${HOME_ROW[i]}`} /> {p.name} 승인 대기 {n}
             </span>
           ))}
+          {conv?.worktree && (
+            <button type="button" className={`tb-btn ${showChanges ? 'armed' : ''}`} onClick={() => setShowChanges((v) => !v)} title={`작업 공간 ${conv.worktree.branch}의 변경 보기·합치기`}>
+              변경
+            </button>
+          )}
           <div className={`ctx ${hot ? 'hot' : ''}`} title={state.context ? `${state.context.tokens.toLocaleString()} / ${state.context.max.toLocaleString()} 토큰${autoAt ? ` · ${autoAt}%에서 자동 컴팩트` : ''}` : '첫 응답 뒤에 표시'}>
             <span className="ctx-label">컨텍스트</span>
             <b>{ctxPercent !== undefined ? `${ctxPercent}%` : '–'}</b>
@@ -305,26 +313,39 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
         </div>
       </header>
 
-      <main className="transcript" ref={scrollRef} onScroll={onScroll}>
-        {state.items.length === 0 && (
-          <div className="placeholder">
-            무엇을 할까요?
-            <span className="mono">{project.path}</span>
-          </div>
-        )}
-        {state.items.map((item, idx) => (
-          <Item key={idx} item={item} n={item.type === 'tool' ? ++toolCount : 0} root={project.path} enter={idx >= seen.current.count} />
-        ))}
-        {compacting.item && <div className={`msg compacting ${compacting.leaving ? 'leaving' : ''}`}>컴팩트 중 · 지금까지의 대화를 요약하고 있어요</div>}
-        {permission.item && (
-          <PermissionBox
-            key={permission.item.requestId}
-            req={permission.item}
-            leaving={permission.leaving}
-            onRespond={(d) => permission.item && !permission.leaving && onRespond(project.id, conversationId, permission.item.requestId, d)}
-          />
-        )}
-      </main>
+      {showChanges && conv?.worktree ? (
+        <WorktreePanel
+          projectId={project.id}
+          conversationId={conversationId}
+          refreshKey={`${state.status}:${state.items.length}`}
+          onClose={() => setShowChanges(false)}
+          onDiscarded={(next) => {
+            setShowChanges(false)
+            onSelectConversation(next)
+          }}
+        />
+      ) : (
+        <main className="transcript" ref={scrollRef} onScroll={onScroll}>
+          {state.items.length === 0 && (
+            <div className="placeholder">
+              무엇을 할까요?
+              <span className="mono">{project.path}</span>
+            </div>
+          )}
+          {state.items.map((item, idx) => (
+            <Item key={idx} item={item} n={item.type === 'tool' ? ++toolCount : 0} root={project.path} enter={idx >= seen.current.count} />
+          ))}
+          {compacting.item && <div className={`msg compacting ${compacting.leaving ? 'leaving' : ''}`}>컴팩트 중 · 지금까지의 대화를 요약하고 있어요</div>}
+          {permission.item && (
+            <PermissionBox
+              key={permission.item.requestId}
+              req={permission.item}
+              leaving={permission.leaving}
+              onRespond={(d) => permission.item && !permission.leaving && onRespond(project.id, conversationId, permission.item.requestId, d)}
+            />
+          )}
+        </main>
+      )}
 
       {confirm.item && (
         <div className={`confirm ${confirm.leaving ? 'leaving' : ''}`} role="alert">

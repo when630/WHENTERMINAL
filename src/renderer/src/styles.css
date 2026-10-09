@@ -367,6 +367,30 @@ kbd { display: inline-block; font: 500 11px/1 var(--mono); padding: 3px 5px; col
 .krow.conflict .kbind { border-color: var(--signal); color: var(--signal); }
 .krow.fixed .krow-label { color: var(--gray); }
 
+/* 작업 공간 변경 */
+.wt-panel { flex: 1; min-height: 0; display: flex; flex-direction: column; animation: screen-in 0.3s var(--ease-out) both; }
+.wt-head { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 14px 28px; border-bottom: var(--rule); }
+.wt-title { flex: 1; display: flex; align-items: baseline; gap: 14px; }
+.wt-title .kr { font-size: 30px; }
+.wt-title .mono { font-size: 12.5px; color: var(--gray); }
+.wt-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.btn.armed { background: var(--signal); color: var(--on-signal); border-color: var(--signal); }
+.wt-msg { padding: 10px 28px; font-weight: 700; font-size: 13.5px; border-bottom: var(--rule); white-space: pre-wrap; }
+.wt-msg.ok { background: var(--sel-bg); color: var(--sel-fg); }
+.wt-msg.bad { background: var(--signal); color: var(--on-signal); }
+.wt-body { flex: 1; min-height: 0; overflow-y: auto; padding-bottom: 24px; }
+.wt-files { list-style: none; margin: 0; padding: 8px 28px 14px; border-bottom: var(--rule); display: flex; flex-direction: column; gap: 4px; }
+.wt-files li { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+.wt-st { min-width: 56px; padding: 2px 6px; border: 1.5px solid currentColor; font: 700 11px/1.2 var(--font); text-align: center; }
+.wt-st.st-A { background: var(--sel-bg); color: var(--sel-fg); border-color: var(--sel-bg); }
+.wt-st.st-D { background: var(--signal); color: var(--on-signal); border-color: var(--signal); }
+.wt-file { border-bottom: var(--rule); }
+.wt-file-h { padding: 8px 28px; font-size: 12.5px; font-weight: 700; background: var(--wash); }
+.wt-diff { margin: 0; padding: 8px 28px 12px; max-height: none; background: var(--code-bg); color: var(--code-fg); }
+.wt-diff .add { display: inline; box-shadow: inset 4px 0 0 var(--signal); }
+.wt-diff .del { color: color-mix(in srgb, var(--code-fg) 45%, var(--code-bg)); text-decoration: line-through; }
+.wt-diff .hunk { color: color-mix(in srgb, var(--code-fg) 60%, var(--code-bg)); }
+
 /* 화면 전환 (App의 .stage는 화면이 바뀔 때마다 새로 붙는다) */
 .stage { flex: 1; min-height: 0; display: flex; flex-direction: column; animation: screen-in 0.38s var(--ease-out) both; }
 .stage > .screen { flex: 1; height: auto; }
@@ -559,3 +583,5 @@ pre { font: 12.5px/1.65 var(--mono); background: transparent; padding: 0; overfl
   *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; }
 }
 .sh-sum .md { white-space: normal; }
+.tb-wt .wt-tag { flex: none; white-space: nowrap; }
+.tb-wt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
