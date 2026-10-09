@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, type RefObject } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
 
 // 화면 움직임 도구 모음. 효과(빛·입자)는 쓰지 않고, 요소가 자리를 옮기고 모양을 바꾸는 움직임만 다룬다.
 
@@ -86,6 +86,36 @@ export function useLayoutMotion(container: RefObject<HTMLElement | null>, dispat
   }, [])
 }
 
+/**
+ * 값이 사라져도 잠시(ms) 마지막 값을 붙잡아 두어 나가는 애니메이션을 보여줄 수 있게 한다.
+ * leaving이 true인 동안 요소에 'leaving' 클래스를 붙이면 된다
+ */
+export function usePresence<T>(value: T | null | undefined, ms = 240): { item: T | null; leaving: boolean } {
+  const [kept, setKept] = useState<T | null>(value ?? null)
+  const [leaving, setLeaving] = useState(false)
+  useEffect(() => {
+    if (value !== null && value !== undefined) {
+      setKept(value)
+      setLeaving(false)
+      return
+    }
+    if (kept === null) return
+    if (reducedMotion()) {
+      setKept(null)
+      return
+    }
+    setLeaving(true)
+    const t = setTimeout(() => {
+      setKept(null)
+      setLeaving(false)
+    }, ms)
+    return () => clearTimeout(t)
+    // kept는 일부러 의존성에서 뺀다: 값이 사라지는 순간에만 반응
+  }, [value, ms]) // eslint-disable-line react-hooks/exhaustive-deps
+  const current = value ?? null
+  return { item: current ?? (leaving ? kept : null), leaving: current === null && leaving }
+}
+
 /** 바뀔 때 위로 굴러가며 교체되는 글자 */
 export function Roll({ text, className }: { text: string; className?: string }): React.JSX.Element {
   const ref = useRef<HTMLSpanElement>(null)
@@ -116,7 +146,7 @@ export function Odo({ n }: { n: number }): React.JSX.Element {
   if (n > 9) return <span className="odo-plain">{n}</span>
   return (
     <span className="odo" aria-label={String(n)}>
-      <span className="odo-col" style={{ transform: `translateY(${-1.5 * n}em)` }} aria-hidden="true">
+      <span className="odo-col" style={{ transform: `translateY(calc(var(--odo-h, 1.5em) * ${-n}))` }} aria-hidden="true">
         {Array.from({ length: 10 }, (_, d) => (
           <span key={d}>{d}</span>
         ))}

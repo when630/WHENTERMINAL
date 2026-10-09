@@ -1,9 +1,13 @@
 import { useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import { type PermissionDecision, type Project } from '@shared/types'
 import { HOME_ROW } from './keys'
+import { Keys } from './KeyHint'
+import { useKeymap } from './settings'
 import { boxIn, EASE, Odo, reducedMotion, Roll, useLayoutMotion } from './motion'
 import { STAGES, type TaskRef } from './state'
 import { elapsed, useNow } from './time'
+import { Markdown } from './Markdown'
+import { AttachButton, useAttach } from './attach'
 
 export interface DispatchOrigin {
   box: { x: number; y: number; w: number; h: number }
@@ -22,7 +26,9 @@ interface Props {
   dispatchOrigin: RefObject<DispatchOrigin | null>
   sheetCloseRef: RefObject<(() => void) | null>
   onDispatchIndex: (i: number) => void
-  onDispatch: (text: string) => void
+  onDispatch: (text: string, continueId?: string) => void
+  /** '이어서'로 보낼 대화 (이 프로젝트에서 가장 최근에 쓴 대화). 없으면 새 대화만 */
+  continueTarget: { id: string; title: string } | null
   onSelect: (conversationId: string) => void
   onOpenTask: (ref: TaskRef) => void
   onOpenReport: (conversationId: string) => void
@@ -34,6 +40,7 @@ interface Props {
 }
 
 export function Home(props: Props): React.JSX.Element {
+  const km = useKeymap()
   const { projects, running, reports, selectedId } = props
   const now = useNow(1000)
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -49,24 +56,22 @@ export function Home(props: Props): React.JSX.Element {
     <div className="home-wrap" ref={wrapRef}>
       <div className="home" ref={scrollRef}>
         <header className="home-head">
-          <div>
-            <div className="home-date">
-              {d.getMonth() + 1}월 {d.getDate()}일 {'일월화수목금토'[d.getDay()]}요일 · {String(d.getHours()).padStart(2, '0')}:{String(d.getMinutes()).padStart(2, '0')}
-            </div>
-            <h1>오늘</h1>
+          <div className="hh-cell hh-run">
+            <span className="big disp"><Odo n={running.length} /></span>
+            <h1 className="hh-label">작업<br />진행 중</h1>
           </div>
-          <div className="home-counts">
-            <span>
-              <b className="c-run"><Odo n={running.length} /></b> 진행 중
+          <div className="hh-cell hh-time">
+            <span className="hh-small">
+              {d.getMonth() + 1}월 {d.getDate()}일 {'일월화수목금토'[d.getDay()]}요일
             </span>
-            {waiting > 0 && (
-              <span>
-                <b className="c-wait"><Odo n={waiting} /></b> 확인 필요
-              </span>
-            )}
-            <span>
-              <b className="c-new"><Odo n={unread} /></b> 새 보고
+            <span className="clipwrap">
+              <span className="roll-in mid disp">{String(d.getHours()).padStart(2, '0')}:{String(d.getMinutes()).padStart(2, '0')}</span>
             </span>
+          </div>
+          {/* 확인할 것이 있으면 이 칸이 빨갛게 바뀐다. 없으면 새 보고 수 */}
+          <div className={`hh-cell hh-flag ${waiting > 0 ? 'alert' : ''}`}>
+            <span className="hh-label">{waiting > 0 ? '확인 필요' : '새 보고'}</span>
+            <span className="mid disp"><Odo n={waiting > 0 ? waiting : unread} /></span>
           </div>
         </header>
 
@@ -75,7 +80,7 @@ export function Home(props: Props): React.JSX.Element {
         <div className="cols">
           <section className="col col-run" aria-label="진행 중">
             <h2 className="col-h">
-              진행 중 <span className="mono">{running.length}</span>
+              진행 중 <span className="disp">{running.length}</span>
             </h2>
             {running.length === 0 && <div className="empty">맡긴 작업이 모두 끝났어요. 위에서 새 작업을 맡겨 보세요.</div>}
             {running.map((r) => (
@@ -85,7 +90,7 @@ export function Home(props: Props): React.JSX.Element {
 
           <section className="col col-rep" aria-label="보고함">
             <h2 className="col-h">
-              보고함 <span className="mono">{reports.length}</span>
+              보고함 <span className="disp">{reports.length}</span>
             </h2>
             {reports.length === 0 && <div className="empty">끝난 작업의 보고서가 여기에 쌓입니다.</div>}
             {reports.map((r) => (
@@ -95,13 +100,13 @@ export function Home(props: Props): React.JSX.Element {
         </div>
 
         <footer className="hints">
-          <span><kbd>Ctrl K</kbd>/<kbd>I</kbd> 작업 지시</span>
-          <span><kbd>J</kbd><kbd>K</kbd> 위아래</span>
-          <span><kbd>H</kbd><kbd>L</kbd> 진행 중 · 보고함</span>
-          <span><kbd>O</kbd> 열기</span>
-          <span><kbd>E</kbd> 보관</span>
-          <span><kbd>Y</kbd><kbd>A</kbd><kbd>N</kbd> 확인 요청</span>
-          {props.hotkey && <span className="hints-r"><kbd>{props.hotkey}</kbd> 어디서든 호출</span>}
+          <span><Keys keys={km.dispatch} />/<Keys keys={km.focusAsk} /> 작업 지시</span>
+          <span><Keys keys={`${km.down} ${km.up}`} /> 위아래</span>
+          <span><Keys keys={`${km.toRunning} ${km.toReports}`} /> 진행 중 · 보고함</span>
+          <span><Keys keys={km.open} /> 열기</span>
+          <span><Keys keys={km.archive} /> 보관</span>
+          <span><Keys keys={`${km.allow} ${km.always} ${km.deny}`} /> 확인 요청</span>
+          {props.hotkey && <span className="hints-r"><Keys keys={props.hotkey} /> 어디서든 호출</span>}
         </footer>
       </div>
 
@@ -123,14 +128,19 @@ export function Home(props: Props): React.JSX.Element {
 }
 
 function Dispatch(props: Props & { scrollRef: RefObject<HTMLDivElement | null> }): React.JSX.Element {
+  const km = useKeymap()
   const [text, setText] = useState('')
+  const [cont, setCont] = useState(false)
   const p = props.projects[props.dispatchIndex]
+  const target = props.continueTarget
+  const altEnter = useRef(false)
+  const attach = useAttach({ inputRef: props.inputRef, value: text, setValue: setText, root: p?.path ?? '' })
   if (props.projects.length === 0) {
     return (
       <div className="ask ask-empty">
         <span>먼저 작업할 프로젝트 폴더를 추가하세요.</span>
         <button type="button" className="btn-pri" onClick={props.onAddProject}>
-          프로젝트 추가 <kbd>Ctrl N</kbd>
+          프로젝트 추가 <Keys keys={km.addProject} />
         </button>
       </div>
     )
@@ -138,20 +148,27 @@ function Dispatch(props: Props & { scrollRef: RefObject<HTMLDivElement | null> }
   const cycle = (dir: number): void => props.onDispatchIndex((props.dispatchIndex + dir + props.projects.length) % props.projects.length)
   return (
     <form
-      className="ask"
+      className={`ask ${attach.dropping ? 'dropping' : ''}`}
+      {...attach.dropProps}
       autoComplete="off"
       onSubmit={(e) => {
         e.preventDefault()
+        // Alt+Enter는 전환 상태와 상관없이 '이어서'. 표시는 이번 제출에서만 쓰고 바로 지운다
+        const viaAlt = altEnter.current
+        altEnter.current = false
         const t = text.trim()
         if (!t) return
+        const asContinue = (cont || viaAlt) && target
         const input = props.inputRef.current
         const root = props.scrollRef.current
-        if (input && root) props.dispatchOrigin.current = { box: boxIn(input.closest('.ask')!, root), at: performance.now() }
+        if (input && root && !asContinue) props.dispatchOrigin.current = { box: boxIn(input.closest('.ask')!, root), at: performance.now() }
         setText('')
-        props.onDispatch(t)
+        props.onDispatch(t, asContinue ? target.id : undefined)
       }}
     >
       <div className="ask-row">
+        <span className="ask-prompt" aria-hidden="true">&gt;</span>
+        <AttachButton onClick={attach.pick} />
         <label htmlFor="ask-input" className="sr-only">맡길 작업</label>
         <input
           id="ask-input"
@@ -159,15 +176,22 @@ function Dispatch(props: Props & { scrollRef: RefObject<HTMLDivElement | null> }
           value={text}
           placeholder="무엇을 맡길까요?"
           onChange={(e) => setText(e.target.value)}
+          onPaste={attach.onPaste}
           onKeyDown={(e) => {
             if (e.key === 'Tab') {
               e.preventDefault()
               cycle(e.shiftKey ? -1 : 1)
             }
+            // Alt+Enter: 입력창은 Alt+Enter로 폼을 제출하지 않으므로(macOS) 직접 제출한다
+            if (e.key === 'Enter' && e.altKey && !e.nativeEvent.isComposing) {
+              e.preventDefault()
+              altEnter.current = true
+              e.currentTarget.form?.requestSubmit()
+            }
           }}
         />
         <button type="submit" className="btn-pri" disabled={!text.trim()}>
-          맡기기 <kbd>Enter</kbd>
+          맡기기 <Keys keys="enter" />
         </button>
       </div>
       <div className="ask-meta">
@@ -175,18 +199,28 @@ function Dispatch(props: Props & { scrollRef: RefObject<HTMLDivElement | null> }
           <kbd>{HOME_ROW[props.dispatchIndex] ?? ''}</kbd>
           <Roll text={p?.name ?? ''} className="proj-name" />
         </button>
-        <span><kbd>Tab</kbd> 프로젝트 바꾸기</span>
-        <span>끝나면 보고함으로 보고서가 옵니다</span>
+        <span><Keys keys="tab" /> 프로젝트 바꾸기</span>
+        <span className="ask-mode seg" role="radiogroup" aria-label="보낼 곳">
+          <button type="button" role="radio" aria-checked={!cont || !target} className={!cont || !target ? 'on' : ''} onClick={() => setCont(false)}>
+            새 대화
+          </button>
+          <button type="button" role="radio" aria-checked={cont && !!target} className={cont && target ? 'on' : ''} disabled={!target} onClick={() => setCont(true)} title={target ? `이어 보낼 대화: ${target.title}` : '이어 보낼 대화가 없어요'}>
+            이어서
+          </button>
+        </span>
+        <span className="ask-target">
+          {target ? (
+            <>
+              <Keys keys="alt enter" /> 이어서 · {target.title}
+            </>
+          ) : (
+            '끝나면 보고함으로 보고서가 옵니다'
+          )}
+        </span>
       </div>
     </form>
   )
 }
-
-const CHECK = (
-  <svg viewBox="0 0 10 10" fill="none" aria-hidden="true">
-    <path d="M2 5.3l2 2 4-4.4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-  </svg>
-)
 
 function TaskCard({ r, now, selected, onSelect, onOpen, onRespond }: {
   r: TaskRef
@@ -196,8 +230,15 @@ function TaskCard({ r, now, selected, onSelect, onOpen, onRespond }: {
   onOpen: (r: TaskRef) => void
   onRespond: Props['onRespond']
 }): React.JSX.Element {
+  const km = useKeymap()
   const { task, state } = r
   const pending = state.permissions[0]
+  const stage = Math.min(task.stage, STAGES.length - 1)
+  const progress = Math.min(1, (stage + 0.6) / STAGES.length)
+  const respond = (e: React.MouseEvent, decision: PermissionDecision): void => {
+    e.stopPropagation()
+    if (pending) onRespond(r.project.id, r.conversationId, pending.requestId, decision)
+  }
   return (
     <article
       className={`task ${selected ? 'selected' : ''} ${pending ? 'waiting' : ''}`}
@@ -207,45 +248,46 @@ function TaskCard({ r, now, selected, onSelect, onOpen, onRespond }: {
       onDoubleClick={() => onOpen(r)}
     >
       <div className="lx-in">
-        <div className="task-h">
-          <kbd>{HOME_ROW[r.projectIndex] ?? ''}</kbd>
-          <span className="task-pj">{r.project.name}</span>
-          <span className="task-tt" title={task.instruction}>{task.instruction}</span>
-          <span className="task-el mono">{mmss(now - task.startedAt)}</span>
-        </div>
-        <div className="steps" aria-label={`진행 단계: ${STAGES[Math.min(task.stage, 4)]}`}>
-          {STAGES.map((s, i) => (
-            <div key={s} className={`seg ${i < task.stage ? 'done' : i === task.stage ? 'cur' : ''}`}>
-              <div className="bar"><i /></div>
-              <div className="lbl">{CHECK}{s}</div>
+        <div className="band-row">
+          <span className="band-key" aria-hidden="true">{HOME_ROW[r.projectIndex] ?? ''}</span>
+          <div className="band-main">
+            <div className="band-meta">
+              <span>{r.project.name}</span>
+              <span className="mono">{mmss(now - task.startedAt)}</span>
+              {state.context && <span className="mono">컨텍스트 {state.context.percent}%</span>}
             </div>
-          ))}
-        </div>
-        <div className="act">
-          <span className={`spin ${pending ? 'paused' : ''}`} />
-          <Roll text={task.activity} className="act-text" />
-          <button type="button" className="link" onClick={(e) => { e.stopPropagation(); onOpen(r) }}>대화 보기 <kbd>O</kbd></button>
+            <div className="band-title" title={task.instruction}>{task.instruction}</div>
+            <div className="act">
+              <Roll text={pending ? '확인을 기다리는 중' : task.activity} className="act-text" />
+              <button type="button" className="link" onClick={(e) => { e.stopPropagation(); onOpen(r) }}>대화 보기 <Keys keys={km.open} /></button>
+            </div>
+          </div>
+          <div className="band-side" aria-label={`진행 단계: ${STAGES[stage]}`}>
+            {pending ? <span className="q" aria-hidden="true">?</span> : <span className="stage-word"><Roll text={state.status === 'queued' ? '대기' : STAGES[stage]} /></span>}
+          </div>
         </div>
         <div className={`cf ${pending ? 'open' : ''}`}>
           <div>
             {pending && (
               <div className="cf-in">
-                <span className="cf-t">확인 필요</span>
                 <span className="cf-cmd mono">{pending.title ?? `${pending.toolName} ${summarizeInput(pending.input)}`}</span>
-                <button type="button" className="btn-pri sm" onClick={(e) => { e.stopPropagation(); onRespond(r.project.id, r.conversationId, pending.requestId, 'allow') }}>
-                  허용 {!pending.defaultToNo && <kbd>Y</kbd>}
+                <button type="button" className="btn-pri sm" onClick={(e) => respond(e, 'allow')}>
+                  허용 {!pending.defaultToNo && <Keys keys={km.allow} />}
                 </button>
                 {!pending.suppressAlwaysAllow && (
-                  <button type="button" className="btn sm" onClick={(e) => { e.stopPropagation(); onRespond(r.project.id, r.conversationId, pending.requestId, 'always') }}>
-                    항상 {!pending.defaultToNo && <kbd>A</kbd>}
+                  <button type="button" className="btn sm" onClick={(e) => respond(e, 'always')}>
+                    항상 {!pending.defaultToNo && <Keys keys={km.always} />}
                   </button>
                 )}
-                <button type="button" className="btn ghost sm" onClick={(e) => { e.stopPropagation(); onRespond(r.project.id, r.conversationId, pending.requestId, 'deny') }}>
-                  거절 <kbd>N</kbd>
+                <button type="button" className="btn sm" onClick={(e) => respond(e, 'deny')}>
+                  거절 <Keys keys={km.deny} />
                 </button>
               </div>
             )}
           </div>
+        </div>
+        <div className="band-bar" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress * 100)}>
+          <i style={{ width: `${progress * 100}%` }} />
         </div>
       </div>
     </article>
@@ -274,7 +316,7 @@ function ReportCard({ r, now, selected, hidden, onOpen }: {
       <span className="lx-in">
         <span className="rep-h">
           <span className="nd" />
-          <kbd>{HOME_ROW[r.projectIndex] ?? ''}</kbd>
+          <span className="rep-key">{HOME_ROW[r.projectIndex] ?? ''}</span>
           {r.project.name}
           <span className="rep-ago mono">{task.finishedAt ? elapsed(task.finishedAt, now) : ''}</span>
         </span>
@@ -301,6 +343,7 @@ function ReportSheet({ r, wrapRef, scrollRef, closeRef, onClosed, onOpenChat, on
   onNewTask: () => void
   onArchive: () => void
 }): React.JSX.Element {
+  const km = useKeymap()
   const sheetRef = useRef<HTMLElement>(null)
   const bgRef = useRef<HTMLDivElement>(null)
   const inRef = useRef<HTMLDivElement>(null)
@@ -322,7 +365,7 @@ function ReportSheet({ r, wrapRef, scrollRef, closeRef, onClosed, onOpenChat, on
     const f = fromBox()
     if (!f || reducedMotion()) return
     bgRef.current?.animate(
-      [{ transform: `translate(${f.dx}px, ${f.dy}px) scale(${f.sx}, ${f.sy})`, borderRadius: '28px' }, { transform: 'none', borderRadius: '14px' }],
+      [{ transform: `translate(${f.dx}px, ${f.dy}px) scale(${f.sx}, ${f.sy})` }, { transform: 'none' }],
       { duration: 560, easing: EASE },
     )
     inRef.current?.querySelectorAll('.st').forEach((el, i) => {
@@ -336,7 +379,7 @@ function ReportSheet({ r, wrapRef, scrollRef, closeRef, onClosed, onOpenChat, on
     scrimRef.current?.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 300, fill: 'forwards' })
     inRef.current?.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 140, fill: 'forwards' })
     const a = bgRef.current?.animate(
-      [{ transform: 'none', borderRadius: '14px' }, { transform: `translate(${f.dx}px, ${f.dy}px) scale(${f.sx}, ${f.sy})`, borderRadius: '28px' }],
+      [{ transform: 'none' }, { transform: `translate(${f.dx}px, ${f.dy}px) scale(${f.sx}, ${f.sy})` }],
       { duration: 420, easing: EASE, fill: 'forwards' },
     )
     if (a) a.onfinish = onClosed
@@ -357,10 +400,10 @@ function ReportSheet({ r, wrapRef, scrollRef, closeRef, onClosed, onOpenChat, on
               {task.finishedAt ? new Date(task.finishedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) : ''}
               {task.durationMs !== undefined ? ` · ${mmss(task.durationMs)} 소요` : ''}
             </span>
-            <button type="button" className="btn ghost sm sh-x" onClick={close}>닫기 <kbd>Esc</kbd></button>
+            <button type="button" className="btn ghost sm sh-x" onClick={close}>닫기 <Keys keys="esc" /></button>
           </div>
           <h3 className="st">{task.instruction}</h3>
-          <div className="sh-sum st">{task.summary ?? (state.status === 'done' ? '보고 내용이 없습니다.' : '작업이 끝나기 전에 멈췄습니다. 대화에서 자세한 내용을 확인하세요.')}</div>
+          <div className="sh-sum st">{task.summary ? <Markdown text={task.summary} /> : state.status === 'done' ? '보고 내용이 없습니다.' : '작업이 끝나기 전에 멈췄습니다. 대화에서 자세한 내용을 확인하세요.'}</div>
           <div className="sh-grid st">
             <div className="sh-box">
               <h4>변경한 파일 {task.files.length}</h4>
@@ -378,9 +421,9 @@ function ReportSheet({ r, wrapRef, scrollRef, closeRef, onClosed, onOpenChat, on
             </div>
           </div>
           <div className="nexts st">
-            <button type="button" className="btn-pri" onClick={onOpenChat}>대화 열기 <kbd>O</kbd></button>
-            <button type="button" className="btn" onClick={onNewTask}>이 프로젝트에 새 작업 <kbd>I</kbd></button>
-            <button type="button" className="btn ghost" onClick={onArchive}>보관 <kbd>E</kbd></button>
+            <button type="button" className="btn-pri" onClick={onOpenChat}>대화 열기 <Keys keys={km.open} /></button>
+            <button type="button" className="btn" onClick={onNewTask}>이 프로젝트에 새 작업 <Keys keys={km.newTask} /></button>
+            <button type="button" className="btn ghost" onClick={onArchive}>보관 <Keys keys={km.archive} /></button>
           </div>
         </div>
       </section>
