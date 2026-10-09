@@ -1,9 +1,10 @@
 import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, shell, Tray } from 'electron'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { IPC, type Conversation, type StoredTask, type UsageInfo, type AgentEventEnvelope, type AgentMode, type PermissionDecision, type RateLimitInfo } from '@shared/types'
+import { cwdOf, IPC, type Conversation, type StoredTask, type UsageInfo, type AgentEventEnvelope, type AgentMode, type PermissionDecision, type RateLimitInfo } from '@shared/types'
 import { newConversationId, ProjectStore } from './store'
 import { createWorktree, isGitRepo } from './worktree'
+import { searchFiles } from './files'
 import { SettingsStore } from './settings'
 import { applyBadge, Notifier } from './notify'
 import { effectiveKeymap, THEMES, toAccelerator, type Settings } from '@shared/keymap'
@@ -200,6 +201,10 @@ function bootstrap(): void {
   )
   ipcMain.handle(IPC.listCommands, (_e, projectId: string) => manager.listCommands(projectId))
   ipcMain.handle(IPC.loadHistory, (_e, projectId: string, conversationId: string) => manager.loadHistory(projectId, conversationId))
+  ipcMain.handle(IPC.searchFiles, (_e, projectId: string, conversationId: string, q: string) => {
+    const project = store.get(projectId)
+    return project ? searchFiles(cwdOf(project, store.getConversation(projectId, conversationId)), q) : []
+  })
   ipcMain.handle(IPC.peek, (_e, projectId: string, conversationId: string) => manager.peek(projectId, conversationId))
   ipcMain.handle(IPC.clear, (_e, projectId: string, conversationId: string) => manager.clear(projectId, conversationId))
   ipcMain.handle(

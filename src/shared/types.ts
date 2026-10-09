@@ -206,6 +206,7 @@ export const IPC = {
   clear: 'agent:clear',
   listCommands: 'agent:list-commands',
   peek: 'agent:peek',
+  searchFiles: 'files:search',
   loadHistory: 'agent:load-history',
   getSettingsSync: 'settings:get-sync',
   setSettings: 'settings:set',
@@ -250,6 +251,8 @@ export interface WhenTerminalApi {
   listCommands(projectId: string): Promise<SlashCommandInfo[]>
   /** 메시지 없이 이 대화의 컨텍스트 사용률·모델을 읽어 'context'·'model' 이벤트로 보낸다 */
   peek(projectId: string, conversationId: string): Promise<void>
+  /** 입력창의 @ 자동완성: 이 대화의 작업 폴더에서 파일 찾기 (상대 경로) */
+  searchFiles(projectId: string, conversationId: string, query: string): Promise<string[]>
   /** 저장된 세션의 지난 대화를 읽어 'history' 이벤트로 보낸다 (화면 기록이 비어 있을 때) */
   loadHistory(projectId: string, conversationId: string): Promise<void>
   /** 첫 화면을 그리기 전에 테마를 적용하려고 동기로 읽는다 */

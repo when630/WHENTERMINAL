@@ -6,7 +6,7 @@ import { Keys } from './KeyHint'
 import { useKeymap } from './settings'
 import { usePresence } from './motion'
 import { Markdown } from './Markdown'
-import { rankCommands, SlashMenu, useSlashCommands } from './SlashMenu'
+import { FileMenu, rankCommands, SlashMenu, useSlashCommands } from './SlashMenu'
 
 interface Props {
   project: Project
@@ -107,8 +107,44 @@ export function Chat({ project, projects, conversationId, convs, mode, clearArme
   const [dismissed, setDismissed] = useState<string | null>(null)
   const slash = useSlashCommands(project.id, slashQuery !== undefined)
   const menuItems = slashQuery !== undefined ? rankCommands(slash.list, slashQuery) : []
-  const menuOpen = slashQuery !== undefined && dismissed !== draft
-  useEffect(() => setMenuIndex(0), [slashQuery])
+  const slashOpen = slashQuery !== undefined && dismissed !== draft
+
+  // @ 파일 후보: 커서 바로 앞 단어가 @로 시작할 때 (이 대화의 작업 폴더 기준)
+  const [caret, setCaret] = useState(0)
+  const fileQuery = slashQuery === undefined ? /(^|\s)@([^\s@]*)$/.exec(draft.slice(0, caret))?.[2] : undefined
+  const [files, setFiles] = useState<{ q: string; list: string[] } | null>(null)
+  useEffect(() => {
+    if (fileQuery === undefined) return
+    let alive = true
+    const t = setTimeout(() => {
+      void window.api.searchFiles(project.id, conversationId, fileQuery).then((list) => alive && setFiles({ q: fileQuery, list }))
+    }, 60)
+    return () => {
+      alive = false
+      clearTimeout(t)
+    }
+  }, [fileQuery, project.id, conversationId])
+  const fileOpen = fileQuery !== undefined && dismissed !== draft
+  const fileItems = fileOpen && files ? files.list : []
+
+  const menuOpen = slashOpen || fileOpen
+  const menuCount = slashOpen ? menuItems.length : fileItems.length
+  useEffect(() => setMenuIndex(0), [slashQuery, fileQuery])
+
+  /** '@쿼리'를 '@경로 '로 바꾸고 커서를 그 뒤로 */
+  const pickFile = (path: string): void => {
+    if (fileQuery === undefined) return
+    const start = caret - fileQuery.length - 1
+    const next = `${draft.slice(0, start)}@${path} ${draft.slice(caret)}`
+    const pos = start + path.length + 2
+    setDraft(next)
+    setDismissed(null)
+    setCaret(pos)
+    requestAnimationFrame(() => {
+      inputRef.current?.focus()
+      inputRef.current?.setSelectionRange(pos, pos)
+    })
+  }
 
   const pickCommand = (c: SlashCommandInfo, run: boolean): void => {
     setDismissed(null)
@@ -125,13 +161,21 @@ export function Chat({ project, projects, conversationId, convs, mode, clearArme
       e.key === 'ArrowDown' || (plainCtrl && (e.code === 'KeyN' || e.code === 'KeyJ')) ? 1
       : e.key === 'ArrowUp' || (plainCtrl && (e.code === 'KeyP' || e.code === 'KeyK')) ? -1
       : 0
-    if (step && menuItems.length) {
-      setMenuIndex((i) => (i + step + menuItems.length) % menuItems.length)
+    if (step && menuCount) {
+      setMenuIndex((i) => (i + step + menuCount) % menuCount)
       return true
     }
     if (e.key === 'Escape' || (plainCtrl && e.code === 'BracketLeft')) {
       setDismissed(draft)
       return true
+    }
+    if (fileOpen) {
+      const f = fileItems[menuIndex]
+      if (f && ((e.key === 'Tab' && !e.shiftKey) || (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing))) {
+        pickFile(f)
+        return true
+      }
+      return false
     }
     const c = menuItems[menuIndex]
     if (!c) return false
@@ -294,9 +338,10 @@ export function Chat({ project, projects, conversationId, convs, mode, clearArme
         </div>
       )}
       <div className="composer">
-        {menuOpen && (
+        {slashOpen && (
           <SlashMenu items={menuItems} index={menuIndex} loading={slash.loading} onHover={setMenuIndex} onPick={(c) => pickCommand(c, true)} />
         )}
+        {fileOpen && <FileMenu items={fileItems} index={menuIndex} loading={!files || files.q !== fileQuery} onHover={setMenuIndex} onPick={pickFile} />}
         <span className="composer-prompt" aria-hidden="true">&gt;</span>
         <div className="composer-body">
           <label htmlFor="composer-input" className="sr-only">메시지</label>
@@ -309,8 +354,12 @@ export function Chat({ project, projects, conversationId, convs, mode, clearArme
             aria-autocomplete="list"
             aria-expanded={menuOpen}
             rows={2}
-            placeholder="메시지 입력 · /compact 요약 · /clear 비우기"
-            onChange={(e) => setDraft(e.target.value)}
+            placeholder="메시지 입력 · / 명령 · @ 파일"
+            onChange={(e) => {
+              setDraft(e.target.value)
+              setCaret(e.target.selectionStart)
+            }}
+            onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
             onKeyDown={(e) => {
               if (menuKey(e)) {
                 e.preventDefault()

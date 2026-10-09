@@ -93,3 +93,43 @@ export function SlashMenu({ items, index, loading, onHover, onPick }: Props): Re
     </div>
   )
 }
+
+/** 입력창의 @ 파일 후보. 파일 이름을 굵게, 폴더는 옅게 */
+export function FileMenu({ items, index, loading, onHover, onPick }: {
+  items: string[]
+  index: number
+  loading: boolean
+  onHover: (i: number) => void
+  onPick: (path: string) => void
+}): React.JSX.Element {
+  return (
+    <div className="slash" role="listbox" aria-label="파일">
+      <div className="slash-head">
+        <span>파일 {items.length >= 50 ? '50+' : items.length}</span>
+        <span className="slash-keys">
+          <Keys keys="ctrl N" />/<Keys keys="ctrl P" /> 이동 · <Keys keys="tab" /> 넣기 · <Keys keys="esc" /> 닫기
+        </span>
+      </div>
+      {items.length === 0 && <div className="slash-empty">{loading ? '파일을 찾는 중…' : '맞는 파일이 없어요'}</div>}
+      {items.map((path, i) => {
+        const cut = path.lastIndexOf('/')
+        return (
+          <button
+            key={path}
+            type="button"
+            role="option"
+            aria-selected={i === index}
+            className={`slash-row file-row ${i === index ? 'on' : ''}`}
+            ref={i === index ? (el) => { el?.scrollIntoView({ block: 'nearest' }) } : undefined}
+            onMouseMove={() => i !== index && onHover(i)}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => onPick(path)}
+          >
+            <span className="slash-name">@{path.slice(cut + 1)}</span>
+            <span className="slash-desc">{cut >= 0 ? path.slice(0, cut + 1) : './'}</span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
