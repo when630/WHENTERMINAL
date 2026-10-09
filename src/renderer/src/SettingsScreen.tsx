@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ACTIONS, conflictsOf, DEFAULT_KEYMAP, effectiveKeymap, SCOPE_LABEL, THEMES, type ActionDef, type ActionId, type ActionScope, type Settings, type ThemeId } from '@shared/keymap'
+import { ACTIONS, APP_ICONS, conflictsOf, DEFAULT_KEYMAP, effectiveKeymap, SCOPE_LABEL, THEMES, type ActionDef, type ActionId, type ActionScope, type Settings, type ThemeId } from '@shared/keymap'
 import { Keys } from './KeyHint'
 import { ALT_LABEL, eventToBinding } from './keys'
 
@@ -21,6 +21,10 @@ const FIXED: { keys: string; label: string }[] = [
   { keys: 'ctrl C', label: '선택한 글자가 없을 때 실행 중단' },
   { keys: '↑ ↓ ← →', label: '홈에서 이동 (보조)' },
 ]
+
+// resources/icons/*.png를 번들에 넣어 미리보기로 쓴다 (실제 Dock 아이콘은 메인이 같은 파일로 바꾼다)
+const ICON_SRC = import.meta.glob('../../../resources/icons/*.png', { eager: true, import: 'default' }) as Record<string, string>
+const iconSrc = (id: string): string => ICON_SRC[`../../../resources/icons/${id}.png`] ?? ''
 
 const NOTIFY: { id: keyof Settings['notify']; label: string; note: string }[] = [
   { id: 'approval', label: '확인 요청이 오면', note: '알림을 누르면 그 대화로 가요. macOS는 Dock 아이콘도 한 번 튀어요' },
@@ -136,6 +140,28 @@ export function SettingsScreen({ settings, activeHotkey, onClose, onSaved }: Pro
               )
             })}
           </div>
+        </section>
+
+        <section className="set-sec" aria-labelledby="set-icon">
+          <h2 id="set-icon" className="col-h">앱 아이콘</h2>
+          <div className="icons" role="radiogroup" aria-label="앱 아이콘">
+            {APP_ICONS.map((ic, k) => {
+              const on = settings.appIcon === ic.id
+              return (
+                <button key={ic.id} type="button" role="radio" aria-checked={on} className={`icon-pick ${on ? 'on' : ''}`} onClick={() => !on && void save({ ...settings, appIcon: ic.id })}>
+                  <img src={iconSrc(ic.id)} alt="" width={96} height={96} />
+                  <span className="theme-name">
+                    <span className="nowrap">
+                      <span className="disp">0{k + 1}</span> {ic.name}
+                    </span>
+                    {on && <span className="theme-on">사용 중</span>}
+                  </span>
+                  <span className="theme-note">{ic.note}</span>
+                </button>
+              )
+            })}
+          </div>
+          <p className="set-help">{window.api.appInfo.platform === 'darwin' ? '고르면 Dock 아이콘이 바로 바뀌어요.' : '고르면 창 아이콘이 바로 바뀌어요.'} 설치 파일의 아이콘은 02 프롬프트예요.</p>
         </section>
 
         <section className="set-sec" aria-labelledby="set-run">

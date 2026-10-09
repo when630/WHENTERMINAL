@@ -53,6 +53,7 @@
 - 알림(`main/notify.ts`): 확인 요청·작업 끝남. 누르면 `IPC.navigate`로 그 대화로. 배지는 렌더러가 `setBadge`로 보낸다
 - 대기열(OPEN-003): `AgentManager.send`가 `maxConcurrent`를 넘으면 `queued`로 두고, 상태가 끝나면 `drain()`. 확인 대기도 자리를 차지한다
 - 작업 공간(OPEN-002, `main/worktree.ts`): 탭 +로 만든 대화만 `userData/worktrees`에 git worktree(`wt/<id>`). 세션·기록·peek의 폴더는 `cwdOf()`. 닫을 때 깨끗하면 정리
+- 앱 아이콘: 원본 `build/icons/*.svg` → `npm run icons`(Electron 오프스크린 렌더, Archivo 글꼴)로 `resources/icons/*.png`와 `build/icons/preview.png`. 기본·설치 파일 아이콘은 `prompt`. 설정에서 고르면 메인이 Dock(macOS)·창 아이콘을 바로 바꾼다. 패키징한 앱은 `extraResources`의 `Resources/icons`
 - 패키징: electron-builder(`package.json`의 `build`). SDK의 OS별 CLI 바이너리는 `asarUnpack`으로 풀고, 패키징한 앱에서는 `claudeExecutable()` 경로를 `pathToClaudeCodeExecutable`로 넘긴다. 렌더러에서만 쓰는 패키지는 devDependencies에 둘 것 (번들에 들어가므로)
 - 설정(`SettingsScreen.tsx`, `Ctrl+,` / macOS 메뉴 ⌘,): `userData/settings.json` (`src/main/settings.ts`). 첫 화면 전에 preload가 동기로 읽어(`initialSettings`) 테마 깜빡임이 없다
   - 테마: `:root[data-theme]`로 색 토큰만 바꾼다 (포스터·종이·세이지·먹·밤). 새 색을 쓸 때는 직접 색 대신 역할 토큰(`--sel-bg/fg`, `--on-signal`, `--code-bg/fg`, `--line`, `--shadow`)을 쓸 것

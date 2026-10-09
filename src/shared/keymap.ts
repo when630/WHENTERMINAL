@@ -120,8 +120,21 @@ export interface NotifySettings {
   whenFocused: boolean
 }
 
+export type AppIconId = 'wordmark' | 'prompt' | 'keycap' | 'bands' | 'question' | 'slots'
+
+/** 앱 아이콘 (resources/icons/<id>.png, 원본은 build/icons/<id>.svg → npm run icons) */
+export const APP_ICONS: { id: AppIconId; name: string; note: string }[] = [
+  { id: 'wordmark', name: 'WT_', note: '사이드바 로고와 같은 모양' },
+  { id: 'prompt', name: '프롬프트', note: '작은 크기에서 가장 또렷함' },
+  { id: 'keycap', name: '키캡 A', note: '키보드 중심 앱' },
+  { id: 'bands', name: '진행 띠', note: '홈 화면의 프로젝트 띠' },
+  { id: 'question', name: '물음표', note: 'Dock에서 가장 눈에 띔' },
+  { id: 'slots', name: '슬롯 9칸', note: 'A~L 프로젝트 자리' },
+]
+
 export interface Settings {
   theme: ThemeId
+  appIcon: AppIconId
   notify: NotifySettings
   /** 동시에 실행할 대화 수 (OPEN-003). 0이면 제한 없음. 넘치면 대기열에서 차례를 기다린다 */
   maxConcurrent: number
@@ -133,7 +146,7 @@ export interface Settings {
   keymap: Partial<Keymap>
 }
 
-export const DEFAULT_SETTINGS: Settings = { theme: 'poster', maxConcurrent: 3, worktree: true, openAtLogin: false, notify: { approval: true, done: true, whenFocused: false }, keymap: {} }
+export const DEFAULT_SETTINGS: Settings = { theme: 'poster', appIcon: 'prompt', maxConcurrent: 3, worktree: true, openAtLogin: false, notify: { approval: true, done: true, whenFocused: false }, keymap: {} }
 
 export function effectiveKeymap(settings: Settings): Keymap {
   return { ...DEFAULT_KEYMAP, ...settings.keymap }

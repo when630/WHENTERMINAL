@@ -322,6 +322,12 @@ kbd { display: inline-block; font: 500 11px/1 var(--mono); padding: 3px 5px; col
 .set-help { margin: 0; padding: 12px 24px; border-bottom: var(--rule); font-size: 13px; color: var(--gray); font-weight: 600; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .set-help .keys { color: var(--ink); }
 
+.icons { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
+.icon-pick { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 16px 20px 18px; border: 0; border-right: var(--rule); border-bottom: var(--rule); background: transparent; color: var(--ink); text-align: left; transition: background var(--t-fast) var(--ease-out); }
+.icon-pick:hover { background: var(--wash); }
+.icon-pick img { transition: transform var(--t-med) var(--spring); filter: drop-shadow(0 4px 8px rgba(0,0,0,.18)); }
+.icon-pick:hover img { transform: translateY(-3px) scale(1.04); }
+.icon-pick.on { box-shadow: inset 0 -6px 0 var(--signal); }
 .themes { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
 .theme { display: flex; flex-direction: column; gap: 8px; padding: 18px 24px 20px; border: 0; border-right: var(--rule); border-bottom: var(--rule); background: transparent; color: var(--ink); text-align: left; transition: background var(--t-fast) var(--ease-out); }
 .theme:hover { background: var(--wash); }
@@ -585,3 +591,5 @@ pre { font: 12.5px/1.65 var(--mono); background: transparent; padding: 0; overfl
 .sh-sum .md { white-space: normal; }
 .tb-wt .wt-tag { flex: none; white-space: nowrap; }
 .tb-wt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.icon-pick .theme-name { flex-wrap: wrap; row-gap: 6px; }
+.nowrap { white-space: nowrap; }
