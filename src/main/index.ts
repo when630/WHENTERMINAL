@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, Tray } from 'electron'
+import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, shell, Tray } from 'electron'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { IPC, type UsageInfo, type AgentEventEnvelope, type AgentMode, type PermissionDecision, type RateLimitInfo } from '@shared/types'
@@ -164,6 +164,7 @@ function bootstrap(): void {
     manager.compact(projectId, conversationId, instructions),
   )
   ipcMain.handle(IPC.listCommands, (_e, projectId: string) => manager.listCommands(projectId))
+  ipcMain.handle(IPC.loadHistory, (_e, projectId: string, conversationId: string) => manager.loadHistory(projectId, conversationId))
   ipcMain.handle(IPC.peek, (_e, projectId: string, conversationId: string) => manager.peek(projectId, conversationId))
   ipcMain.handle(IPC.clear, (_e, projectId: string, conversationId: string) => manager.clear(projectId, conversationId))
   ipcMain.handle(
@@ -243,6 +244,14 @@ function createWindow(): void {
       e.preventDefault()
       win?.hide()
     }
+  })
+  // 답변 속 링크: 앱 창 안에서 이동하지 않고 http(s)만 외부 브라우저로 연다
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//i.test(url)) void shell.openExternal(url)
+    return { action: 'deny' }
+  })
+  win.webContents.on('will-navigate', (e, url) => {
+    if (url !== win?.webContents.getURL() && !url.startsWith(process.env.ELECTRON_RENDERER_URL ?? '\0')) e.preventDefault()
   })
   win.webContents.on('render-process-gone', (_e, details) => console.error('[renderer gone]', details.reason))
   if (process.env.ELECTRON_RENDERER_URL) {

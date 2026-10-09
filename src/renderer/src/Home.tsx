@@ -6,6 +6,7 @@ import { useKeymap } from './settings'
 import { boxIn, EASE, Odo, reducedMotion, Roll, useLayoutMotion } from './motion'
 import { STAGES, type TaskRef } from './state'
 import { elapsed, useNow } from './time'
+import { Markdown } from './Markdown'
 
 export interface DispatchOrigin {
   box: { x: number; y: number; w: number; h: number }
@@ -366,7 +367,7 @@ function ReportSheet({ r, wrapRef, scrollRef, closeRef, onClosed, onOpenChat, on
             <button type="button" className="btn ghost sm sh-x" onClick={close}>닫기 <Keys keys="esc" /></button>
           </div>
           <h3 className="st">{task.instruction}</h3>
-          <div className="sh-sum st">{task.summary ?? (state.status === 'done' ? '보고 내용이 없습니다.' : '작업이 끝나기 전에 멈췄습니다. 대화에서 자세한 내용을 확인하세요.')}</div>
+          <div className="sh-sum st">{task.summary ? <Markdown text={task.summary} /> : state.status === 'done' ? '보고 내용이 없습니다.' : '작업이 끝나기 전에 멈췄습니다. 대화에서 자세한 내용을 확인하세요.'}</div>
           <div className="sh-grid st">
             <div className="sh-box">
               <h4>변경한 파일 {task.files.length}</h4>

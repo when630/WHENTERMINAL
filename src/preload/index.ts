@@ -24,6 +24,7 @@ const api: WhenTerminalApi = {
   clear: (projectId, conversationId) => ipcRenderer.invoke(IPC.clear, projectId, conversationId),
   listCommands: (projectId) => ipcRenderer.invoke(IPC.listCommands, projectId),
   peek: (projectId, conversationId) => ipcRenderer.invoke(IPC.peek, projectId, conversationId),
+  loadHistory: (projectId, conversationId) => ipcRenderer.invoke(IPC.loadHistory, projectId, conversationId),
   initialSettings: ipcRenderer.sendSync(IPC.getSettingsSync),
   setSettings: (settings) => ipcRenderer.invoke(IPC.setSettings, settings),
   onSettingsChanged: (cb) => subscribe(IPC.settingsChanged, cb),

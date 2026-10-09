@@ -4,6 +4,7 @@ import type { ProjectStore } from '../store'
 import { AgentSession } from './session'
 import { commandsFor, remember, withProbe } from './commands'
 import { modelLabel, toContext } from './session'
+import { readHistory } from './history'
 
 /** 대화별 AgentSession을 만들고 보관한다. 동시 실행 제한(OPEN-003)은 여기에 붙일 예정. */
 export class AgentManager {
@@ -32,6 +33,18 @@ export class AgentManager {
   }
 
   private peeking = new Set<string>()
+
+  async loadHistory(projectId: string, conversationId: string): Promise<void> {
+    const project = this.store.get(projectId)
+    const conv = this.store.getConversation(projectId, conversationId)
+    if (!project || !conv?.sessionId) return
+    try {
+      const items = await readHistory(conv.sessionId, project.path)
+      if (items.length) this.broadcast({ projectId, conversationId, event: { kind: 'history', items } })
+    } catch (err) {
+      console.warn('지난 대화를 읽지 못함', err)
+    }
+  }
 
   /**
    * 대화창을 열었을 때 메시지를 보내지 않고 컨텍스트 사용률과 모델을 읽는다.

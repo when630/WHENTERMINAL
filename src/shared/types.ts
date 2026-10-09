@@ -120,6 +120,13 @@ export interface RateLimitInfo {
   resetsAt?: number
 }
 
+/** 세션 기록 파일에서 되살린 대화 항목 (앱을 다시 켠 뒤 보여주기용) */
+export type HistoryItem =
+  | { type: 'user'; text: string }
+  | { type: 'assistant'; text: string }
+  | { type: 'tool'; toolUseId: string; name: string; input: unknown; result?: string; isError?: boolean }
+  | { type: 'divider'; text: string }
+
 /** 메인 → 렌더러 이벤트 (대화 단위) */
 export type AgentEvent =
   | { kind: 'status'; status: AgentStatus }
@@ -138,6 +145,7 @@ export type AgentEvent =
   | { kind: 'compacted'; trigger: 'manual' | 'auto'; preTokens: number; postTokens?: number }
   | { kind: 'cleared' }
   | { kind: 'model'; model: string; label: string }
+  | { kind: 'history'; items: HistoryItem[] }
 
 export interface AgentEventEnvelope {
   projectId: string
@@ -161,6 +169,7 @@ export const IPC = {
   clear: 'agent:clear',
   listCommands: 'agent:list-commands',
   peek: 'agent:peek',
+  loadHistory: 'agent:load-history',
   getSettingsSync: 'settings:get-sync',
   setSettings: 'settings:set',
   settingsChanged: 'settings:changed',
@@ -198,6 +207,8 @@ export interface WhenTerminalApi {
   listCommands(projectId: string): Promise<SlashCommandInfo[]>
   /** 메시지 없이 이 대화의 컨텍스트 사용률·모델을 읽어 'context'·'model' 이벤트로 보낸다 */
   peek(projectId: string, conversationId: string): Promise<void>
+  /** 저장된 세션의 지난 대화를 읽어 'history' 이벤트로 보낸다 (화면 기록이 비어 있을 때) */
+  loadHistory(projectId: string, conversationId: string): Promise<void>
   /** 첫 화면을 그리기 전에 테마를 적용하려고 동기로 읽는다 */
   initialSettings: Settings
   /** 설정 저장. 전역 호출 키를 등록하지 못하면 error에 이유가 오고 그 키는 저장되지 않는다 */

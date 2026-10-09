@@ -5,6 +5,7 @@ import { HOME_ROW } from './keys'
 import { Keys } from './KeyHint'
 import { useKeymap } from './settings'
 import { usePresence } from './motion'
+import { Markdown } from './Markdown'
 import { rankCommands, SlashMenu, useSlashCommands } from './SlashMenu'
 
 interface Props {
@@ -42,6 +43,8 @@ export function Chat({ project, projects, conversationId, convs, mode, clearArme
   if (seen.current.id !== conversationId) seen.current = { id: conversationId, count: state.items.length }
   // 클리어로 기록이 줄면 기준도 내린다
   if (state.items.length < seen.current.count) seen.current.count = 0
+  // 되살린 기록은 한꺼번에 들어오므로 등장 애니메이션 없이 그린다
+  if ((state.restored ?? 0) > seen.current.count) seen.current.count = state.restored!
 
   // 다른 프로젝트의 승인 대기 (우측 상단 배지)
   const otherWaiting = projects
@@ -50,8 +53,11 @@ export function Chat({ project, projects, conversationId, convs, mode, clearArme
 
   // 열자마자 컨텍스트 사용률·모델이 보이도록, 이번 실행에서 아직 받지 않았으면 메시지 없이 읽어 온다
   const needsPeek = !state.context
+  const needsHistory = state.items.length === 0 && !!project.conversations.find((c) => c.id === conversationId)?.sessionId
   useEffect(() => {
     if (needsPeek) void window.api.peek(project.id, conversationId)
+    // 앱을 다시 켠 뒤라 화면 기록이 비어 있으면 세션 기록 파일에서 되살린다
+    if (needsHistory) void window.api.loadHistory(project.id, conversationId)
   }, [project.id, conversationId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // 맨 아래를 보고 있을 때만 따라 내려간다. 위로 올려 읽는 중이면 끌고 내려가지 않는다
@@ -332,7 +338,11 @@ function Item({ item, n, root, enter }: { item: TranscriptItem; n: number; root:
     case 'user':
       return <div className={`msg user${e}`}>{item.text}</div>
     case 'assistant':
-      return <div className={`msg assistant ${item.streaming ? 'streaming' : ''}${e}`}>{item.text}</div>
+      return (
+        <div className={`msg assistant ${item.streaming ? 'streaming' : ''}${e}`}>
+          <Markdown text={item.text} />
+        </div>
+      )
     case 'notice':
       return <div className={`msg notice ${item.tone}${e}`}>{item.text}</div>
     case 'divider':

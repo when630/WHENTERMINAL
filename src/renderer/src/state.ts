@@ -36,6 +36,8 @@ export interface ConversationState {
   task?: TaskInfo
   context?: ContextInfo
   compacting?: boolean
+  /** 기록 파일에서 되살린 항목 수 (등장 애니메이션을 하지 않을 몫) */
+  restored?: number
   model?: { id: string; label: string }
 }
 
@@ -153,6 +155,13 @@ export function applyEvent(prev: ConversationState | undefined, event: AgentEven
       break
     case 'context':
       s.context = event.context
+      break
+    case 'history':
+      // 이미 이번 실행에서 대화가 시작됐으면 덮지 않는다
+      if (s.items.length === 0) {
+        s.items = event.items.map((h) => (h.type === 'tool' ? { ...h, at: 0 } : { ...h, at: 0, ...(h.type === 'assistant' ? { streaming: false } : {}) })) as TranscriptItem[]
+        s.restored = s.items.length
+      }
       break
     case 'model':
       s.model = { id: event.model, label: event.label }
