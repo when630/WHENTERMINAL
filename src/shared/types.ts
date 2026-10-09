@@ -204,6 +204,8 @@ export const IPC = {
   setSettings: 'settings:set',
   settingsChanged: 'settings:changed',
   openSettings: 'app:open-settings',
+  navigate: 'app:navigate',
+  setBadge: 'app:set-badge',
   // 메인 → 렌더러
   event: 'agent:event',
   projectsChanged: 'projects:changed',
@@ -250,6 +252,10 @@ export interface WhenTerminalApi {
   onSettingsChanged(cb: (s: Settings) => void): () => void
   /** macOS 메뉴의 '설정…'(⌘,) */
   onOpenSettings(cb: () => void): () => void
+  /** 알림을 눌렀을 때 그 대화로 */
+  onNavigate(cb: (to: { projectId: string; conversationId: string }) => void): () => void
+  /** Dock 배지·트레이 툴팁: 확인 대기 수와 새 보고 수 */
+  setBadge(waiting: number, unread: number): void
   onEvent(cb: (e: AgentEventEnvelope) => void): () => void
   onProjectsChanged(cb: (projects: Project[]) => void): () => void
   onRateLimit(cb: (info: RateLimitInfo) => void): () => void

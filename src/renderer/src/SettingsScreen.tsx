@@ -22,6 +22,12 @@ const FIXED: { keys: string; label: string }[] = [
   { keys: '↑ ↓ ← →', label: '홈에서 이동 (보조)' },
 ]
 
+const NOTIFY: { id: keyof Settings['notify']; label: string; note: string }[] = [
+  { id: 'approval', label: '확인 요청이 오면', note: '알림을 누르면 그 대화로 가요. macOS는 Dock 아이콘도 한 번 튀어요' },
+  { id: 'done', label: '작업이 끝나면', note: '완료와 오류 모두' },
+  { id: 'whenFocused', label: '창을 보고 있을 때도', note: '끄면 다른 창에 있을 때만 알려요' },
+]
+
 /** 새 키를 받아도 되는지. 안 되면 이유 */
 function validate(a: ActionDef, binding: string): string | null {
   const hasMod = /(^|\+)(Ctrl|Alt|Meta)\+/.test(binding)
@@ -130,6 +136,33 @@ export function SettingsScreen({ settings, activeHotkey, onClose, onSaved }: Pro
               )
             })}
           </div>
+        </section>
+
+        <section className="set-sec" aria-labelledby="set-notify">
+          <h2 id="set-notify" className="col-h">알림</h2>
+          {NOTIFY.map((n) => {
+            const on = settings.notify[n.id]
+            return (
+              <div key={n.id} className="krow">
+                <span className="krow-label">
+                  {n.label}
+                  <span className="krow-note">{n.note}</span>
+                </span>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={on}
+                  aria-label={n.label}
+                  className={`switch ${on ? 'on' : ''}`}
+                  onClick={() => void save({ ...settings, notify: { ...settings.notify, [n.id]: !on } })}
+                >
+                  <i />
+                  <span>{on ? '켬' : '끔'}</span>
+                </button>
+                <span className="krow-side" />
+              </div>
+            )
+          })}
         </section>
 
         <section className="set-sec" aria-labelledby="set-keys">

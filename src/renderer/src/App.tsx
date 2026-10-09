@@ -38,7 +38,11 @@ export function App(): React.JSX.Element {
     themeApplied.current = true
   }, [settings.theme])
   useEffect(() => {
-    const offs = [window.api.onSettingsChanged(setSettings), window.api.onOpenSettings(() => openSettingsRef.current())]
+    const offs = [
+      window.api.onSettingsChanged(setSettings),
+      window.api.onOpenSettings(() => openSettingsRef.current()),
+      window.api.onNavigate(({ projectId, conversationId }) => openChatRef.current(projectId, conversationId)),
+    ]
     return () => offs.forEach((off) => off())
   }, [])
 
@@ -123,6 +127,13 @@ export function App(): React.JSX.Element {
     if (i >= 0) setDispatchIndex(i)
     setView({ screen: 'chat', projectId, conversationId })
   }, [projects])
+
+  const openChatRef = useRef(openChat)
+  openChatRef.current = openChat
+
+  // Dock 배지·트레이: 확인 대기 수 + 새 보고 수
+  const waitingTotal = running.filter((r) => r.state.permissions.length > 0).length
+  useEffect(() => window.api.setBadge(waitingTotal, unreadTotal), [waitingTotal, unreadTotal])
 
   const openProject = useCallback(
     (index: number) => {

@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { IPC, type StoredTask, type UsageInfo, type AgentEventEnvelope, type AgentMode, type PermissionDecision, type RateLimitInfo } from '@shared/types'
 import { ProjectStore } from './store'
 import { SettingsStore } from './settings'
+import { applyBadge, Notifier } from './notify'
 import { effectiveKeymap, THEMES, toAccelerator, type Settings } from '@shared/keymap'
 import { AgentManager } from './agent/manager'
 import { fetchUsage, mergeRateLimit } from './agent/usage'
@@ -104,10 +105,17 @@ function bootstrap(): void {
     usageTimer = setTimeout(() => void refreshUsage(), 2500)
   }
 
+  const notifier = new Notifier(store, () => win, () => settingsStore.get(), (projectId, conversationId) => {
+    showWindow()
+    send(IPC.navigate, { projectId, conversationId })
+  })
+  ipcMain.on(IPC.setBadge, (_e, waiting: number, unread: number) => applyBadge(tray, waiting, unread))
+
   const manager = new AgentManager(
     store,
     (e: AgentEventEnvelope) => {
       send(IPC.event, e)
+      notifier.handle(e)
       if (e.event.kind === 'result') refreshUsageSoon()
     },
     (info: RateLimitInfo) => {

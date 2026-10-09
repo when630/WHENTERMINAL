@@ -40,5 +40,12 @@ function sanitize(raw: unknown): Settings {
     // 기본값과 같으면 저장하지 않는다 (기본값이 바뀌면 따라가게)
     if (typeof v === 'string' && normalize(v) && normalize(v) !== normalize(a.default)) keymap[a.id] = normalize(v)
   }
-  return { theme, keymap }
+  const n = (o.notify ?? {}) as Partial<Settings['notify']>
+  const d = DEFAULT_SETTINGS.notify
+  const notify = {
+    approval: typeof n.approval === 'boolean' ? n.approval : d.approval,
+    done: typeof n.done === 'boolean' ? n.done : d.done,
+    whenFocused: typeof n.whenFocused === 'boolean' ? n.whenFocused : d.whenFocused,
+  }
+  return { theme, notify, keymap }
 }

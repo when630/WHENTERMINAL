@@ -111,13 +111,23 @@ export const THEMES: { id: ThemeId; name: string; note: string; colors: [string,
   { id: 'night', name: '밤', note: '푸른 어두운 회색, 차가운 톤', colors: ['#1a1e24', '#c5cdd6', '#e5806b'], dark: true },
 ]
 
+export interface NotifySettings {
+  /** 확인 요청이 오면 */
+  approval: boolean
+  /** 작업이 끝나면 (오류·중단 포함) */
+  done: boolean
+  /** 창을 보고 있을 때도 알림 */
+  whenFocused: boolean
+}
+
 export interface Settings {
   theme: ThemeId
+  notify: NotifySettings
   /** 기본값과 다른 키만 저장 */
   keymap: Partial<Keymap>
 }
 
-export const DEFAULT_SETTINGS: Settings = { theme: 'poster', keymap: {} }
+export const DEFAULT_SETTINGS: Settings = { theme: 'poster', notify: { approval: true, done: true, whenFocused: false }, keymap: {} }
 
 export function effectiveKeymap(settings: Settings): Keymap {
   return { ...DEFAULT_KEYMAP, ...settings.keymap }
