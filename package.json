@@ -15,11 +15,12 @@
     "test:session": "esbuild scripts/session-test.ts --bundle --platform=node --format=esm --packages=external --tsconfig=tsconfig.node.json --outfile=out/test/session-test.mjs && node out/test/session-test.mjs",
     "dist": "npm run build && electron-builder",
     "dist:mac": "npm run build && electron-builder --mac",
-    "dist:win": "npm run build && electron-builder --win",
+    "dist:win": "npm run build && electron-builder --win --x64",
     "dist:dir": "npm run build && electron-builder --dir",
     "test:e2e": "npm run build && playwright test -c tests/e2e/playwright.config.ts --grep-invert @live",
     "test:e2e:live": "npm run build && playwright test -c tests/e2e/playwright.config.ts --grep @live",
-    "icons": "electron scripts/render-icons.cjs"
+    "icons": "electron scripts/render-icons.cjs",
+    "dist:win:zip": "npm run build && electron-builder --win zip --x64"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.293",
@@ -65,11 +66,28 @@
       "target": [
         "dmg",
         "zip"
+      ],
+      "files": [
+        "!node_modules/@anthropic-ai/claude-agent-sdk-{win32,linux}-*{,/**}"
       ]
     },
     "win": {
       "target": [
-        "nsis"
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "files": [
+        "!node_modules/@anthropic-ai/claude-agent-sdk-{darwin,linux}-*{,/**}"
       ]
     },
     "nsis": {
