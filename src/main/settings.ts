@@ -47,5 +47,6 @@ function sanitize(raw: unknown): Settings {
     done: typeof n.done === 'boolean' ? n.done : d.done,
     whenFocused: typeof n.whenFocused === 'boolean' ? n.whenFocused : d.whenFocused,
   }
-  return { theme, notify, keymap }
+  const maxConcurrent = Number.isInteger(o.maxConcurrent) && o.maxConcurrent! >= 0 && o.maxConcurrent! <= 16 ? o.maxConcurrent! : DEFAULT_SETTINGS.maxConcurrent
+  return { theme, notify, maxConcurrent, keymap }
 }

@@ -10,14 +10,61 @@ import { readHistory } from './history'
 export class AgentManager {
   private sessions = new Map<string, AgentSession>()
 
+  /** 자리가 나길 기다리는 메시지 (OPEN-003). 들어온 순서대로 시작한다 */
+  private waiting: { projectId: string; conversationId: string; text: string }[] = []
+
   constructor(
     private readonly store: ProjectStore,
     private readonly broadcast: (e: AgentEventEnvelope) => void,
     private readonly onRateLimit: (info: RateLimitInfo) => void,
+    /** 동시 실행 수. 0이면 제한 없음 */
+    private readonly maxConcurrent: () => number = () => 0,
   ) {}
 
   send(projectId: string, conversationId: string, text: string): void {
-    this.getOrCreate(projectId, conversationId).send(text)
+    const session = this.getOrCreate(projectId, conversationId)
+    // 이미 실행 중인 대화에 이어 보내는 건 자리를 더 쓰지 않는다
+    if (session.isBusy()) return session.send(text)
+    const alreadyWaiting = this.waiting.some((w) => w.conversationId === conversationId)
+    if (alreadyWaiting || this.atCapacity()) {
+      this.waiting.push({ projectId, conversationId, text })
+      session.enqueue(text)
+      this.announcePositions()
+      return
+    }
+    session.send(text)
+  }
+
+  private atCapacity(): boolean {
+    const limit = this.maxConcurrent()
+    if (limit <= 0) return false
+    let busy = 0
+    for (const s of this.sessions.values()) if (s.isBusy()) busy++
+    return busy >= limit
+  }
+
+  /** 자리가 났으면 대기열 앞에서부터 시작한다. 설정을 바꿨을 때도 부른다 */
+  drain(): void {
+    while (this.waiting.length && !this.atCapacity()) {
+      const w = this.waiting.shift()!
+      this.sessions.get(w.conversationId)?.send(w.text, false)
+    }
+    this.announcePositions()
+  }
+
+  private announcePositions(): void {
+    const seen = new Set<string>()
+    this.waiting.forEach((w, i) => {
+      if (seen.has(w.conversationId)) return
+      seen.add(w.conversationId)
+      this.broadcast({ projectId: w.projectId, conversationId: w.conversationId, event: { kind: 'queue', position: i + 1 } })
+    })
+  }
+
+  private dropWaiting(conversationId: string): boolean {
+    const before = this.waiting.length
+    this.waiting = this.waiting.filter((w) => w.conversationId !== conversationId)
+    return this.waiting.length !== before
   }
 
   /** 이 앱 실행 중에 한 번이라도 메시지를 보낸 대화인지 */
@@ -98,6 +145,7 @@ export class AgentManager {
 
   /** 대화를 닫는다: 세션을 끝내고(진행 중이면 중단) 목록에서 뺀다. 디스크의 세션 기록 파일은 남긴다 */
   closeConversation(projectId: string, conversationId: string): string {
+    this.dropWaiting(conversationId)
     this.sessions.get(conversationId)?.dispose()
     this.sessions.delete(conversationId)
     return this.store.closeConversation(projectId, conversationId)
@@ -105,6 +153,7 @@ export class AgentManager {
 
   /** 세션을 닫고 저장된 세션 ID를 지운다. 다음 메시지는 새 세션으로 시작 (이전 기록 파일은 지우지 않음) */
   clear(projectId: string, conversationId: string): void {
+    this.dropWaiting(conversationId)
     this.sessions.get(conversationId)?.dispose()
     this.sessions.delete(conversationId)
     this.store.updateConversation(projectId, conversationId, { sessionId: undefined, contextPercent: undefined })
@@ -112,6 +161,12 @@ export class AgentManager {
   }
 
   async interrupt(projectId: string, conversationId: string): Promise<void> {
+    // 아직 차례를 기다리던 대화는 대기열에서 빼는 것으로 중단
+    if (this.dropWaiting(conversationId)) {
+      this.sessions.get(conversationId)?.cancelQueued()
+      this.announcePositions()
+      return
+    }
     await this.sessions.get(conversationId)?.interrupt()
   }
 
@@ -151,6 +206,10 @@ export class AgentManager {
       mode: conv.mode,
       resumeSessionId: conv.sessionId,
       emit: (event) => {
+        // 실행이 끝나 자리가 나면 다음 차례를 시작한다
+        if (event.kind === 'status' && event.status !== 'running' && event.status !== 'waiting_approval' && event.status !== 'queued') {
+          queueMicrotask(() => this.drain())
+        }
         if (event.kind === 'context') this.store.updateConversation(projectId, conversationId, { contextPercent: event.context.percent })
         if (event.kind === 'mode') this.store.updateConversation(projectId, conversationId, { mode: event.mode })
         if (event.kind === 'model') this.store.updateConversation(projectId, conversationId, { model: event.model, modelLabel: event.label })

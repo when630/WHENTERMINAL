@@ -174,6 +174,8 @@ export type AgentEvent =
   | { kind: 'cleared' }
   | { kind: 'model'; model: string; label: string }
   | { kind: 'history'; items: HistoryItem[] }
+  /** 대기열 순번 (1부터) */
+  | { kind: 'queue'; position: number }
 
 export interface AgentEventEnvelope {
   projectId: string

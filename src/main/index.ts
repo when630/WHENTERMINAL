@@ -75,6 +75,8 @@ function bootstrap(): void {
       if (error) saved = settingsStore.set({ ...saved, keymap: { ...saved.keymap, summon: before.keymap.summon } })
     }
     win?.setBackgroundColor(themeBackground(saved))
+    // 동시 실행 수를 늘렸으면 기다리던 대화를 바로 시작
+    manager.drain()
     send(IPC.settingsChanged, saved)
     return { settings: saved, error }
   })
@@ -123,6 +125,7 @@ function bootstrap(): void {
       usage = mergeRateLimit(usage, info)
       if (usage) send(IPC.usage, usage)
     },
+    () => settingsStore.get().maxConcurrent,
   )
   ipcMain.handle(IPC.getUsage, (_e, refresh?: boolean) =>
     refresh || !usage || Date.now() - usage.fetchedAt > USAGE_STALE_MS ? refreshUsage() : usage,

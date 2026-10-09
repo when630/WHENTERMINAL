@@ -227,7 +227,7 @@ function TaskCard({ r, now, selected, onSelect, onOpen, onRespond }: {
             </div>
           </div>
           <div className="band-side" aria-label={`진행 단계: ${STAGES[stage]}`}>
-            {pending ? <span className="q" aria-hidden="true">?</span> : <span className="stage-word"><Roll text={STAGES[stage]} /></span>}
+            {pending ? <span className="q" aria-hidden="true">?</span> : <span className="stage-word"><Roll text={state.status === 'queued' ? '대기' : STAGES[stage]} /></span>}
           </div>
         </div>
         <div className={`cf ${pending ? 'open' : ''}`}>

@@ -80,17 +80,33 @@ export class AgentSession {
     return this.q ? this.q.supportedCommands() : null
   }
 
-  send(text: string): void {
+  /** echo=false: 대기열에 넣을 때 이미 화면에 보낸 메시지라 다시 보내지 않는다 */
+  send(text: string, echo = true): void {
     if (!this.q) this.start()
-    this.opts.emit({ kind: 'user', text })
+    if (echo) this.opts.emit({ kind: 'user', text })
     this.setStatus('running')
     this.queue!.push(text)
+  }
+
+  /** 자리가 없어 기다리는 메시지: 화면에는 바로 보이고 상태는 대기 */
+  enqueue(text: string): void {
+    this.opts.emit({ kind: 'user', text })
+    this.setStatus('queued')
+  }
+
+  /** 프로세스가 떠서 자리를 차지하는 중 (실행 또는 확인 대기) */
+  isBusy(): boolean {
+    return this.status === 'running' || this.status === 'waiting_approval'
+  }
+
+  cancelQueued(): void {
+    if (this.status === 'queued') this.setStatus('stopped')
   }
 
   /** /compact를 같은 세션에 보낸다. 실행 중이면 거절 (끝난 뒤에 해야 요약이 온전하다) */
   compact(instructions?: string): void {
     const refuse = (message: string): void => this.opts.emit({ kind: 'error', message })
-    if (this.status === 'running' || this.status === 'waiting_approval') return refuse('작업이 끝난 뒤에 컴팩트할 수 있어요')
+    if (this.status === 'running' || this.status === 'waiting_approval' || this.status === 'queued') return refuse('작업이 끝난 뒤에 컴팩트할 수 있어요')
     if (!this.q && !this.sessionId) return refuse('아직 대화가 없어 컴팩트할 내용이 없어요')
     if (this.manualCompact) return
     if (!this.q) this.start()

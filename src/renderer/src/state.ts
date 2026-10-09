@@ -142,6 +142,9 @@ export function applyEvent(prev: ConversationState | undefined, event: AgentEven
     case 'context':
       s.context = event.context
       break
+    case 'queue':
+      task({ activity: `차례를 기다리는 중 · ${event.position}번째` })
+      break
     case 'history':
       // 이미 이번 실행에서 대화가 시작됐으면 덮지 않는다
       if (s.items.length === 0) {

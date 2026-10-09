@@ -42,6 +42,7 @@ export function Ticker({ running, reports, hotkey }: Props): React.JSX.Element {
   const parts: { text: string; alert?: boolean; keys?: string; after?: string }[] = running.map((r) => {
     const name = `■ ${HOME_ROW[r.projectIndex] ?? ''} ${r.project.name.toUpperCase()}`
     if (r.state.permissions.length > 0) return { text: `${name}  확인을 기다려요`, alert: true }
+    if (r.state.status === 'queued') return { text: `${name}  차례를 기다리는 중` }
     return { text: `${name}  ${STAGES[Math.min(r.task.stage, STAGES.length - 1)]} 중 · ${r.task.activity}` }
   })
   if (running.length === 0) parts.push({ text: '■ 진행 중인 작업 없음 · ', keys: km.dispatch, after: ' 작업 지시' })

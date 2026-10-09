@@ -338,6 +338,11 @@ kbd { display: inline-block; font: 500 11px/1 var(--mono); padding: 3px 5px; col
 .krow:hover { background: var(--wash); }
 .krow-label { font-weight: 700; font-size: 14px; display: flex; flex-direction: column; gap: 2px; }
 .krow-note { font-size: 12px; font-weight: 600; color: var(--gray); }
+.seg { justify-self: start; display: inline-flex; border: var(--rule); }
+.seg button { min-width: 40px; padding: 6px 10px; border: 0; border-left: var(--rule); background: var(--paper); color: var(--ink); font: 900 14px/1 var(--disp); transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out); }
+.seg button:first-child { border-left: 0; }
+.seg button:hover { background: var(--wash); }
+.seg button.on { background: var(--sel-bg); color: var(--sel-fg); }
 .switch { justify-self: start; display: inline-flex; align-items: center; gap: 10px; padding: 4px 10px 4px 4px; border: var(--rule); background: var(--paper); color: var(--ink); font: 14px/1 var(--kr); }
 .switch i { position: relative; width: 38px; height: 20px; background: var(--wash-2); transition: background var(--t-med) var(--ease-io); }
 .switch i::after { content: ''; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; background: var(--ink); transition: transform var(--t-med) var(--spring), background var(--t-med); }

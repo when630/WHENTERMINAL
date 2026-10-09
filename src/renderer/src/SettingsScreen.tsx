@@ -138,6 +138,31 @@ export function SettingsScreen({ settings, activeHotkey, onClose, onSaved }: Pro
           </div>
         </section>
 
+        <section className="set-sec" aria-labelledby="set-run">
+          <h2 id="set-run" className="col-h">실행</h2>
+          <div className="krow">
+            <span className="krow-label">
+              동시 실행
+              <span className="krow-note">넘치면 대기로 두고 자리가 나는 순서대로 시작해요. 확인을 기다리는 대화도 한 자리를 써요</span>
+            </span>
+            <span className="seg" role="radiogroup" aria-label="동시 실행 수">
+              {[1, 2, 3, 4, 6, 0].map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  role="radio"
+                  aria-checked={settings.maxConcurrent === n}
+                  className={settings.maxConcurrent === n ? 'on' : ''}
+                  onClick={() => void save({ ...settings, maxConcurrent: n })}
+                >
+                  {n === 0 ? '무제한' : n}
+                </button>
+              ))}
+            </span>
+            <span className="krow-side" />
+          </div>
+        </section>
+
         <section className="set-sec" aria-labelledby="set-notify">
           <h2 id="set-notify" className="col-h">알림</h2>
           {NOTIFY.map((n) => {
