@@ -76,7 +76,12 @@ export interface Conversation {
   lastTask?: StoredTask
   /** 닫았지만 보관하지 않은 보고서가 있어 남겨 둔 대화. 탭·목록에는 안 보인다 */
   closedAt?: number
+  /** 하위 대화의 별도 작업 공간 (git worktree). 있으면 세션이 이 폴더에서 돈다 */
+  worktree?: { path: string; branch: string }
 }
+
+/** 대화가 실제로 작업하는 폴더 */
+export const cwdOf = (p: Project, c: Conversation | undefined): string => c?.worktree?.path ?? p.path
 
 /** 탭·목록에 보이는 대화 (닫힌 대화 제외) */
 export const openConversations = (p: Project): Conversation[] => p.conversations.filter((c) => !c.closedAt)

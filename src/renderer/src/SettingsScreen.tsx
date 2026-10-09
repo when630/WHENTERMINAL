@@ -163,6 +163,27 @@ export function SettingsScreen({ settings, activeHotkey, onClose, onSaved }: Pro
           </div>
         </section>
 
+        <section className="set-sec set-sec-cont" aria-label="하위 대화 작업 공간">
+          <div className="krow">
+            <span className="krow-label">
+              하위 대화는 따로 작업
+              <span className="krow-note">탭의 +로 만든 대화를 git worktree(새 브랜치 wt/…)에서 실행해 파일 충돌을 막아요. git 저장소가 아니면 플랜 모드로 시작해요</span>
+            </span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={settings.worktree}
+              aria-label="하위 대화는 따로 작업"
+              className={`switch ${settings.worktree ? 'on' : ''}`}
+              onClick={() => void save({ ...settings, worktree: !settings.worktree })}
+            >
+              <i />
+              <span>{settings.worktree ? '켬' : '끔'}</span>
+            </button>
+            <span className="krow-side" />
+          </div>
+        </section>
+
         <section className="set-sec" aria-labelledby="set-notify">
           <h2 id="set-notify" className="col-h">알림</h2>
           {NOTIFY.map((n) => {

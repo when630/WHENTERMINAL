@@ -172,7 +172,13 @@ export function Chat({ project, projects, conversationId, convs, mode, clearArme
           <span className="tb-key" aria-hidden="true">{HOME_ROW[projectIndex] ?? ''}</span>
           <span className="tb-name">
             <b>{project.name}</b>
-            <span>{project.path}</span>
+            {conv?.worktree ? (
+              <span className="tb-wt" title={conv.worktree.path}>
+                <span className="wt-tag">작업 공간</span> {conv.worktree.branch} · {conv.worktree.path}
+              </span>
+            ) : (
+              <span>{project.path}</span>
+            )}
           </span>
         </div>
         <div className="tb-right">
@@ -214,6 +220,7 @@ export function Chat({ project, projects, conversationId, convs, mode, clearArme
                 >
                   <span className="tab-n">{String(i + 1).padStart(2, '0')}</span>
                   <span className="tab-t">{c.title}</span>
+                {c.worktree && <span className="wt-tag" title={`작업 공간 ${c.worktree.branch}`}>WT</span>}
                   <span className={`dot dot-${st}`} />
                 </button>
                 <button

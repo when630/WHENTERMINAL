@@ -1,10 +1,11 @@
 import type { Query } from '@anthropic-ai/claude-agent-sdk'
-import type { AgentEventEnvelope, AgentMode, PermissionDecision, RateLimitInfo, SlashCommandInfo } from '@shared/types'
+import { cwdOf, type AgentEventEnvelope, AgentMode, PermissionDecision, RateLimitInfo, SlashCommandInfo } from '@shared/types'
 import type { ProjectStore } from '../store'
 import { AgentSession } from './session'
 import { commandsFor, remember, withProbe } from './commands'
 import { modelLabel, toContext } from './session'
 import { readHistory } from './history'
+import { removeWorktreeIfClean } from '../worktree'
 
 /** 대화별 AgentSession을 만들고 보관한다. 동시 실행 제한(OPEN-003)은 여기에 붙일 예정. */
 export class AgentManager {
@@ -86,7 +87,7 @@ export class AgentManager {
     const conv = this.store.getConversation(projectId, conversationId)
     if (!project || !conv?.sessionId) return
     try {
-      const items = await readHistory(conv.sessionId, project.path)
+      const items = await readHistory(conv.sessionId, cwdOf(project, conv))
       if (items.length) this.broadcast({ projectId, conversationId, event: { kind: 'history', items } })
     } catch (err) {
       console.warn('지난 대화를 읽지 못함', err)
@@ -105,7 +106,7 @@ export class AgentManager {
     if (!project || !conv || this.peeking.has(conversationId)) return
     this.peeking.add(conversationId)
     try {
-      const u = await withProbe(project.path, (q) => q.getContextUsage({ detail: 'summary' }), conv.sessionId)
+      const u = await withProbe(cwdOf(project, conv), (q) => q.getContextUsage({ detail: 'summary' }), conv.sessionId)
       const emit = (event: AgentEventEnvelope['event']): void => this.broadcast({ projectId, conversationId, event })
       const context = toContext(u)
       this.store.updateConversation(projectId, conversationId, { contextPercent: context.percent, ...(u.model ? { model: u.model, modelLabel: conv.modelLabel ?? modelLabel(u.model) } : {}) })
@@ -148,7 +149,14 @@ export class AgentManager {
     this.dropWaiting(conversationId)
     this.sessions.get(conversationId)?.dispose()
     this.sessions.delete(conversationId)
-    return this.store.closeConversation(projectId, conversationId)
+    const project = this.store.get(projectId)
+    const conv = this.store.getConversation(projectId, conversationId)
+    const next = this.store.closeConversation(projectId, conversationId)
+    // 하위 대화의 작업 공간: 변경이 없을 때만 지운다 (보고서 때문에 남겨 둔 대화는 그대로)
+    if (project && conv?.worktree && !this.store.getConversation(projectId, conversationId)) {
+      void removeWorktreeIfClean(project.path, conv.worktree.path)
+    }
+    return next
   }
 
   /** 세션을 닫고 저장된 세션 ID를 지운다. 다음 메시지는 새 세션으로 시작 (이전 기록 파일은 지우지 않음) */
@@ -202,7 +210,7 @@ export class AgentManager {
     const conv = this.store.getConversation(projectId, conversationId)
     if (!project || !conv) throw new Error(`대화 없음: ${projectId}/${conversationId}`)
     const session = new AgentSession({
-      cwd: project.path,
+      cwd: cwdOf(project, conv),
       mode: conv.mode,
       resumeSessionId: conv.sessionId,
       emit: (event) => {

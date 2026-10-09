@@ -48,10 +48,10 @@ export class ProjectStore {
     this.save()
   }
 
-  addConversation(projectId: string): Conversation {
+  addConversation(projectId: string, extra: Partial<Conversation> = {}, id?: string): Conversation {
     const project = this.get(projectId)
     if (!project) throw new Error(`프로젝트 없음: ${projectId}`)
-    const conv = newConversation(openConversations(project).length + 1)
+    const conv = { ...newConversation(openConversations(project).length + 1), ...extra, ...(id ? { id } : {}) }
     project.conversations.push(conv)
     this.save()
     return conv
@@ -127,6 +127,10 @@ export class ProjectStore {
     writeFileSync(tmp, JSON.stringify(this.projects, null, 2), 'utf8')
     renameSync(tmp, this.file)
   }
+}
+
+export function newConversationId(): string {
+  return randomUUID()
 }
 
 function newConversation(n: number): Conversation {

@@ -338,6 +338,9 @@ kbd { display: inline-block; font: 500 11px/1 var(--mono); padding: 3px 5px; col
 .krow:hover { background: var(--wash); }
 .krow-label { font-weight: 700; font-size: 14px; display: flex; flex-direction: column; gap: 2px; }
 .krow-note { font-size: 12px; font-weight: 600; color: var(--gray); }
+.set-sec.set-sec-cont { border-top: 0; }
+.wt-tag { padding: 2px 5px; border: 1.5px solid currentColor; font: 600 10px/1 var(--disp); letter-spacing: 0.08em; }
+.tb-wt { display: inline-flex; align-items: center; gap: 6px; }
 .seg { justify-self: start; display: inline-flex; border: var(--rule); }
 .seg button { min-width: 40px; padding: 6px 10px; border: 0; border-left: var(--rule); background: var(--paper); color: var(--ink); font: 900 14px/1 var(--disp); transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out); }
 .seg button:first-child { border-left: 0; }

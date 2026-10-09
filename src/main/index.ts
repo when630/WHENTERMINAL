@@ -1,8 +1,9 @@
 import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, shell, Tray } from 'electron'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { IPC, type StoredTask, type UsageInfo, type AgentEventEnvelope, type AgentMode, type PermissionDecision, type RateLimitInfo } from '@shared/types'
-import { ProjectStore } from './store'
+import { IPC, type Conversation, type StoredTask, type UsageInfo, type AgentEventEnvelope, type AgentMode, type PermissionDecision, type RateLimitInfo } from '@shared/types'
+import { newConversationId, ProjectStore } from './store'
+import { createWorktree, isGitRepo } from './worktree'
 import { SettingsStore } from './settings'
 import { applyBadge, Notifier } from './notify'
 import { effectiveKeymap, THEMES, toAccelerator, type Settings } from '@shared/keymap'
@@ -147,8 +148,24 @@ function bootstrap(): void {
     store.removeProject(projectId)
     projectsChanged()
   })
-  ipcMain.handle(IPC.addConversation, (_e, projectId: string) => {
-    const conv = store.addConversation(projectId)
+  // 탭의 +: 하위 대화. 설정이 켜져 있으면 git worktree에서, git이 아니면 플랜 모드로 시작
+  ipcMain.handle(IPC.addConversation, async (_e, projectId: string) => {
+    const project = store.get(projectId)
+    if (!project) throw new Error(`프로젝트 없음: ${projectId}`)
+    const extra: Partial<Conversation> = {}
+    const id = newConversationId()
+    if (settingsStore.get().worktree) {
+      if (await isGitRepo(project.path)) {
+        try {
+          extra.worktree = await createWorktree(project.path, join(app.getPath('userData'), 'worktrees'), id)
+        } catch (err) {
+          console.warn('worktree를 만들지 못해 프로젝트 폴더에서 실행', err)
+        }
+      } else {
+        extra.mode = 'plan'
+      }
+    }
+    const conv = store.addConversation(projectId, extra, id)
     projectsChanged()
     return conv
   })
