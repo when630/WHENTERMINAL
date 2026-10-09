@@ -379,6 +379,7 @@ export function App(): React.JSX.Element {
               conversationId={view.conversationId}
               convs={convs}
               mode={modeOf(view.projectId, view.conversationId)}
+              usage={usage}
               clearArmed={armed?.kind === 'clear' && armed.id === view.conversationId}
               closeArmedId={armed?.kind === 'close' ? armed.id : null}
               onClearRequest={() => requestClear(chatProject.id, view.conversationId)}

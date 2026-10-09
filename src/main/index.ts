@@ -1,7 +1,7 @@
 import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, shell, Tray } from 'electron'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { cwdOf, IPC, type Conversation, type StoredTask, type UsageInfo, type AgentEventEnvelope, type AgentMode, type PermissionDecision, type RateLimitInfo } from '@shared/types'
+import { cwdOf, IPC, type Conversation, type ModelOption, type StoredTask, type UsageInfo, type AgentEventEnvelope, type AgentMode, type PermissionDecision, type RateLimitInfo } from '@shared/types'
 import { newConversationId, ProjectStore } from './store'
 import { createWorktree, isGitRepo } from './worktree'
 import { searchFiles } from './files'
@@ -201,6 +201,8 @@ function bootstrap(): void {
   )
   ipcMain.handle(IPC.listCommands, (_e, projectId: string) => manager.listCommands(projectId))
   ipcMain.handle(IPC.loadHistory, (_e, projectId: string, conversationId: string) => manager.loadHistory(projectId, conversationId))
+  ipcMain.handle(IPC.listModels, (_e, projectId: string) => manager.listModels(projectId))
+  ipcMain.handle(IPC.setModel, (_e, projectId: string, conversationId: string, option: ModelOption) => manager.setModel(projectId, conversationId, option))
   ipcMain.handle(IPC.searchFiles, (_e, projectId: string, conversationId: string, q: string) => {
     const project = store.get(projectId)
     return project ? searchFiles(cwdOf(project, store.getConversation(projectId, conversationId)), q) : []

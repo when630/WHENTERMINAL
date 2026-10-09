@@ -12,6 +12,8 @@ interface PendingPermission {
 export interface AgentSessionOptions {
   cwd: string
   mode: AgentMode
+  /** 사용자가 고른 모델. 없으면 설정의 기본 모델 */
+  model?: string
   /** 이전에 저장한 SDK 세션 ID. 있으면 이어서 시작 */
   resumeSessionId?: string
   emit: (event: AgentEvent) => void
@@ -68,6 +70,12 @@ export class AgentSession {
 
   getStatus(): AgentStatus {
     return this.status
+  }
+
+  /** 모델 바꾸기. 살아 있으면 다음 응답부터, 아니면 다음 시작 때 쓴다 */
+  async setModel(value: string | undefined): Promise<void> {
+    this.opts.model = value
+    if (this.q) await this.q.setModel(value)
   }
 
   /** 살아 있는 SDK Query. 프로세스가 끝났으면 null */
@@ -173,6 +181,7 @@ export class AgentSession {
         settingSources: ['user', 'project', 'local'],
         systemPrompt: { type: 'preset', preset: 'claude_code' },
         resume: this.sessionId,
+        model: this.opts.model,
       },
     })
     void this.consume(this.q)

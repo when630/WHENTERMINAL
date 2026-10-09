@@ -76,6 +76,8 @@ export interface Conversation {
   lastTask?: StoredTask
   /** 닫았지만 보관하지 않은 보고서가 있어 남겨 둔 대화. 탭·목록에는 안 보인다 */
   closedAt?: number
+  /** 사용자가 고른 모델 (SDK ModelInfo.value). 없으면 설정의 기본 모델 */
+  modelChoice?: string
   /** 하위 대화의 별도 작업 공간 (git worktree). 있으면 세션이 이 폴더에서 돈다 */
   worktree?: { path: string; branch: string }
 }
@@ -113,6 +115,14 @@ export interface ContextInfo {
   tokens: number
   max: number
   autoCompactAt?: number
+}
+
+/** 고를 수 있는 모델 (SDK ModelInfo) */
+export interface ModelOption {
+  value: string
+  displayName: string
+  description: string
+  resolvedModel?: string
 }
 
 /** 입력창에서 /로 고를 수 있는 명령 (SDK SlashCommand와 같은 모양) */
@@ -207,6 +217,8 @@ export const IPC = {
   listCommands: 'agent:list-commands',
   peek: 'agent:peek',
   searchFiles: 'files:search',
+  listModels: 'agent:list-models',
+  setModel: 'agent:set-model',
   loadHistory: 'agent:load-history',
   getSettingsSync: 'settings:get-sync',
   setSettings: 'settings:set',
@@ -253,6 +265,9 @@ export interface WhenTerminalApi {
   peek(projectId: string, conversationId: string): Promise<void>
   /** 입력창의 @ 자동완성: 이 대화의 작업 폴더에서 파일 찾기 (상대 경로) */
   searchFiles(projectId: string, conversationId: string, query: string): Promise<string[]>
+  listModels(projectId: string): Promise<ModelOption[]>
+  /** 이 대화의 모델을 바꾼다. 실행 중이면 다음 응답부터, 아니면 다음 시작부터 */
+  setModel(projectId: string, conversationId: string, option: ModelOption): Promise<void>
   /** 저장된 세션의 지난 대화를 읽어 'history' 이벤트로 보낸다 (화면 기록이 비어 있을 때) */
   loadHistory(projectId: string, conversationId: string): Promise<void>
   /** 첫 화면을 그리기 전에 테마를 적용하려고 동기로 읽는다 */

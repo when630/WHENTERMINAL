@@ -1,5 +1,5 @@
 import type { Query } from '@anthropic-ai/claude-agent-sdk'
-import { cwdOf, type AgentEventEnvelope, AgentMode, PermissionDecision, RateLimitInfo, SlashCommandInfo } from '@shared/types'
+import { cwdOf, type ModelOption, type AgentEventEnvelope, AgentMode, PermissionDecision, RateLimitInfo, SlashCommandInfo } from '@shared/types'
 import type { ProjectStore } from '../store'
 import { AgentSession } from './session'
 import { commandsFor, remember, withProbe } from './commands'
@@ -81,6 +81,30 @@ export class AgentManager {
   }
 
   private peeking = new Set<string>()
+  private models: { at: number; list: ModelOption[] } | null = null
+
+  /** 고를 수 있는 모델 목록 (계정 단위라 10분 캐시) */
+  async listModels(projectId: string): Promise<ModelOption[]> {
+    if (this.models && Date.now() - this.models.at < 10 * 60_000) return this.models.list
+    const project = this.store.get(projectId)
+    const fetch = (q: Query): Promise<ModelOption[]> =>
+      q.supportedModels().then((l) => l.map((m) => ({ value: m.value, displayName: m.displayName, description: m.description, resolvedModel: m.resolvedModel })))
+    const live = this.liveQuery()
+    const list = live ? await fetch(live) : await withProbe(project?.path ?? process.cwd(), fetch)
+    this.models = { at: Date.now(), list }
+    return list
+  }
+
+  async setModel(projectId: string, conversationId: string, option: ModelOption): Promise<void> {
+    const isDefault = option.value === 'default'
+    this.store.updateConversation(projectId, conversationId, { modelChoice: isDefault ? undefined : option.value })
+    await this.sessions.get(conversationId)?.setModel(isDefault ? undefined : option.value)
+    // 화면에는 바로 반영 (실제 모델 ID는 다음 턴 시작 메시지로 다시 맞춰진다)
+    const id = option.resolvedModel ?? option.value
+    const label = /^claude-/.test(id) ? modelLabel(id) : option.displayName
+    this.store.updateConversation(projectId, conversationId, { model: id, modelLabel: label })
+    this.broadcast({ projectId, conversationId, event: { kind: 'model', model: id, label } })
+  }
 
   async loadHistory(projectId: string, conversationId: string): Promise<void> {
     const project = this.store.get(projectId)
@@ -213,6 +237,7 @@ export class AgentManager {
       cwd: cwdOf(project, conv),
       mode: conv.mode,
       resumeSessionId: conv.sessionId,
+      model: conv.modelChoice && conv.modelChoice !== 'default' ? conv.modelChoice : undefined,
       emit: (event) => {
         // 실행이 끝나 자리가 나면 다음 차례를 시작한다
         if (event.kind === 'status' && event.status !== 'running' && event.status !== 'waiting_approval' && event.status !== 'queued') {

@@ -1,11 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { MODE_CYCLE, MODE_LABEL, openConversations, STATUS_LABEL, type SlashCommandInfo, type AgentMode, type PermissionDecision, type PermissionRequest, type Project } from '@shared/types'
+import { MODE_CYCLE, MODE_LABEL, openConversations, STATUS_LABEL, type UsageInfo, type SlashCommandInfo, type AgentMode, type PermissionDecision, type PermissionRequest, type Project } from '@shared/types'
 import { emptyConversation, type ConversationMap, type TranscriptItem } from './state'
 import { HOME_ROW } from './keys'
 import { Keys } from './KeyHint'
 import { useKeymap } from './settings'
 import { usePresence } from './motion'
 import { Markdown } from './Markdown'
+import { ModelPicker } from './ModelPicker'
 import { FileMenu, rankCommands, SlashMenu, useSlashCommands } from './SlashMenu'
 
 interface Props {
@@ -15,6 +16,7 @@ interface Props {
   convs: ConversationMap
   mode: AgentMode
   /** Ctrl+L을 한 번 눌러 클리어 확인을 기다리는 중 */
+  usage: UsageInfo | null
   clearArmed: boolean
   /** 닫기 확인을 기다리는 대화 ID (Ctrl+W 또는 탭의 × 한 번) */
   closeArmedId: string | null
@@ -26,7 +28,7 @@ interface Props {
   onRespond: (projectId: string, conversationId: string, requestId: string, decision: PermissionDecision) => void
 }
 
-export function Chat({ project, projects, conversationId, convs, mode, clearArmed, closeArmedId, onClearRequest, onCloseRequest, onClose, onSelectConversation, onRespond }: Props): React.JSX.Element {
+export function Chat({ project, projects, conversationId, convs, mode, usage, clearArmed, closeArmedId, onClearRequest, onCloseRequest, onClose, onSelectConversation, onRespond }: Props): React.JSX.Element {
   const km = useKeymap()
   const state = convs[conversationId] ?? emptyConversation()
   const [draft, setDraft] = useState('')
@@ -290,10 +292,7 @@ export function Chat({ project, projects, conversationId, convs, mode, clearArme
             </button>
           </nav>
           <div className="tb-meta">
-            <span className="meta" title={model?.id ?? '첫 응답 뒤에 표시'}>
-              <span className="meta-k">모델</span>
-              <span className="meta-v model-v">{model?.label ?? '–'}</span>
-            </span>
+            <ModelPicker projectId={project.id} conversationId={conversationId} current={model} choice={conv?.modelChoice} usage={usage} />
             <button type="button" className={`meta meta-mode mode-${mode}`} onClick={cycleMode} title="권한 모드 바꾸기">
               <span className="meta-k">모드</span>
               <span className="meta-v">{MODE_LABEL[mode]}</span>
