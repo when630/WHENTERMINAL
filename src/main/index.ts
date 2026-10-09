@@ -58,6 +58,19 @@ function applyLoginItem(s: Settings): void {
 /** 로그인 자동 실행으로 켜졌으면 창 없이 트레이에만 */
 const startHidden = (): boolean => process.argv.includes('--hidden') || (isMac && app.getLoginItemSettings().wasOpenedAtLogin === true)
 
+/** 앱 아이콘 파일: 개발 실행은 저장소의 resources/icons, 패키징한 앱은 Resources/icons (extraResources) */
+function iconFile(id: Settings['appIcon']): string {
+  return app.isPackaged ? join(process.resourcesPath, 'icons', `${id}.png`) : join(app.getAppPath(), 'resources', 'icons', `${id}.png`)
+}
+
+/** Dock(macOS)·창(Windows/Linux) 아이콘을 바로 바꾼다 */
+function applyAppIcon(s: Settings): void {
+  const img = nativeImage.createFromPath(iconFile(s.appIcon))
+  if (img.isEmpty()) return
+  if (isMac) app.dock?.setIcon(img)
+  else win?.setIcon(img)
+}
+
 const themeBackground = (s: Settings): string => THEMES.find((t) => t.id === s.theme)?.colors[0] ?? '#ffffff'
 
 let win: BrowserWindow | null = null
@@ -92,6 +105,7 @@ function bootstrap(): void {
     }
     win?.setBackgroundColor(themeBackground(saved))
     if (saved.openAtLogin !== before.openAtLogin) applyLoginItem(saved)
+    if (saved.appIcon !== before.appIcon) applyAppIcon(saved)
     // 동시 실행 수를 늘렸으면 기다리던 대화를 바로 시작
     manager.drain()
     send(IPC.settingsChanged, saved)
@@ -289,6 +303,7 @@ function bootstrap(): void {
   createTray()
 
   registerSummon(settingsStore.get())
+  applyAppIcon(settingsStore.get())
 
   app.on('before-quit', () => {
     quitting = true
@@ -338,6 +353,7 @@ function createWindow(): void {
     show: false,
     title: 'WHENTERMINAL',
     backgroundColor: themeBackground(settingsStore.get()),
+    icon: iconFile(settingsStore.get().appIcon),
     autoHideMenuBar: true,
     webPreferences: {
       preload: join(__dirname, '../preload/index.cjs'),

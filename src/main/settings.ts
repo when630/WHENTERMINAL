@@ -1,7 +1,7 @@
 import { app } from 'electron'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { ACTIONS, DEFAULT_SETTINGS, normalize, THEMES, type Settings } from '@shared/keymap'
+import { ACTIONS, APP_ICONS, DEFAULT_SETTINGS, normalize, THEMES, type Settings } from '@shared/keymap'
 
 /** userData/settings.json. 읽지 못하거나 모르는 값은 기본값으로 */
 export class SettingsStore {
@@ -50,5 +50,6 @@ function sanitize(raw: unknown): Settings {
   const maxConcurrent = Number.isInteger(o.maxConcurrent) && o.maxConcurrent! >= 0 && o.maxConcurrent! <= 16 ? o.maxConcurrent! : DEFAULT_SETTINGS.maxConcurrent
   const worktree = typeof o.worktree === 'boolean' ? o.worktree : DEFAULT_SETTINGS.worktree
   const openAtLogin = typeof o.openAtLogin === 'boolean' ? o.openAtLogin : DEFAULT_SETTINGS.openAtLogin
-  return { theme, notify, maxConcurrent, worktree, openAtLogin, keymap }
+  const appIcon = APP_ICONS.some((i) => i.id === o.appIcon) ? o.appIcon! : DEFAULT_SETTINGS.appIcon
+  return { theme, appIcon, notify, maxConcurrent, worktree, openAtLogin, keymap }
 }
