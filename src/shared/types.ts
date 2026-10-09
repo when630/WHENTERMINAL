@@ -1,3 +1,5 @@
+import type { Settings } from './keymap'
+
 // 메인 ↔ 렌더러가 공유하는 타입과 IPC 채널. 기획서 v0.1 5~6장 기준.
 
 /** 대화 상태 (기획서 6장). 카드 상태는 하위 대화 중 STATUS_PRIORITY가 가장 높은 것. */
@@ -89,6 +91,28 @@ export interface SlashCommandInfo {
   builtin?: boolean
 }
 
+/** 구독 한도 창 하나 (5시간, 주간, 모델별 주간 …) */
+export interface UsageWindow {
+  id: string
+  label: string
+  /** 사용률 0~100. 모르면 null */
+  percent: number | null
+  /** 초기화 시각 (ms) */
+  resetsAt: number | null
+  /** 실시간 한도 이벤트로 받은 상태 */
+  status?: 'allowed' | 'allowed_warning' | 'rejected'
+}
+
+export interface UsageInfo {
+  /** 'pro' | 'max' | 'team' … API 키면 null */
+  plan: string | null
+  /** 구독 한도가 적용되지 않으면 false (API 키 등) */
+  available: boolean
+  windows: UsageWindow[]
+  fetchedAt: number
+  error?: string
+}
+
 export interface RateLimitInfo {
   status: 'allowed' | 'allowed_warning' | 'rejected'
   rateLimitType?: string
@@ -136,10 +160,17 @@ export const IPC = {
   compact: 'agent:compact',
   clear: 'agent:clear',
   listCommands: 'agent:list-commands',
+  peek: 'agent:peek',
+  getSettingsSync: 'settings:get-sync',
+  setSettings: 'settings:set',
+  settingsChanged: 'settings:changed',
+  openSettings: 'app:open-settings',
   // 메인 → 렌더러
   event: 'agent:event',
   projectsChanged: 'projects:changed',
   rateLimit: 'usage:rate-limit',
+  getUsage: 'usage:get',
+  usage: 'usage:changed',
 } as const
 
 /** preload가 window.api로 노출하는 API */
@@ -165,7 +196,19 @@ export interface WhenTerminalApi {
   clear(projectId: string, conversationId: string): Promise<void>
   /** 이 프로젝트에서 쓸 수 있는 슬래시 명령 (사용자·프로젝트 명령과 스킬 포함) */
   listCommands(projectId: string): Promise<SlashCommandInfo[]>
+  /** 메시지 없이 이 대화의 컨텍스트 사용률·모델을 읽어 'context'·'model' 이벤트로 보낸다 */
+  peek(projectId: string, conversationId: string): Promise<void>
+  /** 첫 화면을 그리기 전에 테마를 적용하려고 동기로 읽는다 */
+  initialSettings: Settings
+  /** 설정 저장. 전역 호출 키를 등록하지 못하면 error에 이유가 오고 그 키는 저장되지 않는다 */
+  setSettings(settings: Settings): Promise<{ settings: Settings; error?: string }>
+  onSettingsChanged(cb: (s: Settings) => void): () => void
+  /** macOS 메뉴의 '설정…'(⌘,) */
+  onOpenSettings(cb: () => void): () => void
   onEvent(cb: (e: AgentEventEnvelope) => void): () => void
   onProjectsChanged(cb: (projects: Project[]) => void): () => void
   onRateLimit(cb: (info: RateLimitInfo) => void): () => void
+  /** 구독 한도 (5시간·주간·모델별). refresh면 캐시를 무시하고 새로 받는다 */
+  getUsage(refresh?: boolean): Promise<UsageInfo | null>
+  onUsage(cb: (u: UsageInfo) => void): () => void
 }

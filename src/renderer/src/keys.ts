@@ -50,3 +50,33 @@ export function gridMove(e: KeyboardEvent, code: string, cols: number): number |
   const byKey: Record<string, number> = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -cols, ArrowDown: cols }
   return byCode[code] ?? byKey[e.key] ?? null
 }
+
+// ── 키맵 판정 (설정에서 바꾼 단축키) ──
+
+const CODE_TOKEN: Record<string, string> = {
+  BracketLeft: '[', BracketRight: ']', Comma: ',', Period: '.', Slash: '/', Semicolon: ';', Quote: "'",
+  Backquote: '`', Minus: '-', Equal: '=', Backslash: '\\', Space: 'Space', Tab: 'Tab', Enter: 'Enter',
+  Escape: 'Esc', Backspace: 'Backspace', Delete: 'Delete', ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right',
+}
+
+/** 눌린 물리 키를 키맵 표기로 ('KeyL' → 'L', 'Comma' → ','). 수정 키만 눌렸으면 '' */
+export function keyToken(e: KeyboardEvent): string {
+  const code = physicalCode(e) || e.code
+  if (/^Key[A-Z]$/.test(code)) return code.slice(3)
+  if (/^Digit\d$/.test(code)) return code.slice(5)
+  if (/^F\d{1,2}$/.test(code)) return code
+  return CODE_TOKEN[code] ?? ''
+}
+
+/** 이벤트를 키맵 표기로 ('Ctrl+Shift+L'). 수정 키만 눌렸으면 null */
+export function eventToBinding(e: KeyboardEvent): string | null {
+  const key = keyToken(e)
+  if (!key) return null
+  return [e.ctrlKey && 'Ctrl', e.altKey && 'Alt', e.shiftKey && 'Shift', e.metaKey && 'Meta', key].filter(Boolean).join('+')
+}
+
+/** 이벤트가 키 조합과 정확히 같은지 (수정 키도 모두 같아야 한다) */
+export function matches(e: KeyboardEvent, binding: string | undefined): boolean {
+  if (!binding) return false
+  return eventToBinding(e) === binding
+}

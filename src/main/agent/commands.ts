@@ -1,4 +1,4 @@
-import { query, type SlashCommand } from '@anthropic-ai/claude-agent-sdk'
+import { query, type Query, type SlashCommand } from '@anthropic-ai/claude-agent-sdk'
 import type { SlashCommandInfo } from '@shared/types'
 import { MessageQueue } from './message-queue'
 import { subscriptionEnv } from './session'
@@ -35,18 +35,25 @@ export function commandsFor(cwd: string): Promise<SlashCommandInfo[]> {
 }
 
 async function probe(cwd: string): Promise<SlashCommandInfo[]> {
+  return remember(cwd, await withProbe(cwd, (q) => q.supportedCommands()))
+}
+
+/**
+ * 메시지를 보내지 않은 채 CLI만 띄워 fn을 실행하고 바로 닫는다. 초기화·조회만 하므로 모델을 부르지 않는다.
+ * 살아 있는 세션이 없을 때 명령 목록·사용량을 받는 데 쓴다
+ */
+export async function withProbe<T>(cwd: string, fn: (q: Query) => Promise<T>, resume?: string): Promise<T> {
   const queue = new MessageQueue()
   const q = query({
     prompt: queue,
-    options: { cwd, env: subscriptionEnv(), settingSources: ['user', 'project', 'local'], systemPrompt: { type: 'preset', preset: 'claude_code' } },
+    options: { cwd, resume, env: subscriptionEnv(), settingSources: ['user', 'project', 'local'], systemPrompt: { type: 'preset', preset: 'claude_code' } },
   })
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
-    const list = await Promise.race([
-      q.supportedCommands(),
-      new Promise<never>((_, reject) => (timer = setTimeout(() => reject(new Error('명령 목록 응답 없음')), PROBE_TIMEOUT_MS))),
+    return await Promise.race([
+      fn(q),
+      new Promise<never>((_, reject) => (timer = setTimeout(() => reject(new Error('CLI 응답 없음')), PROBE_TIMEOUT_MS))),
     ])
-    return remember(cwd, list)
   } finally {
     clearTimeout(timer)
     queue.close()

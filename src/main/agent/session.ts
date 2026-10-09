@@ -29,6 +29,17 @@ export function subscriptionEnv(): Record<string, string | undefined> {
 
 const TOOL_RESULT_PREVIEW_LIMIT = 4000
 
+type ContextUsage = Awaited<ReturnType<Query['getContextUsage']>>
+
+export function toContext(u: ContextUsage): ContextInfo {
+  return {
+    percent: Math.round(u.percentage),
+    tokens: u.totalTokens,
+    max: u.maxTokens,
+    autoCompactAt: u.isAutoCompactEnabled && u.autoCompactThreshold ? Math.round((u.autoCompactThreshold / u.maxTokens) * 100) : undefined,
+  }
+}
+
 /** 'claude-opus-5-5' → 'Opus 5.5', 'claude-sonnet-5[1m]' → 'Sonnet 5 (1M)'. 모르는 형식은 그대로 */
 export function modelLabel(id: string): string {
   const long = /\[1m\]$/i.test(id) ? ' (1M)' : ''
@@ -57,6 +68,11 @@ export class AgentSession {
 
   getStatus(): AgentStatus {
     return this.status
+  }
+
+  /** 살아 있는 SDK Query. 프로세스가 끝났으면 null */
+  query(): Query | null {
+    return this.q
   }
 
   /** 살아 있는 세션의 슬래시 명령 목록. 세션이 없으면 null */
@@ -289,19 +305,17 @@ export class AgentSession {
     this.opts.emit({ kind: 'compacting', on: false })
   }
 
-  /** 마지막 응답의 사용량으로 컨텍스트 사용률을 구한다 ('summary'는 토큰 계산 API를 추가로 부르지 않음) */
-  private async refreshContext(): Promise<void> {
+  /** 컨텍스트 사용률(과 아직 모르면 모델)을 다시 읽는다 ('summary'는 토큰 계산 API를 추가로 부르지 않음) */
+  async refreshContext(): Promise<void> {
     const q = this.q
     if (!q) return
     try {
       const u = await q.getContextUsage({ detail: 'summary' })
-      const context: ContextInfo = {
-        percent: Math.round(u.percentage),
-        tokens: u.totalTokens,
-        max: u.maxTokens,
-        autoCompactAt: u.isAutoCompactEnabled && u.autoCompactThreshold ? Math.round((u.autoCompactThreshold / u.maxTokens) * 100) : undefined,
+      this.opts.emit({ kind: 'context', context: toContext(u) })
+      if (u.model && !this.model) {
+        this.model = u.model
+        this.opts.emit({ kind: 'model', model: u.model, label: modelLabel(u.model) })
       }
-      this.opts.emit({ kind: 'context', context })
     } catch (err) {
       console.warn('getContextUsage 실패', err)
     }

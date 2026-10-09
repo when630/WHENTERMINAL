@@ -1,19 +1,24 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { MODE_CYCLE, type AgentMode, type PermissionDecision, type Project, type RateLimitInfo } from '@shared/types'
+import { MODE_CYCLE, type AgentMode, type PermissionDecision, type Project, type UsageInfo } from '@shared/types'
 import { applyEvent, collectTasks, mostUrgentConversation, type ConversationMap, type TaskInfo, type TaskRef } from './state'
 import { Home, type DispatchOrigin } from './Home'
 import { Chat } from './Chat'
 import { Sidebar } from './Sidebar'
 import { Ticker } from './Ticker'
-import { isEscape, isInterruptCopy, physicalCode, projectIndexFromKey } from './keys'
+import { isEscape, isInterruptCopy, matches, physicalCode, projectIndexFromKey } from './keys'
+import { effectiveKeymap, type ActionId, type Settings } from '@shared/keymap'
+import { applyTheme, KeymapContext } from './settings'
+import { SettingsScreen } from './SettingsScreen'
 
-export type View = { screen: 'home' } | { screen: 'chat'; projectId: string; conversationId: string }
+export type View = { screen: 'home' } | { screen: 'chat'; projectId: string; conversationId: string } | { screen: 'settings'; back: View }
 
 export function App(): React.JSX.Element {
   const [projects, setProjects] = useState<Project[]>([])
   const [convs, setConvs] = useState<ConversationMap>({})
   const [view, setView] = useState<View>({ screen: 'home' })
-  const [rateLimit, setRateLimit] = useState<RateLimitInfo | null>(null)
+  const [settings, setSettings] = useState<Settings>(window.api.initialSettings)
+  const km = useMemo(() => effectiveKeymap(settings), [settings])
+  const [usage, setUsage] = useState<UsageInfo | null>(null)
   const [hotkey, setHotkey] = useState<string | null>(null)
   const [dispatchIndex, setDispatchIndex] = useState(0)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -26,12 +31,24 @@ export function App(): React.JSX.Element {
   const dispatchOrigin = useRef<DispatchOrigin | null>(null)
   const sheetCloseRef = useRef<(() => void) | null>(null)
 
+  // 테마: 처음에는 바로, 이후 바뀔 때는 부드럽게
+  const themeApplied = useRef(false)
+  useEffect(() => {
+    applyTheme(settings.theme, themeApplied.current)
+    themeApplied.current = true
+  }, [settings.theme])
+  useEffect(() => {
+    const offs = [window.api.onSettingsChanged(setSettings), window.api.onOpenSettings(() => openSettingsRef.current())]
+    return () => offs.forEach((off) => off())
+  }, [])
+
   useEffect(() => {
     window.api.listProjects().then(setProjects)
     window.api.getHotkey().then(setHotkey)
+    window.api.getUsage().then(setUsage)
     const offs = [
       window.api.onProjectsChanged(setProjects),
-      window.api.onRateLimit(setRateLimit),
+      window.api.onUsage(setUsage),
       window.api.onEvent(({ conversationId, event }) => setConvs((prev) => ({ ...prev, [conversationId]: applyEvent(prev[conversationId], event) }))),
     ]
     return () => offs.forEach((off) => off())
@@ -133,6 +150,19 @@ export function App(): React.JSX.Element {
     confirmTwice('close', conversationId, () => void closeConversation(projectId, conversationId))
   }, [confirmTwice, closeConversation])
 
+  const goHome = (): void => {
+    setOpenReportId(null)
+    setView({ screen: 'home' })
+  }
+  // 설정은 어느 화면에서든 열고, 닫으면 원래 화면으로 돌아간다
+  const openSettings = (): void => setView((v) => (v.screen === 'settings' ? v : { screen: 'settings', back: v }))
+  const closeSettings = (): void => setView((v) => (v.screen === 'settings' ? v.back : v))
+  const openSettingsRef = useRef(openSettings)
+  openSettingsRef.current = openSettings
+
+  const decisionOf = (e: KeyboardEvent): PermissionDecision | null =>
+    matches(e, km.allow) ? 'allow' : matches(e, km.always) ? 'always' : matches(e, km.deny) ? 'deny' : null
+
   const modeOf = (projectId: string, conversationId: string): AgentMode => {
     const fromEvents = convs[conversationId]?.mode
     const conv = projects.find((p) => p.id === projectId)?.conversations.find((c) => c.id === conversationId)
@@ -142,115 +172,83 @@ export function App(): React.JSX.Element {
   // 전역 키 처리 (기획서 7장, 40% 배열 기준은 keys.ts). 최신 상태를 쓰기 위해 ref로 핸들러를 갱신한다.
   const handlerRef = useRef<(e: KeyboardEvent) => void>(() => {})
   handlerRef.current = (e: KeyboardEvent) => {
-    // 입력창의 명령 후보 메뉴가 열려 있으면 그쪽이 키를 처리한다
-    if ((e.target as HTMLElement | null)?.dataset?.menuOpen === 'true') return
+    // 입력창의 명령 후보 메뉴나 설정의 키 입력칸이 열려 있으면 그쪽이 키를 처리한다
+    const owner = (e.target as HTMLElement | null)?.dataset
+    if (owner?.menuOpen === 'true' || owner?.keysOwn === 'true') return
     const code = physicalCode(e)
     const tag = (e.target as HTMLElement | null)?.tagName
     const typing = tag === 'TEXTAREA' || tag === 'INPUT'
-    const plainCtrl = e.ctrlKey && !e.shiftKey && !e.altKey
-    const bare = !e.ctrlKey && !e.altKey && !e.metaKey
+    const is = (id: ActionId): boolean => matches(e, km[id])
+    const take = (fn: () => void): void => {
+      e.preventDefault()
+      fn()
+    }
 
-    // 어디서든: Alt+홈 줄(또는 Ctrl+숫자) 프로젝트 이동, Ctrl+H 홈, Ctrl+K 작업 지시
+    // 어디서든: Alt+홈 줄(또는 Ctrl+숫자) 프로젝트 이동 (고정), 홈·작업 지시·설정 (키맵)
     const target = projectIndexFromKey(e, code)
-    if (target !== null) {
-      e.preventDefault()
-      openProject(target)
-      return
+    if (target !== null) return take(() => openProject(target))
+    if (is('goHome')) return take(() => goHome())
+    if (is('dispatch')) {
+      return take(() => {
+        goHome()
+        setFocusInput((n) => n + 1)
+      })
     }
-    if (plainCtrl && code === 'KeyH') {
-      e.preventDefault()
-      setOpenReportId(null)
-      setView({ screen: 'home' })
-      return
-    }
-    if (plainCtrl && code === 'KeyK') {
-      e.preventDefault()
-      setOpenReportId(null)
-      setView({ screen: 'home' })
-      setFocusInput((n) => n + 1)
+    if (is('openSettings')) return take(() => openSettings())
+
+    if (view.screen === 'settings') {
+      if (e.key === 'Escape' && !typing) take(() => closeSettings())
       return
     }
 
     if (view.screen === 'home') {
-      if (plainCtrl && code === 'KeyN') {
-        e.preventDefault()
-        void window.api.addProject()
-        return
-      }
+      if (is('addProject')) return take(() => void window.api.addProject())
       if (typing) {
-        if (isEscape(e, code)) {
-          e.preventDefault()
-          ;(e.target as HTMLElement).blur()
-        }
+        if (isEscape(e, code)) take(() => (e.target as HTMLElement).blur())
         return
       }
-      if (!bare) return
 
       // 보고서 상세가 열려 있을 때
       const open = reports.find((r) => r.conversationId === openReportId)
       if (open) {
-        if (isEscape(e, code)) sheetCloseRef.current?.()
-        else if (code === 'KeyO' || e.key === 'Enter') openChat(open.project.id, open.conversationId)
-        else if (code === 'KeyE') archive(open.conversationId)
-        else if (code === 'KeyI') newTaskFor(open.projectIndex)
-        else return
-        e.preventDefault()
+        if (isEscape(e, code)) take(() => sheetCloseRef.current?.())
+        else if (is('open') || e.key === 'Enter') take(() => openChat(open.project.id, open.conversationId))
+        else if (is('archive')) take(() => archive(open.conversationId))
+        else if (is('newTask')) take(() => newTaskFor(open.projectIndex))
         return
       }
-      if (isEscape(e, code)) {
-        setSelectedId(null)
-        return
-      }
+      if (isEscape(e, code)) return setSelectedId(null)
+      if (is('focusAsk')) return take(() => inputRef.current?.focus())
+      if (!e.ctrlKey && !e.altKey && !e.metaKey && /^Digit[1-9]$/.test(code)) return take(() => openProject(Number(code.slice(5)) - 1))
 
-      if (code === 'KeyI') {
-        e.preventDefault()
-        inputRef.current?.focus()
-        return
-      }
-      if (/^Digit[1-9]$/.test(code)) {
-        e.preventDefault()
-        openProject(Number(code.slice(5)) - 1)
-        return
-      }
       const idx = flat.findIndex((r) => r.conversationId === selectedId)
       const sel: TaskRef | undefined = flat[idx]
-      // J K: 위아래, H L: 진행 중 / 보고함 첫 항목 (방향키도 같은 동작)
-      const step = code === 'KeyJ' || e.key === 'ArrowDown' ? 1 : code === 'KeyK' || e.key === 'ArrowUp' ? -1 : 0
+      // 위아래, 진행 중 / 보고함 첫 항목 (방향키는 보조로 고정)
+      const step = is('down') || e.key === 'ArrowDown' ? 1 : is('up') || e.key === 'ArrowUp' ? -1 : 0
       if (step !== 0 && flat.length > 0) {
-        e.preventDefault()
-        const next = idx < 0 ? 0 : Math.min(Math.max(idx + step, 0), flat.length - 1)
-        setSelectedId(flat[next].conversationId)
-        return
+        return take(() => {
+          const next = idx < 0 ? 0 : Math.min(Math.max(idx + step, 0), flat.length - 1)
+          setSelectedId(flat[next].conversationId)
+        })
       }
-      if (code === 'KeyH' || e.key === 'ArrowLeft') {
-        e.preventDefault()
-        if (running[0]) setSelectedId(running[0].conversationId)
-        return
+      if (is('toRunning') || e.key === 'ArrowLeft') return take(() => running[0] && setSelectedId(running[0].conversationId))
+      if (is('toReports') || e.key === 'ArrowRight') return take(() => reports[0] && setSelectedId(reports[0].conversationId))
+      if ((is('open') || e.key === 'Enter') && sel) {
+        return take(() => (running.includes(sel) ? openChat(sel.project.id, sel.conversationId) : openReport(sel.conversationId)))
       }
-      if (code === 'KeyL' || e.key === 'ArrowRight') {
-        e.preventDefault()
-        if (reports[0]) setSelectedId(reports[0].conversationId)
-        return
+      if (is('archive') && sel && reports.includes(sel)) {
+        return take(() => {
+          const after = flat[idx + 1] ?? flat[idx - 1]
+          archive(sel.conversationId)
+          setSelectedId(after && after !== sel ? after.conversationId : null)
+        })
       }
-      if ((code === 'KeyO' || e.key === 'Enter') && sel) {
-        e.preventDefault()
-        if (running.includes(sel)) openChat(sel.project.id, sel.conversationId)
-        else openReport(sel.conversationId)
-        return
-      }
-      if (code === 'KeyE' && sel && reports.includes(sel)) {
-        e.preventDefault()
-        const after = flat[idx + 1] ?? flat[idx - 1]
-        archive(sel.conversationId)
-        setSelectedId(after && after !== sel ? after.conversationId : null)
-        return
-      }
-      if (code === 'KeyY' || code === 'KeyA' || code === 'KeyN') {
+      const decision = decisionOf(e)
+      if (decision) {
         const t = sel && sel.state.permissions[0] ? sel : running.find((r) => r.state.permissions[0])
         const req = t?.state.permissions[0]
         if (!t || !req) return
         e.preventDefault()
-        const decision: PermissionDecision = code === 'KeyY' ? 'allow' : code === 'KeyA' ? 'always' : 'deny'
         if (decision !== 'deny' && req.defaultToNo) return // 한 키 승인 금지 요청은 클릭으로
         if (decision === 'always' && req.suppressAlwaysAllow) return
         respond(t.project.id, t.conversationId, req.requestId, decision)
@@ -263,42 +261,27 @@ export function App(): React.JSX.Element {
     const project = projects.find((p) => p.id === projectId)
     if (!project) return
 
-    if (e.ctrlKey && e.key === 'Tab') {
-      e.preventDefault()
-      const ids = project.conversations.map((c) => c.id)
-      const next = (ids.indexOf(conversationId) + (e.shiftKey ? -1 : 1) + ids.length) % ids.length
-      setView({ screen: 'chat', projectId, conversationId: ids[next] })
-      return
+    if (is('nextConversation') || is('prevConversation')) {
+      return take(() => {
+        const ids = project.conversations.map((c) => c.id)
+        const next = (ids.indexOf(conversationId) + (is('prevConversation') ? -1 : 1) + ids.length) % ids.length
+        setView({ screen: 'chat', projectId, conversationId: ids[next] })
+      })
     }
-    if (plainCtrl && code === 'KeyW') {
-      e.preventDefault()
-      requestClose(projectId, conversationId)
-      return
+    if (is('closeConversation')) return take(() => requestClose(projectId, conversationId))
+    if (is('compact')) return take(() => void window.api.compact(projectId, conversationId))
+    if (is('clear')) return take(() => requestClear(projectId, conversationId))
+    if (is('cycleMode')) {
+      return take(() => {
+        const cur = modeOf(projectId, conversationId)
+        void window.api.setMode(projectId, conversationId, MODE_CYCLE[(MODE_CYCLE.indexOf(cur) + 1) % MODE_CYCLE.length])
+      })
     }
-    if (e.ctrlKey && !e.altKey && code === 'KeyL') {
-      e.preventDefault()
-      if (e.shiftKey) void window.api.compact(projectId, conversationId)
-      else requestClear(projectId, conversationId)
-      return
-    }
-    if (e.shiftKey && e.key === 'Tab') {
-      e.preventDefault()
-      const cur = modeOf(projectId, conversationId)
-      const next = MODE_CYCLE[(MODE_CYCLE.indexOf(cur) + 1) % MODE_CYCLE.length]
-      void window.api.setMode(projectId, conversationId, next)
-      return
-    }
-    // 중단: Esc, Ctrl+[ , 또는 선택한 글자가 없을 때의 Ctrl+C (터미널과 같은 감각)
-    if (isEscape(e, code) || isInterruptCopy(e, code)) {
-      e.preventDefault()
-      void window.api.interrupt(projectId, conversationId)
-      return
-    }
+    // 중단: Esc(고정), 키맵의 보조 키, 선택한 글자가 없을 때의 Ctrl+C (터미널과 같은 감각)
+    if (e.key === 'Escape' || is('interrupt') || isInterruptCopy(e, code)) return take(() => void window.api.interrupt(projectId, conversationId))
     const pending = convs[conversationId]?.permissions[0]
-    if (pending && !typing && bare) {
-      const decision: PermissionDecision | null =
-        code === 'KeyY' ? 'allow' : code === 'KeyA' ? 'always' : code === 'KeyN' ? 'deny' : null
-      if (!decision) return
+    const decision = decisionOf(e)
+    if (pending && !typing && decision) {
       e.preventDefault()
       if (decision !== 'deny' && pending.defaultToNo) return
       if (decision === 'always' && pending.suppressAlwaysAllow) return
@@ -315,6 +298,7 @@ export function App(): React.JSX.Element {
   const chatProject = view.screen === 'chat' ? projects.find((p) => p.id === view.projectId) : undefined
 
   return (
+    <KeymapContext.Provider value={km}>
     <div className="shell">
       <Sidebar
         projects={projects}
@@ -322,16 +306,21 @@ export function App(): React.JSX.Element {
         activeProjectId={chatProject?.id ?? null}
         activeConversationId={view.screen === 'chat' ? view.conversationId : null}
         unreadTotal={unreadTotal}
-        rateLimit={rateLimit}
-        onHome={() => setView({ screen: 'home' })}
+        usage={usage}
+        onRefreshUsage={() => window.api.getUsage(true).then(setUsage)}
+        onHome={goHome}
+        onSettings={openSettings}
+        settingsOpen={view.screen === 'settings'}
         onOpenProject={openProject}
         onOpenConversation={openChat}
         onAddProject={() => void window.api.addProject()}
       />
       <div className="content">
         <Ticker running={running} reports={reports} hotkey={hotkey} />
-        <div className="stage" key={view.screen === 'chat' ? `chat:${view.projectId}` : 'home'}>
-          {view.screen === 'chat' && chatProject ? (
+        <div className="stage" key={view.screen === 'chat' ? `chat:${view.projectId}` : view.screen}>
+          {view.screen === 'settings' ? (
+            <SettingsScreen settings={settings} activeHotkey={hotkey} onClose={closeSettings} onSaved={(next, hk) => { setSettings(next); if (hk !== undefined) setHotkey(hk) }} />
+          ) : view.screen === 'chat' && chatProject ? (
             <Chat
               project={chatProject}
               projects={projects}
@@ -373,5 +362,6 @@ export function App(): React.JSX.Element {
         </div>
       </div>
     </div>
+    </KeymapContext.Provider>
   )
 }

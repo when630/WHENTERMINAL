@@ -23,9 +23,16 @@ const api: WhenTerminalApi = {
   compact: (projectId, conversationId, instructions) => ipcRenderer.invoke(IPC.compact, projectId, conversationId, instructions),
   clear: (projectId, conversationId) => ipcRenderer.invoke(IPC.clear, projectId, conversationId),
   listCommands: (projectId) => ipcRenderer.invoke(IPC.listCommands, projectId),
+  peek: (projectId, conversationId) => ipcRenderer.invoke(IPC.peek, projectId, conversationId),
+  initialSettings: ipcRenderer.sendSync(IPC.getSettingsSync),
+  setSettings: (settings) => ipcRenderer.invoke(IPC.setSettings, settings),
+  onSettingsChanged: (cb) => subscribe(IPC.settingsChanged, cb),
+  onOpenSettings: (cb) => subscribe(IPC.openSettings, () => cb()),
   onEvent: (cb) => subscribe(IPC.event, cb),
   onProjectsChanged: (cb) => subscribe(IPC.projectsChanged, cb),
   onRateLimit: (cb) => subscribe(IPC.rateLimit, cb),
+  getUsage: (refresh) => ipcRenderer.invoke(IPC.getUsage, refresh),
+  onUsage: (cb) => subscribe(IPC.usage, cb),
 }
 
 contextBridge.exposeInMainWorld('api', api)

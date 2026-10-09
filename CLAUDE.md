@@ -18,6 +18,7 @@
 - 세션 관리: 대화 하나 = SDK 세션 하나이고, 같은 대화의 메시지는 같은 세션에 이어진다. 홈 작업 지시창은 작업마다 새 대화를 만든다
   - 모델은 세션마다 다를 수 있다. 매 턴 시작 메시지(`system/init`)의 `model`을 받아 `Conversation.model/modelLabel`에 저장. 표시 이름은 `supportedModels()`에서 ID가 정확히 같은 행만 쓰고(별칭 행은 '기본값' 같은 이름이라 제외), 없으면 `modelLabel()`이 ID를 풀어 쓴다
   - 대화창 상단 둘째 줄: 왼쪽 하위 대화 탭, 오른쪽 모델·모드(누르면 다음 모드)
+  - 대화창을 열면 메시지 없이 `peek`으로 컨텍스트 사용률·모델을 읽는다 (저장된 세션을 이어 연 CLI 또는 빈 CLI에서 `getContextUsage` 후 바로 닫음, 0.3~0.7초)
   - 컨텍스트 사용률은 응답이 끝날 때마다 `getContextUsage({ detail: 'summary' })`로 받아 `Conversation.contextPercent`에 저장
   - 컴팩트는 같은 세션에 `/compact`를 보낸다. 이때 오는 result는 작업 완료가 아니므로 상태·보고서를 바꾸지 않는다 (`manualCompact`)
   - 대화 닫기는 세션을 끝내고(실행 중이면 중단) 대화를 목록에서 뺀다. 마지막 대화면 빈 대화를 새로 만든다. `Ctrl+W` 두 번·탭 × 두 번, `/close`는 바로 닫음. 확인 로직은 클리어와 같은 `confirmTwice`(App.tsx)
@@ -42,6 +43,12 @@
   - 메뉴는 없애지 않고 앱·편집·윈도우 메뉴만 둔다. Edit 메뉴가 없으면 Cmd+C/V가 죽는다
   - 전역 호출 키 후보에서 `Control+Space`를 뺀다. macOS 입력 소스 전환 키라 등록이 성공해도 한/영 전환을 가로챈다
   - 트레이 아이콘은 템플릿 이미지(검정+투명), Dock 아이콘 클릭(`activate`)으로 창 다시 열기
+- 구독 한도(사이드바): `src/main/agent/usage.ts`가 SDK `usage_EXPERIMENTAL…`(실험적 API, 이름이 바뀔 수 있음)로 5시간·주간·모델별 주간 창을 받는다. 살아 있는 세션이 없으면 `withProbe`로 CLI만 띄움. 앱 시작·작업 완료 2.5초 뒤·5분마다 갱신, `rate_limit_event`는 해당 창에 바로 반영
+- 설정(`SettingsScreen.tsx`, `Ctrl+,` / macOS 메뉴 ⌘,): `userData/settings.json` (`src/main/settings.ts`). 첫 화면 전에 preload가 동기로 읽어(`initialSettings`) 테마 깜빡임이 없다
+  - 테마: `:root[data-theme]`로 색 토큰만 바꾼다 (포스터·종이·세이지·먹·밤). 새 색을 쓸 때는 직접 색 대신 역할 토큰(`--sel-bg/fg`, `--on-signal`, `--code-bg/fg`, `--line`, `--shadow`)을 쓸 것
+  - 단축키: 동작 목록·기본값은 `src/shared/keymap.ts`(`ACTIONS`), 판정은 `matches()`(keys.ts). App의 키 처리와 화면의 키 표시는 모두 `useKeymap()`을 거친다. 새 단축키는 ACTIONS에 추가하고 하드코딩하지 말 것
+  - 고정 키(바꿀 수 없음): Esc, ⌥A~L·Ctrl+1~9 프로젝트 이동, 선택 없을 때 Ctrl+C, 방향키. 대화창·전역 범위 키는 Ctrl/Alt/Meta가 있어야 한다 (입력 중 오작동 방지)
+  - 전역 호출 키(`summon`)는 메인이 다시 등록한다. 실패하면 이전 키를 되살리고 저장하지 않는다
 - 단축키 표시는 `<Keys keys="ctrl shift L" />`(`KeyHint.tsx`)를 쓴다. 수정·특수 키는 아이콘, 글자는 그대로. 파일 이름이 `keys.ts`와 대소문자만 다르면 macOS에서 충돌하므로 `KeyHint`
 - 슬래시 명령 후보: 입력창에 `/`를 치면 `SlashMenu`. 목록은 살아 있는 세션의 `supportedCommands()`, 없으면 메시지 없이 CLI만 띄워 받아 프로젝트 폴더별로 5분 캐시 (`src/main/agent/commands.ts`). `/compact` `/clear`는 앱이 직접 처리
   - 메뉴가 열린 입력창에는 `data-menu-open`을 달아 App의 전역 키 처리(Esc 중단, Ctrl+K 등)를 건너뛴다

@@ -1,7 +1,9 @@
+import type { Query } from '@anthropic-ai/claude-agent-sdk'
 import type { AgentEventEnvelope, AgentMode, PermissionDecision, RateLimitInfo, SlashCommandInfo } from '@shared/types'
 import type { ProjectStore } from '../store'
 import { AgentSession } from './session'
-import { commandsFor, remember } from './commands'
+import { commandsFor, remember, withProbe } from './commands'
+import { modelLabel, toContext } from './session'
 
 /** 대화별 AgentSession을 만들고 보관한다. 동시 실행 제한(OPEN-003)은 여기에 붙일 예정. */
 export class AgentManager {
@@ -27,6 +29,42 @@ export class AgentManager {
     if (!conv) throw new Error(`대화 없음: ${projectId}/${conversationId}`)
     // 앱을 다시 켠 뒤라 세션 객체가 없어도, 저장된 세션 ID로 이어서 컴팩트한다
     this.getOrCreate(projectId, conversationId).compact(instructions)
+  }
+
+  private peeking = new Set<string>()
+
+  /**
+   * 대화창을 열었을 때 메시지를 보내지 않고 컨텍스트 사용률과 모델을 읽는다.
+   * 살아 있는 세션이 있으면 거기서, 없으면 저장된 세션을 이어 연 CLI(또는 새 대화면 빈 CLI)에서 읽고 바로 닫는다
+   */
+  async peek(projectId: string, conversationId: string): Promise<void> {
+    const live = this.sessions.get(conversationId)
+    if (live?.query()) return live.refreshContext()
+    const project = this.store.get(projectId)
+    const conv = this.store.getConversation(projectId, conversationId)
+    if (!project || !conv || this.peeking.has(conversationId)) return
+    this.peeking.add(conversationId)
+    try {
+      const u = await withProbe(project.path, (q) => q.getContextUsage({ detail: 'summary' }), conv.sessionId)
+      const emit = (event: AgentEventEnvelope['event']): void => this.broadcast({ projectId, conversationId, event })
+      const context = toContext(u)
+      this.store.updateConversation(projectId, conversationId, { contextPercent: context.percent, ...(u.model ? { model: u.model, modelLabel: conv.modelLabel ?? modelLabel(u.model) } : {}) })
+      emit({ kind: 'context', context })
+      if (u.model) emit({ kind: 'model', model: u.model, label: conv.model === u.model && conv.modelLabel ? conv.modelLabel : modelLabel(u.model) })
+    } catch (err) {
+      console.warn('세션 정보를 미리 읽지 못함', err)
+    } finally {
+      this.peeking.delete(conversationId)
+    }
+  }
+
+  /** 살아 있는 아무 세션의 Query (사용량처럼 계정 단위 조회에 쓴다). 없으면 null */
+  liveQuery(): Query | null {
+    for (const s of this.sessions.values()) {
+      const q = s.query()
+      if (q) return q
+    }
+    return null
   }
 
   /** 슬래시 명령 목록: 이 프로젝트에 살아 있는 세션이 있으면 거기서, 없으면 캐시나 잠깐 띄운 CLI에서 */

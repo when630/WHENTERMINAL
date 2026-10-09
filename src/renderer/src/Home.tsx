@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import { type PermissionDecision, type Project } from '@shared/types'
 import { HOME_ROW } from './keys'
 import { Keys } from './KeyHint'
+import { useKeymap } from './settings'
 import { boxIn, EASE, Odo, reducedMotion, Roll, useLayoutMotion } from './motion'
 import { STAGES, type TaskRef } from './state'
 import { elapsed, useNow } from './time'
@@ -35,6 +36,7 @@ interface Props {
 }
 
 export function Home(props: Props): React.JSX.Element {
+  const km = useKeymap()
   const { projects, running, reports, selectedId } = props
   const now = useNow(1000)
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -94,12 +96,12 @@ export function Home(props: Props): React.JSX.Element {
         </div>
 
         <footer className="hints">
-          <span><Keys keys="ctrl K" />/<kbd>I</kbd> 작업 지시</span>
-          <span><kbd>J</kbd><kbd>K</kbd> 위아래</span>
-          <span><kbd>H</kbd><kbd>L</kbd> 진행 중 · 보고함</span>
-          <span><kbd>O</kbd> 열기</span>
-          <span><kbd>E</kbd> 보관</span>
-          <span><kbd>Y</kbd><kbd>A</kbd><kbd>N</kbd> 확인 요청</span>
+          <span><Keys keys={km.dispatch} />/<Keys keys={km.focusAsk} /> 작업 지시</span>
+          <span><Keys keys={`${km.down} ${km.up}`} /> 위아래</span>
+          <span><Keys keys={`${km.toRunning} ${km.toReports}`} /> 진행 중 · 보고함</span>
+          <span><Keys keys={km.open} /> 열기</span>
+          <span><Keys keys={km.archive} /> 보관</span>
+          <span><Keys keys={`${km.allow} ${km.always} ${km.deny}`} /> 확인 요청</span>
           {props.hotkey && <span className="hints-r"><Keys keys={props.hotkey} /> 어디서든 호출</span>}
         </footer>
       </div>
@@ -122,6 +124,7 @@ export function Home(props: Props): React.JSX.Element {
 }
 
 function Dispatch(props: Props & { scrollRef: RefObject<HTMLDivElement | null> }): React.JSX.Element {
+  const km = useKeymap()
   const [text, setText] = useState('')
   const p = props.projects[props.dispatchIndex]
   if (props.projects.length === 0) {
@@ -129,7 +132,7 @@ function Dispatch(props: Props & { scrollRef: RefObject<HTMLDivElement | null> }
       <div className="ask ask-empty">
         <span>먼저 작업할 프로젝트 폴더를 추가하세요.</span>
         <button type="button" className="btn-pri" onClick={props.onAddProject}>
-          프로젝트 추가 <Keys keys="ctrl N" />
+          프로젝트 추가 <Keys keys={km.addProject} />
         </button>
       </div>
     )
@@ -190,6 +193,7 @@ function TaskCard({ r, now, selected, onSelect, onOpen, onRespond }: {
   onOpen: (r: TaskRef) => void
   onRespond: Props['onRespond']
 }): React.JSX.Element {
+  const km = useKeymap()
   const { task, state } = r
   const pending = state.permissions[0]
   const stage = Math.min(task.stage, STAGES.length - 1)
@@ -218,7 +222,7 @@ function TaskCard({ r, now, selected, onSelect, onOpen, onRespond }: {
             <div className="band-title" title={task.instruction}>{task.instruction}</div>
             <div className="act">
               <Roll text={pending ? '확인을 기다리는 중' : task.activity} className="act-text" />
-              <button type="button" className="link" onClick={(e) => { e.stopPropagation(); onOpen(r) }}>대화 보기 <kbd>O</kbd></button>
+              <button type="button" className="link" onClick={(e) => { e.stopPropagation(); onOpen(r) }}>대화 보기 <Keys keys={km.open} /></button>
             </div>
           </div>
           <div className="band-side" aria-label={`진행 단계: ${STAGES[stage]}`}>
@@ -231,15 +235,15 @@ function TaskCard({ r, now, selected, onSelect, onOpen, onRespond }: {
               <div className="cf-in">
                 <span className="cf-cmd mono">{pending.title ?? `${pending.toolName} ${summarizeInput(pending.input)}`}</span>
                 <button type="button" className="btn-pri sm" onClick={(e) => respond(e, 'allow')}>
-                  허용 {!pending.defaultToNo && <kbd>Y</kbd>}
+                  허용 {!pending.defaultToNo && <Keys keys={km.allow} />}
                 </button>
                 {!pending.suppressAlwaysAllow && (
                   <button type="button" className="btn sm" onClick={(e) => respond(e, 'always')}>
-                    항상 {!pending.defaultToNo && <kbd>A</kbd>}
+                    항상 {!pending.defaultToNo && <Keys keys={km.always} />}
                   </button>
                 )}
                 <button type="button" className="btn sm" onClick={(e) => respond(e, 'deny')}>
-                  거절 <kbd>N</kbd>
+                  거절 <Keys keys={km.deny} />
                 </button>
               </div>
             )}
@@ -302,6 +306,7 @@ function ReportSheet({ r, wrapRef, scrollRef, closeRef, onClosed, onOpenChat, on
   onNewTask: () => void
   onArchive: () => void
 }): React.JSX.Element {
+  const km = useKeymap()
   const sheetRef = useRef<HTMLElement>(null)
   const bgRef = useRef<HTMLDivElement>(null)
   const inRef = useRef<HTMLDivElement>(null)
@@ -379,9 +384,9 @@ function ReportSheet({ r, wrapRef, scrollRef, closeRef, onClosed, onOpenChat, on
             </div>
           </div>
           <div className="nexts st">
-            <button type="button" className="btn-pri" onClick={onOpenChat}>대화 열기 <kbd>O</kbd></button>
-            <button type="button" className="btn" onClick={onNewTask}>이 프로젝트에 새 작업 <kbd>I</kbd></button>
-            <button type="button" className="btn ghost" onClick={onArchive}>보관 <kbd>E</kbd></button>
+            <button type="button" className="btn-pri" onClick={onOpenChat}>대화 열기 <Keys keys={km.open} /></button>
+            <button type="button" className="btn" onClick={onNewTask}>이 프로젝트에 새 작업 <Keys keys={km.newTask} /></button>
+            <button type="button" className="btn ghost" onClick={onArchive}>보관 <Keys keys={km.archive} /></button>
           </div>
         </div>
       </section>

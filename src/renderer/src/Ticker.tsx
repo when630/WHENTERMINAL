@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { HOME_ROW } from './keys'
 import { reducedMotion } from './motion'
 import { Keys } from './KeyHint'
+import { useKeymap } from './settings'
 import { STAGES, type TaskRef } from './state'
 
 interface Props {
@@ -15,6 +16,7 @@ interface Props {
 const SPEED = 46
 
 export function Ticker({ running, reports, hotkey }: Props): React.JSX.Element {
+  const km = useKeymap()
   const runRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const el = runRef.current
@@ -42,7 +44,7 @@ export function Ticker({ running, reports, hotkey }: Props): React.JSX.Element {
     if (r.state.permissions.length > 0) return { text: `${name}  확인을 기다려요`, alert: true }
     return { text: `${name}  ${STAGES[Math.min(r.task.stage, STAGES.length - 1)]} 중 · ${r.task.activity}` }
   })
-  if (running.length === 0) parts.push({ text: '■ 진행 중인 작업 없음 · ', keys: 'ctrl K', after: ' 작업 지시' })
+  if (running.length === 0) parts.push({ text: '■ 진행 중인 작업 없음 · ', keys: km.dispatch, after: ' 작업 지시' })
   if (unread > 0) parts.push({ text: `■ 새 보고 ${unread}건` })
   if (hotkey) parts.push({ text: '■ ', keys: hotkey, after: ' 어디서든 호출' })
 

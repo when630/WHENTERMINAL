@@ -1,9 +1,12 @@
 import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, Tray } from 'electron'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { IPC, type AgentEventEnvelope, type AgentMode, type PermissionDecision, type RateLimitInfo } from '@shared/types'
+import { IPC, type UsageInfo, type AgentEventEnvelope, type AgentMode, type PermissionDecision, type RateLimitInfo } from '@shared/types'
 import { ProjectStore } from './store'
+import { SettingsStore } from './settings'
+import { effectiveKeymap, THEMES, toAccelerator, type Settings } from '@shared/keymap'
 import { AgentManager } from './agent/manager'
+import { fetchUsage, mergeRateLimit } from './agent/usage'
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
 const isMac = process.platform === 'darwin'
@@ -13,6 +16,36 @@ const isMac = process.platform === 'darwin'
 // Control+Option+Space는 '다음 입력 소스', Cmd+Space는 Spotlight 기본값
 const GLOBAL_HOTKEYS = isMac ? ['Control+Shift+Space', 'Alt+Shift+Space'] : ['Control+Space', 'Control+Shift+Space']
 let activeHotkey: string | null = null
+let settingsStore: SettingsStore
+
+/**
+ * 전역 호출 키 등록. 사용자가 정한 키가 있으면 그 키만 시도하고, 실패하면 이전 키를 되살린 뒤 이유를 돌려준다.
+ * 정하지 않았으면 플랫폼별 후보를 앞에서부터 시도한다
+ */
+function registerSummon(settings: Settings): string | undefined {
+  const custom = settings.keymap.summon
+  const previous = activeHotkey
+  if (activeHotkey) globalShortcut.unregister(activeHotkey)
+  activeHotkey = null
+  if (custom) {
+    const acc = toAccelerator(custom)
+    try {
+      if (globalShortcut.register(acc, toggleWindow)) {
+        activeHotkey = acc
+        return undefined
+      }
+    } catch {
+      // 형식이 잘못된 키
+    }
+    if (previous && globalShortcut.register(previous, toggleWindow)) activeHotkey = previous
+    return `${custom} 키를 등록하지 못했어요. 다른 앱이나 시스템이 쓰고 있을 수 있어요`
+  }
+  activeHotkey = GLOBAL_HOTKEYS.find((key) => globalShortcut.register(key, toggleWindow)) ?? null
+  if (activeHotkey !== GLOBAL_HOTKEYS[0]) console.warn(`global hotkey ${GLOBAL_HOTKEYS[0]} unavailable; using ${activeHotkey ?? 'none'}`)
+  return undefined
+}
+
+const themeBackground = (s: Settings): string => THEMES.find((t) => t.id === s.theme)?.colors[0] ?? '#ffffff'
 
 let win: BrowserWindow | null = null
 let tray: Tray | null = null
@@ -27,14 +60,66 @@ if (!app.requestSingleInstanceLock()) {
 
 function bootstrap(): void {
   const store = new ProjectStore()
+  settingsStore = new SettingsStore()
+  ipcMain.on(IPC.getSettingsSync, (e) => {
+    e.returnValue = settingsStore.get()
+  })
+  ipcMain.handle(IPC.setSettings, (_e, next: Settings) => {
+    const before = settingsStore.get()
+    let saved = settingsStore.set(next)
+    let error: string | undefined
+    if (effectiveKeymap(saved).summon !== effectiveKeymap(before).summon) {
+      error = registerSummon(saved)
+      // 등록에 실패한 호출 키는 저장하지 않는다
+      if (error) saved = settingsStore.set({ ...saved, keymap: { ...saved.keymap, summon: before.keymap.summon } })
+    }
+    win?.setBackgroundColor(themeBackground(saved))
+    send(IPC.settingsChanged, saved)
+    return { settings: saved, error }
+  })
   const send = (channel: string, payload: unknown): void => {
     if (win && !win.isDestroyed()) win.webContents.send(channel, payload)
   }
+  // 구독 한도: 앱 시작·작업 완료·5분마다 새로 받고, 작업 중 오는 한도 이벤트는 바로 반영한다
+  let usage: UsageInfo | null = null
+  let usageInflight: Promise<UsageInfo | null> | null = null
+  let usageTimer: ReturnType<typeof setTimeout> | null = null
+  const USAGE_STALE_MS = 5 * 60_000
+  const refreshUsage = (): Promise<UsageInfo | null> => {
+    usageInflight ??= fetchUsage(manager.liveQuery())
+      .then((u) => (usage = u))
+      .catch((err: unknown) => {
+        console.warn('사용량을 가져오지 못함', err)
+        if (usage) usage = { ...usage, error: '최신 사용량을 가져오지 못했어요' }
+        return usage
+      })
+      .finally(() => {
+        usageInflight = null
+        if (usage) send(IPC.usage, usage)
+      })
+    return usageInflight
+  }
+  const refreshUsageSoon = (): void => {
+    if (usageTimer) clearTimeout(usageTimer)
+    usageTimer = setTimeout(() => void refreshUsage(), 2500)
+  }
+
   const manager = new AgentManager(
     store,
-    (e: AgentEventEnvelope) => send(IPC.event, e),
-    (info: RateLimitInfo) => send(IPC.rateLimit, info),
+    (e: AgentEventEnvelope) => {
+      send(IPC.event, e)
+      if (e.event.kind === 'result') refreshUsageSoon()
+    },
+    (info: RateLimitInfo) => {
+      send(IPC.rateLimit, info)
+      usage = mergeRateLimit(usage, info)
+      if (usage) send(IPC.usage, usage)
+    },
   )
+  ipcMain.handle(IPC.getUsage, (_e, refresh?: boolean) =>
+    refresh || !usage || Date.now() - usage.fetchedAt > USAGE_STALE_MS ? refreshUsage() : usage,
+  )
+  setInterval(() => void refreshUsage(), USAGE_STALE_MS)
   const projectsChanged = (): void => send(IPC.projectsChanged, store.list())
 
   ipcMain.handle(IPC.getHotkey, () => activeHotkey?.replace('Control', 'Ctrl') ?? null)
@@ -79,6 +164,7 @@ function bootstrap(): void {
     manager.compact(projectId, conversationId, instructions),
   )
   ipcMain.handle(IPC.listCommands, (_e, projectId: string) => manager.listCommands(projectId))
+  ipcMain.handle(IPC.peek, (_e, projectId: string, conversationId: string) => manager.peek(projectId, conversationId))
   ipcMain.handle(IPC.clear, (_e, projectId: string, conversationId: string) => manager.clear(projectId, conversationId))
   ipcMain.handle(
     IPC.respondPermission,
@@ -94,8 +180,7 @@ function bootstrap(): void {
   createWindow()
   createTray()
 
-  activeHotkey = GLOBAL_HOTKEYS.find((key) => globalShortcut.register(key, toggleWindow)) ?? null
-  if (activeHotkey !== GLOBAL_HOTKEYS[0]) console.warn(`global hotkey ${GLOBAL_HOTKEYS[0]} unavailable; using ${activeHotkey ?? 'none'}`)
+  registerSummon(settingsStore.get())
 
   app.on('before-quit', () => {
     quitting = true
@@ -111,7 +196,22 @@ function bootstrap(): void {
 /** macOS 메뉴 막대. Cmd+W는 창 닫기(=숨기기), Cmd+Q는 종료 */
 function buildMacMenu(): Menu {
   const template: Electron.MenuItemConstructorOptions[] = [
-    { role: 'appMenu', label: app.name },
+    {
+      label: app.name,
+      submenu: [
+        { role: 'about' },
+        { type: 'separator' },
+        { label: '설정…', accelerator: 'Command+,', click: () => win?.webContents.send(IPC.openSettings) },
+        { type: 'separator' },
+        { role: 'services' },
+        { type: 'separator' },
+        { role: 'hide' },
+        { role: 'hideOthers' },
+        { role: 'unhide' },
+        { type: 'separator' },
+        { role: 'quit' },
+      ],
+    },
     { role: 'editMenu' },
     { role: 'windowMenu' },
   ]
@@ -129,7 +229,7 @@ function createWindow(): void {
     minHeight: 480,
     show: false,
     title: 'WHENTERMINAL',
-    backgroundColor: '#ffffff',
+    backgroundColor: themeBackground(settingsStore.get()),
     autoHideMenuBar: true,
     webPreferences: {
       preload: join(__dirname, '../preload/index.cjs'),

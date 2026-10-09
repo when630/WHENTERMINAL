@@ -3,6 +3,7 @@ import { MODE_CYCLE, MODE_LABEL, STATUS_LABEL, type SlashCommandInfo, type Agent
 import { emptyConversation, type ConversationMap, type TranscriptItem } from './state'
 import { HOME_ROW } from './keys'
 import { Keys } from './KeyHint'
+import { useKeymap } from './settings'
 import { usePresence } from './motion'
 import { rankCommands, SlashMenu, useSlashCommands } from './SlashMenu'
 
@@ -25,6 +26,7 @@ interface Props {
 }
 
 export function Chat({ project, projects, conversationId, convs, mode, clearArmed, closeArmedId, onClearRequest, onCloseRequest, onClose, onSelectConversation, onRespond }: Props): React.JSX.Element {
+  const km = useKeymap()
   const state = convs[conversationId] ?? emptyConversation()
   const [draft, setDraft] = useState('')
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -45,6 +47,12 @@ export function Chat({ project, projects, conversationId, convs, mode, clearArme
   const otherWaiting = projects
     .map((p, i) => ({ p, i, n: p.id === project.id ? 0 : p.conversations.filter((c) => convs[c.id]?.status === 'waiting_approval').length }))
     .filter((x) => x.n > 0)
+
+  // 열자마자 컨텍스트 사용률·모델이 보이도록, 이번 실행에서 아직 받지 않았으면 메시지 없이 읽어 온다
+  const needsPeek = !state.context
+  useEffect(() => {
+    if (needsPeek) void window.api.peek(project.id, conversationId)
+  }, [project.id, conversationId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // 맨 아래를 보고 있을 때만 따라 내려간다. 위로 올려 읽는 중이면 끌고 내려가지 않는다
   const stick = useRef(true)
@@ -176,10 +184,10 @@ export function Chat({ project, projects, conversationId, convs, mode, clearArme
             </span>
           </div>
           <button type="button" className="tb-btn" disabled={!canCompact} onClick={() => compact()} title="대화를 요약해 컨텍스트를 줄입니다 (/compact)">
-            {state.compacting ? '컴팩트 중' : '컴팩트'} <Keys keys="ctrl shift L" />
+            {state.compacting ? '컴팩트 중' : '컴팩트'} <Keys keys={km.compact} />
           </button>
           <button type="button" className={`tb-btn ${clearArmed ? 'armed' : ''}`} onClick={onClearRequest} title="컨텍스트를 비우고 새 세션으로 시작합니다 (/clear)">
-            {clearArmed ? '한 번 더' : '클리어'} <Keys keys="ctrl L" />
+            {clearArmed ? '한 번 더' : '클리어'} <Keys keys={km.clear} />
           </button>
           <span className={`badge badge-${state.status}`}>{STATUS_LABEL[state.status]}</span>
         </div>
@@ -232,7 +240,7 @@ export function Chat({ project, projects, conversationId, convs, mode, clearArme
             <button type="button" className={`meta meta-mode mode-${mode}`} onClick={cycleMode} title="권한 모드 바꾸기">
               <span className="meta-k">모드</span>
               <span className="meta-v">{MODE_LABEL[mode]}</span>
-              <Keys keys="shift tab" />
+              <Keys keys={km.cycleMode} />
             </button>
           </div>
         </div>
@@ -263,11 +271,11 @@ export function Chat({ project, projects, conversationId, convs, mode, clearArme
         <div className={`confirm ${confirm.leaving ? 'leaving' : ''}`} role="alert">
           {confirm.item === 'close' ? (
             <>
-              <Keys keys="ctrl W" /> 를 한 번 더 누르면 {state.status === 'running' || state.status === 'waiting_approval' ? '실행 중인 작업을 멈추고 ' : ''}이 대화를 닫습니다
+              <Keys keys={km.closeConversation} /> 를 한 번 더 누르면 {state.status === 'running' || state.status === 'waiting_approval' ? '실행 중인 작업을 멈추고 ' : ''}이 대화를 닫습니다
             </>
           ) : (
             <>
-              <Keys keys="ctrl L" /> 을 한 번 더 누르면 컨텍스트를 비우고 새 세션으로 시작합니다
+              <Keys keys={km.clear} /> 을 한 번 더 누르면 컨텍스트를 비우고 새 세션으로 시작합니다
             </>
           )}
         </div>
@@ -305,14 +313,14 @@ export function Chat({ project, projects, conversationId, convs, mode, clearArme
       </div>
 
       <footer className="hints">
-        <span><Keys keys="ctrl H" /> 홈</span>
-        <span><Keys keys="ctrl tab" /> 하위 대화</span>
+        <span><Keys keys={km.goHome} /> 홈</span>
+        <span><Keys keys={km.nextConversation} /> 하위 대화</span>
         <span><Keys keys="alt A S D…" /> 다른 프로젝트</span>
         <span><Keys keys="esc" /> 중단</span>
-        <span><Keys keys="ctrl L" /> 클리어</span>
-        <span><Keys keys="ctrl W" /> 닫기</span>
-        <span><Keys keys="ctrl shift L" /> 컴팩트</span>
-        {pending && <span><kbd>Y A N</kbd> 허용 · 항상 · 거절</span>}
+        <span><Keys keys={km.clear} /> 클리어</span>
+        <span><Keys keys={km.closeConversation} /> 닫기</span>
+        <span><Keys keys={km.compact} /> 컴팩트</span>
+        {pending && <span><Keys keys={`${km.allow} ${km.always} ${km.deny}`} /> 허용 · 항상 · 거절</span>}
       </footer>
     </div>
   )
@@ -393,6 +401,7 @@ function ToolInput({ name, input }: { name: string; input: unknown }): React.JSX
 }
 
 function PermissionBox({ req, leaving, onRespond }: { req: PermissionRequest; leaving: boolean; onRespond: (d: PermissionDecision) => void }): React.JSX.Element {
+  const km = useKeymap()
   return (
     <div className={`permission ${leaving ? 'leaving' : ''}`} role="alert">
       <div className="permission-head">
@@ -404,9 +413,9 @@ function PermissionBox({ req, leaving, onRespond }: { req: PermissionRequest; le
       </div>
       <pre>{JSON.stringify(req.input, null, 2)}</pre>
       <div className="permission-actions">
-        <button type="button" onClick={() => onRespond('allow')}>허용 {!req.defaultToNo && <kbd>Y</kbd>}</button>
-        {!req.suppressAlwaysAllow && <button type="button" onClick={() => onRespond('always')}>항상 허용 {!req.defaultToNo && <kbd>A</kbd>}</button>}
-        <button type="button" onClick={() => onRespond('deny')}>거절 <kbd>N</kbd></button>
+        <button type="button" onClick={() => onRespond('allow')}>허용 {!req.defaultToNo && <Keys keys={km.allow} />}</button>
+        {!req.suppressAlwaysAllow && <button type="button" onClick={() => onRespond('always')}>항상 허용 {!req.defaultToNo && <Keys keys={km.always} />}</button>}
+        <button type="button" onClick={() => onRespond('deny')}>거절 <Keys keys={km.deny} /></button>
       </div>
       {req.defaultToNo && <div className="muted">이 요청은 단축키로 승인할 수 없습니다. 버튼을 클릭하세요.</div>}
     </div>

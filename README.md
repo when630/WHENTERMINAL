@@ -46,4 +46,6 @@ npm run dev
 | 대화(세션) 닫기 (두 번) | `Ctrl+W` `Ctrl+W`, 탭의 × 두 번, 입력창에서 `/close` |
 | 컨텍스트 비우기 (두 번) / 컴팩트 | `Ctrl+L` `Ctrl+L` / `Ctrl+Shift+L`, 입력창에서 `/clear` `/compact [요약 지시]` |
 
+단축키와 색 테마는 설정(`Ctrl+,`, macOS는 `⌘,`도)에서 바꿀 수 있습니다. 아래는 기본값입니다.
+
 macOS에서도 단축키는 Cmd가 아니라 Ctrl을 씁니다. Alt는 Option(⌥) 키입니다. 복사·붙여넣기 같은 편집 키와 `Cmd+W`(창 숨기기), `Cmd+Q`(종료)는 macOS 기본대로 동작합니다.
