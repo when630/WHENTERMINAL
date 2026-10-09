@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
+import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron'
 import { IPC, type WhenTerminalApi } from '@shared/types'
 
 function subscribe<T>(channel: string, cb: (payload: T) => void): () => void {
@@ -27,6 +27,9 @@ const api: WhenTerminalApi = {
   listCommands: (projectId) => ipcRenderer.invoke(IPC.listCommands, projectId),
   peek: (projectId, conversationId) => ipcRenderer.invoke(IPC.peek, projectId, conversationId),
   searchFiles: (projectId, conversationId, query) => ipcRenderer.invoke(IPC.searchFiles, projectId, conversationId, query),
+  pathForFile: (file) => webUtils.getPathForFile(file),
+  saveImage: (data, ext) => ipcRenderer.invoke(IPC.saveImage, data, ext),
+  pickFiles: () => ipcRenderer.invoke(IPC.pickFiles),
   listModels: (projectId) => ipcRenderer.invoke(IPC.listModels, projectId),
   setModel: (projectId, conversationId, option) => ipcRenderer.invoke(IPC.setModel, projectId, conversationId, option),
   loadHistory: (projectId, conversationId) => ipcRenderer.invoke(IPC.loadHistory, projectId, conversationId),

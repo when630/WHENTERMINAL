@@ -535,6 +535,11 @@ pre { font: 12.5px/1.65 var(--mono); background: transparent; padding: 0; overfl
 
 .composer { position: relative; flex: none; display: flex; align-items: flex-start; gap: 14px; padding: 12px 28px 10px; border-top: var(--rule-thick); transition: background 0.15s; }
 .composer:focus-within { background: var(--wash); }
+.composer.dropping { background: var(--wash); box-shadow: inset 0 0 0 3px var(--signal); }
+.composer.dropping::after { content: '놓으면 경로를 넣어요'; position: absolute; right: 28px; top: 14px; padding: 4px 8px; background: var(--signal); color: var(--on-signal); font: 700 12px/1 var(--font); }
+.attach { flex: none; width: 34px; height: 34px; margin-top: 2px; padding: 6px; border: var(--rule); background: var(--paper); color: var(--ink); transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out); }
+.attach:hover { background: var(--sel-bg); color: var(--sel-fg); }
+.attach svg { width: 100%; height: 100%; }
 .composer-prompt { font: 900 30px/1.1 var(--disp); padding-top: 2px; }
 .composer-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
 .composer textarea { display: block; width: 100%; resize: none; font: 700 17px/1.55 var(--font); color: var(--ink); background: transparent; border: 0; padding: 6px 0; outline: none; }

@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, shell, Tray } from 'electron'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { cwdOf, IPC, type Conversation, type ModelOption, type StoredTask, type UsageInfo, type AgentEventEnvelope, type AgentMode, type PermissionDecision, type RateLimitInfo } from '@shared/types'
@@ -222,6 +223,22 @@ function bootstrap(): void {
   ipcMain.handle(IPC.loadHistory, (_e, projectId: string, conversationId: string) => manager.loadHistory(projectId, conversationId))
   ipcMain.handle(IPC.listModels, (_e, projectId: string) => manager.listModels(projectId))
   ipcMain.handle(IPC.setModel, (_e, projectId: string, conversationId: string, option: ModelOption) => manager.setModel(projectId, conversationId, option))
+  // 스크린샷 붙여넣기: 붙여넣은 이미지를 userData/attachments에 저장하고 그 경로를 입력창에 넣는다 (에이전트가 Read로 본다)
+  ipcMain.handle(IPC.saveImage, (_e, data: Uint8Array, ext: string) => {
+    const dir = join(app.getPath('userData'), 'attachments')
+    mkdirSync(dir, { recursive: true })
+    const d = new Date()
+    const pad = (n: number): string => String(n).padStart(2, '0')
+    const stamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`
+    const safeExt = /^(png|jpe?g|gif|webp)$/i.test(ext) ? ext.toLowerCase() : 'png'
+    const file = join(dir, `screenshot-${stamp}-${Math.random().toString(36).slice(2, 6)}.${safeExt}`)
+    writeFileSync(file, Buffer.from(data))
+    return file
+  })
+  ipcMain.handle(IPC.pickFiles, async () => {
+    const res = await dialog.showOpenDialog(win!, { title: '첨부할 파일', properties: ['openFile', 'multiSelections'] })
+    return res.canceled ? [] : res.filePaths
+  })
   ipcMain.handle(IPC.searchFiles, (_e, projectId: string, conversationId: string, q: string) => {
     const project = store.get(projectId)
     return project ? searchFiles(cwdOf(project, store.getConversation(projectId, conversationId)), q) : []

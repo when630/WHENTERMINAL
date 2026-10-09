@@ -217,6 +217,8 @@ export const IPC = {
   listCommands: 'agent:list-commands',
   peek: 'agent:peek',
   searchFiles: 'files:search',
+  saveImage: 'files:save-image',
+  pickFiles: 'files:pick',
   listModels: 'agent:list-models',
   setModel: 'agent:set-model',
   loadHistory: 'agent:load-history',
@@ -267,6 +269,12 @@ export interface WhenTerminalApi {
   peek(projectId: string, conversationId: string): Promise<void>
   /** 입력창의 @ 자동완성: 이 대화의 작업 폴더에서 파일 찾기 (상대 경로) */
   searchFiles(projectId: string, conversationId: string, query: string): Promise<string[]>
+  /** 끌어다 놓은 파일의 실제 경로 (sandbox라 File.path가 없어 preload의 webUtils로) */
+  pathForFile(file: File): string
+  /** 붙여넣은 이미지(스크린샷)를 userData/attachments에 저장하고 경로를 돌려준다 */
+  saveImage(data: Uint8Array, ext: string): Promise<string>
+  /** 파일 선택 창. 고른 파일들의 경로 (취소면 빈 배열) */
+  pickFiles(): Promise<string[]>
   listModels(projectId: string): Promise<ModelOption[]>
   /** 이 대화의 모델을 바꾼다. 실행 중이면 다음 응답부터, 아니면 다음 시작부터 */
   setModel(projectId: string, conversationId: string, option: ModelOption): Promise<void>
