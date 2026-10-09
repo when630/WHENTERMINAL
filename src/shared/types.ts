@@ -40,6 +40,27 @@ export const MODE_LABEL: Record<AgentMode, string> = {
 }
 export const isAgentMode = (m: unknown): m is AgentMode => MODE_CYCLE.includes(m as AgentMode)
 
+/** 한 번의 지시(사용자 메시지)부터 결과까지 = 작업 하나 */
+export interface TaskInfo {
+  instruction: string
+  startedAt: number
+  stage: number
+  activity: string
+  tools: number
+  files: string[]
+  finishedAt?: number
+  durationMs?: number
+  costUsd?: number
+  summary?: string
+  unread: boolean
+  archived: boolean
+}
+
+/** 끝난 작업의 보고서. 재시작해도 보고함에 남도록 대화와 함께 저장 */
+export interface StoredTask extends TaskInfo {
+  status: AgentStatus
+}
+
 export interface Conversation {
   id: string
   title: string
@@ -51,7 +72,14 @@ export interface Conversation {
   /** 이 세션이 쓰는 모델 ID와 표시 이름. 매 턴 시작 메시지에서 갱신 */
   model?: string
   modelLabel?: string
+  /** 마지막으로 끝난 작업의 보고서 */
+  lastTask?: StoredTask
+  /** 닫았지만 보관하지 않은 보고서가 있어 남겨 둔 대화. 탭·목록에는 안 보인다 */
+  closedAt?: number
 }
+
+/** 탭·목록에 보이는 대화 (닫힌 대화 제외) */
+export const openConversations = (p: Project): Conversation[] => p.conversations.filter((c) => !c.closedAt)
 
 export interface Project {
   id: string
@@ -160,6 +188,8 @@ export const IPC = {
   removeProject: 'projects:remove',
   addConversation: 'conversations:add',
   closeConversation: 'conversations:close',
+  reopenConversation: 'conversations:reopen',
+  saveTask: 'conversations:save-task',
   startTask: 'tasks:start',
   send: 'agent:send',
   interrupt: 'agent:interrupt',
@@ -193,6 +223,10 @@ export interface WhenTerminalApi {
   addConversation(projectId: string): Promise<Conversation>
   /** 대화(세션)를 닫는다. 실행 중이면 중단한다. 마지막 대화였다면 빈 대화를 새로 만든다. 남은 대화 중 옮겨 갈 ID를 돌려준다 */
   closeConversation(projectId: string, conversationId: string): Promise<string>
+  /** 닫힌 대화를 다시 탭으로 */
+  reopenConversation(projectId: string, conversationId: string): Promise<void>
+  /** 끝난 작업의 보고서(읽음·보관 포함)를 저장. 닫힌 대화의 보고서를 보관하면 대화도 지운다 */
+  saveTask(projectId: string, conversationId: string, task: StoredTask): Promise<void>
   /** 홈의 작업 지시창: 쓰지 않은 대화가 있으면 재사용하고 없으면 새로 만들어 작업을 보낸다. 대화 ID 반환 */
   startTask(projectId: string, text: string): Promise<string>
   send(projectId: string, conversationId: string, text: string): Promise<void>

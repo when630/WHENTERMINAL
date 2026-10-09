@@ -100,7 +100,7 @@ export class AgentManager {
   closeConversation(projectId: string, conversationId: string): string {
     this.sessions.get(conversationId)?.dispose()
     this.sessions.delete(conversationId)
-    return this.store.removeConversation(projectId, conversationId)
+    return this.store.closeConversation(projectId, conversationId)
   }
 
   /** 세션을 닫고 저장된 세션 ID를 지운다. 다음 메시지는 새 세션으로 시작 (이전 기록 파일은 지우지 않음) */

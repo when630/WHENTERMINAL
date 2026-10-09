@@ -1,7 +1,7 @@
 import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, shell, Tray } from 'electron'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { IPC, type UsageInfo, type AgentEventEnvelope, type AgentMode, type PermissionDecision, type RateLimitInfo } from '@shared/types'
+import { IPC, type StoredTask, type UsageInfo, type AgentEventEnvelope, type AgentMode, type PermissionDecision, type RateLimitInfo } from '@shared/types'
 import { ProjectStore } from './store'
 import { SettingsStore } from './settings'
 import { effectiveKeymap, THEMES, toAccelerator, type Settings } from '@shared/keymap'
@@ -145,6 +145,13 @@ function bootstrap(): void {
     const next = manager.closeConversation(projectId, conversationId)
     projectsChanged()
     return next
+  })
+  ipcMain.handle(IPC.reopenConversation, (_e, projectId: string, conversationId: string) => {
+    store.reopenConversation(projectId, conversationId)
+    projectsChanged()
+  })
+  ipcMain.handle(IPC.saveTask, (_e, projectId: string, conversationId: string, task: StoredTask) => {
+    if (store.saveTask(projectId, conversationId, task)) projectsChanged()
   })
   ipcMain.handle(IPC.startTask, (_e, projectId: string, text: string) => {
     const conv = store.conversationForTask(projectId, text, (c) => !manager.hasSession(c.id))

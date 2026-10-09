@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { MODE_CYCLE, type AgentMode, type PermissionDecision, type Project, type UsageInfo } from '@shared/types'
+import { MODE_CYCLE, openConversations, type AgentMode, type StoredTask, type PermissionDecision, type Project, type UsageInfo } from '@shared/types'
 import { applyEvent, collectTasks, mostUrgentConversation, type ConversationMap, type TaskInfo, type TaskRef } from './state'
 import { Home, type DispatchOrigin } from './Home'
 import { Chat } from './Chat'
@@ -43,7 +43,22 @@ export function App(): React.JSX.Element {
   }, [])
 
   useEffect(() => {
-    window.api.listProjects().then(setProjects)
+    window.api.listProjects().then((list) => {
+      setProjects(list)
+      // 저장된 보고서로 보고함을 되살린다 (이번 실행에서 이미 상태가 있는 대화는 그대로)
+      setConvs((prev) => {
+        const next = { ...prev }
+        for (const p of list) {
+          for (const c of p.conversations) {
+            const t = c.lastTask
+            if (!t || next[c.id]) continue
+            const { status, ...task } = t
+            next[c.id] = { status, items: [], permissions: [], updatedAt: t.finishedAt ?? t.startedAt, task }
+          }
+        }
+        return next
+      })
+    })
     window.api.getHotkey().then(setHotkey)
     window.api.getUsage().then(setUsage)
     const offs = [
@@ -62,6 +77,28 @@ export function App(): React.JSX.Element {
     })
   }, [])
 
+  // 끝난 작업의 보고서가 바뀔 때마다(완료·요약·읽음·보관) 저장한다. 같은 내용은 다시 보내지 않는다
+  const savedTasks = useRef(new Map<string, string>())
+  useEffect(() => {
+    for (const p of projects) {
+      for (const c of p.conversations) {
+        const s = convs[c.id]
+        const t = s?.task
+        if (!s || !t?.finishedAt || s.status === 'running' || s.status === 'waiting_approval') continue
+        const stored: StoredTask = { ...t, status: s.status }
+        const key = JSON.stringify(stored)
+        if (savedTasks.current.get(c.id) === key) continue
+        // 시작할 때 되살린 값과 같으면 저장할 필요가 없다
+        if (!savedTasks.current.has(c.id) && c.lastTask && JSON.stringify(c.lastTask) === key) {
+          savedTasks.current.set(c.id, key)
+          continue
+        }
+        savedTasks.current.set(c.id, key)
+        void window.api.saveTask(p.id, c.id, stored)
+      }
+    }
+  }, [projects, convs])
+
   // 보고 있는 대화의 보고서는 읽은 것으로 처리
   const viewing = view.screen === 'chat' ? view.conversationId : null
   useEffect(() => {
@@ -78,6 +115,9 @@ export function App(): React.JSX.Element {
   const unreadTotal = reports.filter((r) => r.task.unread).length
 
   const openChat = useCallback((projectId: string, conversationId: string) => {
+    // 닫힌 대화의 보고서에서 '대화 열기'를 누르면 그 대화를 다시 탭으로
+    const conv = projects.find((p) => p.id === projectId)?.conversations.find((c) => c.id === conversationId)
+    if (conv?.closedAt) void window.api.reopenConversation(projectId, conversationId)
     setOpenReportId(null)
     const i = projects.findIndex((p) => p.id === projectId)
     if (i >= 0) setDispatchIndex(i)
@@ -138,10 +178,11 @@ export function App(): React.JSX.Element {
   /** 대화를 닫고, 보고 있던 대화였다면 옆 대화로 옮겨 간다 */
   const closeConversation = useCallback(async (projectId: string, conversationId: string) => {
     const next = await window.api.closeConversation(projectId, conversationId)
+    // 보고서가 보고함에 남을 수 있으므로 상태는 지우지 않는다. 실행 중이었다면 중단으로 바꾼다
     setConvs((prev) => {
-      const rest = { ...prev }
-      delete rest[conversationId]
-      return rest
+      const s = prev[conversationId]
+      if (!s || (s.status !== 'running' && s.status !== 'waiting_approval' && s.status !== 'queued')) return prev
+      return { ...prev, [conversationId]: { ...s, status: 'stopped', permissions: [], task: s.task ? { ...s.task, finishedAt: s.task.finishedAt ?? Date.now() } : s.task } }
     })
     setView((v) => (v.screen === 'chat' && v.conversationId === conversationId ? { screen: 'chat', projectId, conversationId: next } : v))
   }, [])
@@ -263,7 +304,7 @@ export function App(): React.JSX.Element {
 
     if (is('nextConversation') || is('prevConversation')) {
       return take(() => {
-        const ids = project.conversations.map((c) => c.id)
+        const ids = openConversations(project).map((c) => c.id)
         const next = (ids.indexOf(conversationId) + (is('prevConversation') ? -1 : 1) + ids.length) % ids.length
         setView({ screen: 'chat', projectId, conversationId: ids[next] })
       })

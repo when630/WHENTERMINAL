@@ -1,4 +1,5 @@
-import type { AgentEvent, AgentMode, AgentStatus, ContextInfo, PermissionRequest, Project } from '@shared/types'
+import { openConversations, type AgentEvent, type AgentMode, type AgentStatus, type ContextInfo, type PermissionRequest, type Project, type TaskInfo } from '@shared/types'
+export type { TaskInfo }
 import { STATUS_PRIORITY } from '@shared/types'
 
 export type TranscriptItem =
@@ -11,21 +12,6 @@ export type TranscriptItem =
 /** 작업 진행 단계. SDK가 단계를 알려주지 않으므로 사용한 도구로 추정한다 (stageForTool) */
 export const STAGES = ['계획', '탐색', '수정', '검증', '보고'] as const
 
-/** 한 번의 지시(사용자 메시지)부터 결과까지 = 작업 하나 */
-export interface TaskInfo {
-  instruction: string
-  startedAt: number
-  stage: number
-  activity: string
-  tools: number
-  files: string[]
-  finishedAt?: number
-  durationMs?: number
-  costUsd?: number
-  summary?: string
-  unread: boolean
-  archived: boolean
-}
 
 export interface ConversationState {
   status: AgentStatus
@@ -192,7 +178,7 @@ export const isActive = (st: AgentStatus): boolean => st === 'running' || st ===
 /** 카드 상태 = 하위 대화 중 가장 급한 것 (기획서 5장) */
 export function projectStatus(project: Project, convs: ConversationMap): AgentStatus {
   let best: AgentStatus = 'idle'
-  for (const c of project.conversations) {
+  for (const c of openConversations(project)) {
     const st = convs[c.id]?.status ?? 'idle'
     if (STATUS_PRIORITY[st] > STATUS_PRIORITY[best]) best = st
   }
@@ -201,9 +187,10 @@ export function projectStatus(project: Project, convs: ConversationMap): AgentSt
 
 /** 프로젝트를 열 때 보여줄 대화: 가장 급한 대화, 같으면 가장 최근에 움직인 대화 */
 export function mostUrgentConversation(project: Project, convs: ConversationMap): string {
-  let bestId = project.conversations[0].id
+  const open = openConversations(project)
+  let bestId = (open[0] ?? project.conversations[0]).id
   let bestKey = -1
-  for (const c of project.conversations) {
+  for (const c of open) {
     const s = convs[c.id]
     const key = STATUS_PRIORITY[s?.status ?? 'idle'] * 1e13 + (s?.updatedAt ?? 0)
     if (key > bestKey) {
@@ -243,7 +230,7 @@ export function collectTasks(projects: Project[], convs: ConversationMap): { run
 }
 
 export function firstPendingPermission(project: Project, convs: ConversationMap): { conversationId: string; request: PermissionRequest } | null {
-  for (const c of project.conversations) {
+  for (const c of openConversations(project)) {
     const req = convs[c.id]?.permissions[0]
     if (req) return { conversationId: c.id, request: req }
   }

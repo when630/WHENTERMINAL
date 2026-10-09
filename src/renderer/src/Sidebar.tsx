@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { Project, UsageInfo, UsageWindow } from '@shared/types'
+import { openConversations, type Project, type UsageInfo, type UsageWindow } from '@shared/types'
 import { STATUS_LABEL } from '@shared/types'
 import { ALT_LABEL, HOME_ROW } from './keys'
 import { Keys } from './KeyHint'
@@ -65,9 +65,9 @@ export function Sidebar(props: Props): React.JSX.Element {
                 <span className={`dot dot-${status}`} title={STATUS_LABEL[status]} />
               )}
             </button>
-            {on && p.conversations.length > 1 && (
+            {on && openConversations(p).length > 1 && (
               <div className="threads">
-                {p.conversations.map((c) => {
+                {openConversations(p).map((c) => {
                   const st = convs[c.id]?.status ?? 'idle'
                   return (
                     <button

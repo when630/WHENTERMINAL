@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { MODE_CYCLE, MODE_LABEL, STATUS_LABEL, type SlashCommandInfo, type AgentMode, type PermissionDecision, type PermissionRequest, type Project } from '@shared/types'
+import { MODE_CYCLE, MODE_LABEL, openConversations, STATUS_LABEL, type SlashCommandInfo, type AgentMode, type PermissionDecision, type PermissionRequest, type Project } from '@shared/types'
 import { emptyConversation, type ConversationMap, type TranscriptItem } from './state'
 import { HOME_ROW } from './keys'
 import { Keys } from './KeyHint'
@@ -199,7 +199,7 @@ export function Chat({ project, projects, conversationId, convs, mode, clearArme
         </div>
         <div className="tb-row2">
           <nav className="tabs" aria-label="하위 대화">
-            {project.conversations.map((c, i) => {
+            {openConversations(project).map((c, i) => {
               const st = convs[c.id]?.status ?? 'idle'
               const armedHere = closeArmedId === c.id
               return (
