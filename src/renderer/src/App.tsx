@@ -19,8 +19,9 @@ export function App(): React.JSX.Element {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [openReportId, setOpenReportId] = useState<string | null>(null)
   const [focusInput, setFocusInput] = useState(0)
-  const [clearArmed, setClearArmed] = useState<string | null>(null)
-  const clearTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // 되돌릴 수 없는 동작(클리어·대화 닫기)은 3초 안에 두 번 눌러야 실행된다
+  const [armed, setArmed] = useState<{ kind: 'clear' | 'close'; id: string } | null>(null)
+  const armTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const dispatchOrigin = useRef<DispatchOrigin | null>(null)
   const sheetCloseRef = useRef<(() => void) | null>(null)
@@ -102,17 +103,35 @@ export function App(): React.JSX.Element {
     void window.api.startTask(p.id, text).then((id) => setSelectedId(id))
   }, [projects, dispatchIndex])
 
-  // 클리어는 되돌릴 수 없으므로 두 번 눌러야 한다 (3초 안에)
-  const requestClear = useCallback((projectId: string, conversationId: string) => {
-    if (clearTimer.current) clearTimeout(clearTimer.current)
-    if (clearArmed === conversationId) {
-      setClearArmed(null)
-      void window.api.clear(projectId, conversationId)
+  const confirmTwice = useCallback((kind: 'clear' | 'close', id: string, run: () => void) => {
+    if (armTimer.current) clearTimeout(armTimer.current)
+    if (armed?.kind === kind && armed.id === id) {
+      setArmed(null)
+      run()
       return
     }
-    setClearArmed(conversationId)
-    clearTimer.current = setTimeout(() => setClearArmed(null), 3000)
-  }, [clearArmed])
+    setArmed({ kind, id })
+    armTimer.current = setTimeout(() => setArmed(null), 3000)
+  }, [armed])
+
+  const requestClear = useCallback((projectId: string, conversationId: string) => {
+    confirmTwice('clear', conversationId, () => void window.api.clear(projectId, conversationId))
+  }, [confirmTwice])
+
+  /** 대화를 닫고, 보고 있던 대화였다면 옆 대화로 옮겨 간다 */
+  const closeConversation = useCallback(async (projectId: string, conversationId: string) => {
+    const next = await window.api.closeConversation(projectId, conversationId)
+    setConvs((prev) => {
+      const rest = { ...prev }
+      delete rest[conversationId]
+      return rest
+    })
+    setView((v) => (v.screen === 'chat' && v.conversationId === conversationId ? { screen: 'chat', projectId, conversationId: next } : v))
+  }, [])
+
+  const requestClose = useCallback((projectId: string, conversationId: string) => {
+    confirmTwice('close', conversationId, () => void closeConversation(projectId, conversationId))
+  }, [confirmTwice, closeConversation])
 
   const modeOf = (projectId: string, conversationId: string): AgentMode => {
     const fromEvents = convs[conversationId]?.mode
@@ -123,6 +142,8 @@ export function App(): React.JSX.Element {
   // 전역 키 처리 (기획서 7장, 40% 배열 기준은 keys.ts). 최신 상태를 쓰기 위해 ref로 핸들러를 갱신한다.
   const handlerRef = useRef<(e: KeyboardEvent) => void>(() => {})
   handlerRef.current = (e: KeyboardEvent) => {
+    // 입력창의 명령 후보 메뉴가 열려 있으면 그쪽이 키를 처리한다
+    if ((e.target as HTMLElement | null)?.dataset?.menuOpen === 'true') return
     const code = physicalCode(e)
     const tag = (e.target as HTMLElement | null)?.tagName
     const typing = tag === 'TEXTAREA' || tag === 'INPUT'
@@ -249,6 +270,11 @@ export function App(): React.JSX.Element {
       setView({ screen: 'chat', projectId, conversationId: ids[next] })
       return
     }
+    if (plainCtrl && code === 'KeyW') {
+      e.preventDefault()
+      requestClose(projectId, conversationId)
+      return
+    }
     if (e.ctrlKey && !e.altKey && code === 'KeyL') {
       e.preventDefault()
       if (e.shiftKey) void window.api.compact(projectId, conversationId)
@@ -304,42 +330,47 @@ export function App(): React.JSX.Element {
       />
       <div className="content">
         <Ticker running={running} reports={reports} hotkey={hotkey} />
-        {view.screen === 'chat' && chatProject ? (
-          <Chat
-            project={chatProject}
-            projects={projects}
-            conversationId={view.conversationId}
-            convs={convs}
-            mode={modeOf(view.projectId, view.conversationId)}
-            clearArmed={clearArmed === view.conversationId}
-            onClearRequest={() => requestClear(chatProject.id, view.conversationId)}
-            onSelectConversation={(conversationId) => setView({ screen: 'chat', projectId: chatProject.id, conversationId })}
-            onRespond={respond}
-          />
-        ) : (
-          <Home
-            projects={projects}
-            running={running}
-            reports={reports}
-            selectedId={selectedId}
-            openReportId={openReportId}
-            dispatchIndex={Math.min(dispatchIndex, Math.max(projects.length - 1, 0))}
-            hotkey={hotkey}
-            inputRef={inputRef}
-            dispatchOrigin={dispatchOrigin}
-            sheetCloseRef={sheetCloseRef}
-            onDispatchIndex={setDispatchIndex}
-            onDispatch={dispatch}
-            onSelect={setSelectedId}
-            onOpenTask={(r) => openChat(r.project.id, r.conversationId)}
-            onOpenReport={openReport}
-            onCloseReport={() => setOpenReportId(null)}
-            onArchive={archive}
-            onNewTaskFor={newTaskFor}
-            onRespond={respond}
-            onAddProject={() => void window.api.addProject()}
-          />
-        )}
+        <div className="stage" key={view.screen === 'chat' ? `chat:${view.projectId}` : 'home'}>
+          {view.screen === 'chat' && chatProject ? (
+            <Chat
+              project={chatProject}
+              projects={projects}
+              conversationId={view.conversationId}
+              convs={convs}
+              mode={modeOf(view.projectId, view.conversationId)}
+              clearArmed={armed?.kind === 'clear' && armed.id === view.conversationId}
+              closeArmedId={armed?.kind === 'close' ? armed.id : null}
+              onClearRequest={() => requestClear(chatProject.id, view.conversationId)}
+              onCloseRequest={(id) => requestClose(chatProject.id, id)}
+              onClose={(id) => void closeConversation(chatProject.id, id)}
+              onSelectConversation={(conversationId) => setView({ screen: 'chat', projectId: chatProject.id, conversationId })}
+              onRespond={respond}
+            />
+          ) : (
+            <Home
+              projects={projects}
+              running={running}
+              reports={reports}
+              selectedId={selectedId}
+              openReportId={openReportId}
+              dispatchIndex={Math.min(dispatchIndex, Math.max(projects.length - 1, 0))}
+              hotkey={hotkey}
+              inputRef={inputRef}
+              dispatchOrigin={dispatchOrigin}
+              sheetCloseRef={sheetCloseRef}
+              onDispatchIndex={setDispatchIndex}
+              onDispatch={dispatch}
+              onSelect={setSelectedId}
+              onOpenTask={(r) => openChat(r.project.id, r.conversationId)}
+              onOpenReport={openReport}
+              onCloseReport={() => setOpenReportId(null)}
+              onArchive={archive}
+              onNewTaskFor={newTaskFor}
+              onRespond={respond}
+              onAddProject={() => void window.api.addProject()}
+            />
+          )}
+        </div>
       </div>
     </div>
   )

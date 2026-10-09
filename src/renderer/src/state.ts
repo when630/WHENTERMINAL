@@ -36,6 +36,7 @@ export interface ConversationState {
   task?: TaskInfo
   context?: ContextInfo
   compacting?: boolean
+  model?: { id: string; label: string }
 }
 
 export type ConversationMap = Record<string, ConversationState>
@@ -152,6 +153,9 @@ export function applyEvent(prev: ConversationState | undefined, event: AgentEven
       break
     case 'context':
       s.context = event.context
+      break
+    case 'model':
+      s.model = { id: event.model, label: event.label }
       break
     case 'compacting':
       s.compacting = event.on

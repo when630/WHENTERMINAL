@@ -1,6 +1,7 @@
 import type { Project, RateLimitInfo } from '@shared/types'
 import { STATUS_LABEL } from '@shared/types'
 import { ALT_LABEL, HOME_ROW } from './keys'
+import { Keys } from './KeyHint'
 import { isActive, projectStatus, STAGES, type ConversationMap } from './state'
 
 interface Props {
@@ -36,7 +37,7 @@ export function Sidebar(props: Props): React.JSX.Element {
       <button type="button" className={`nav nav-home ${activeProjectId === null ? 'on' : ''}`} onClick={props.onHome}>
         <span className="nav-name">홈</span>
         {unreadTotal > 0 && <span className="pill">{unreadTotal}</span>}
-        <kbd>Ctrl H</kbd>
+        <Keys keys="ctrl H" />
       </button>
 
       <div className="side-label">

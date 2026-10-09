@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import { type PermissionDecision, type Project } from '@shared/types'
 import { HOME_ROW } from './keys'
+import { Keys } from './KeyHint'
 import { boxIn, EASE, Odo, reducedMotion, Roll, useLayoutMotion } from './motion'
 import { STAGES, type TaskRef } from './state'
 import { elapsed, useNow } from './time'
@@ -93,13 +94,13 @@ export function Home(props: Props): React.JSX.Element {
         </div>
 
         <footer className="hints">
-          <span><kbd>Ctrl K</kbd>/<kbd>I</kbd> 작업 지시</span>
+          <span><Keys keys="ctrl K" />/<kbd>I</kbd> 작업 지시</span>
           <span><kbd>J</kbd><kbd>K</kbd> 위아래</span>
           <span><kbd>H</kbd><kbd>L</kbd> 진행 중 · 보고함</span>
           <span><kbd>O</kbd> 열기</span>
           <span><kbd>E</kbd> 보관</span>
           <span><kbd>Y</kbd><kbd>A</kbd><kbd>N</kbd> 확인 요청</span>
-          {props.hotkey && <span className="hints-r"><kbd>{props.hotkey}</kbd> 어디서든 호출</span>}
+          {props.hotkey && <span className="hints-r"><Keys keys={props.hotkey} /> 어디서든 호출</span>}
         </footer>
       </div>
 
@@ -128,7 +129,7 @@ function Dispatch(props: Props & { scrollRef: RefObject<HTMLDivElement | null> }
       <div className="ask ask-empty">
         <span>먼저 작업할 프로젝트 폴더를 추가하세요.</span>
         <button type="button" className="btn-pri" onClick={props.onAddProject}>
-          프로젝트 추가 <kbd>Ctrl N</kbd>
+          프로젝트 추가 <Keys keys="ctrl N" />
         </button>
       </div>
     )
@@ -166,7 +167,7 @@ function Dispatch(props: Props & { scrollRef: RefObject<HTMLDivElement | null> }
           }}
         />
         <button type="submit" className="btn-pri" disabled={!text.trim()}>
-          맡기기 <kbd>Enter</kbd>
+          맡기기 <Keys keys="enter" />
         </button>
       </div>
       <div className="ask-meta">
@@ -174,7 +175,7 @@ function Dispatch(props: Props & { scrollRef: RefObject<HTMLDivElement | null> }
           <kbd>{HOME_ROW[props.dispatchIndex] ?? ''}</kbd>
           <Roll text={p?.name ?? ''} className="proj-name" />
         </button>
-        <span><kbd>Tab</kbd> 프로젝트 바꾸기</span>
+        <span><Keys keys="tab" /> 프로젝트 바꾸기</span>
         <span>끝나면 보고함으로 보고서가 옵니다</span>
       </div>
     </form>
@@ -357,7 +358,7 @@ function ReportSheet({ r, wrapRef, scrollRef, closeRef, onClosed, onOpenChat, on
               {task.finishedAt ? new Date(task.finishedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) : ''}
               {task.durationMs !== undefined ? ` · ${mmss(task.durationMs)} 소요` : ''}
             </span>
-            <button type="button" className="btn ghost sm sh-x" onClick={close}>닫기 <kbd>Esc</kbd></button>
+            <button type="button" className="btn ghost sm sh-x" onClick={close}>닫기 <Keys keys="esc" /></button>
           </div>
           <h3 className="st">{task.instruction}</h3>
           <div className="sh-sum st">{task.summary ?? (state.status === 'done' ? '보고 내용이 없습니다.' : '작업이 끝나기 전에 멈췄습니다. 대화에서 자세한 내용을 확인하세요.')}</div>

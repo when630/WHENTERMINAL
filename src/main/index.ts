@@ -56,6 +56,11 @@ function bootstrap(): void {
     projectsChanged()
     return conv
   })
+  ipcMain.handle(IPC.closeConversation, (_e, projectId: string, conversationId: string) => {
+    const next = manager.closeConversation(projectId, conversationId)
+    projectsChanged()
+    return next
+  })
   ipcMain.handle(IPC.startTask, (_e, projectId: string, text: string) => {
     const conv = store.conversationForTask(projectId, text, (c) => !manager.hasSession(c.id))
     projectsChanged()
@@ -73,6 +78,7 @@ function bootstrap(): void {
   ipcMain.handle(IPC.compact, (_e, projectId: string, conversationId: string, instructions?: string) =>
     manager.compact(projectId, conversationId, instructions),
   )
+  ipcMain.handle(IPC.listCommands, (_e, projectId: string) => manager.listCommands(projectId))
   ipcMain.handle(IPC.clear, (_e, projectId: string, conversationId: string) => manager.clear(projectId, conversationId))
   ipcMain.handle(
     IPC.respondPermission,

@@ -57,6 +57,17 @@ export class ProjectStore {
     return conv
   }
 
+  /** 대화를 지우고 옮겨 갈 대화 ID를 돌려준다 (바로 다음 것, 없으면 앞의 것). 마지막 대화였다면 빈 대화를 만든다 */
+  removeConversation(projectId: string, conversationId: string): string {
+    const project = this.get(projectId)
+    if (!project) throw new Error(`프로젝트 없음: ${projectId}`)
+    const i = project.conversations.findIndex((c) => c.id === conversationId)
+    if (i >= 0) project.conversations.splice(i, 1)
+    if (project.conversations.length === 0) project.conversations.push(newConversation(1))
+    this.save()
+    return (project.conversations[i] ?? project.conversations[i - 1] ?? project.conversations[0]).id
+  }
+
   /** 작업 하나 = 대화 하나. 한 번도 보내지 않은 대화(isFresh)가 있으면 재사용하고 제목을 작업 문장으로 바꾼다 */
   conversationForTask(projectId: string, text: string, isFresh: (conv: Conversation) => boolean): Conversation {
     const project = this.get(projectId)

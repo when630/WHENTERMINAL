@@ -24,14 +24,19 @@ export const STATUS_LABEL: Record<AgentStatus, string> = {
   stopped: '중단',
 }
 
-/** Shift+Tab 순환 순서: 기본 → 편집 자동 허용 → 플랜 */
-export type AgentMode = 'default' | 'acceptEdits' | 'plan'
-export const MODE_CYCLE: AgentMode[] = ['default', 'acceptEdits', 'plan']
+/**
+ * Shift+Tab 순환 순서: 기본 → 편집 자동 허용 → 자동 → 플랜.
+ * auto는 모델 분류기가 도구 실행마다 승인/거절하고, 판단하지 못한 것만 canUseTool로 사용자에게 묻는다
+ */
+export type AgentMode = 'default' | 'acceptEdits' | 'auto' | 'plan'
+export const MODE_CYCLE: AgentMode[] = ['default', 'acceptEdits', 'auto', 'plan']
 export const MODE_LABEL: Record<AgentMode, string> = {
   default: '기본',
   acceptEdits: '편집 자동 허용',
+  auto: '자동',
   plan: '플랜',
 }
+export const isAgentMode = (m: unknown): m is AgentMode => MODE_CYCLE.includes(m as AgentMode)
 
 export interface Conversation {
   id: string
@@ -41,6 +46,9 @@ export interface Conversation {
   mode: AgentMode
   /** 마지막으로 확인한 컨텍스트 사용률(0~100). 앱을 다시 켜도 보이도록 저장 */
   contextPercent?: number
+  /** 이 세션이 쓰는 모델 ID와 표시 이름. 매 턴 시작 메시지에서 갱신 */
+  model?: string
+  modelLabel?: string
 }
 
 export interface Project {
@@ -72,6 +80,15 @@ export interface ContextInfo {
   autoCompactAt?: number
 }
 
+/** 입력창에서 /로 고를 수 있는 명령 (SDK SlashCommand와 같은 모양) */
+export interface SlashCommandInfo {
+  name: string
+  description: string
+  argumentHint: string
+  aliases?: string[]
+  builtin?: boolean
+}
+
 export interface RateLimitInfo {
   status: 'allowed' | 'allowed_warning' | 'rejected'
   rateLimitType?: string
@@ -96,6 +113,7 @@ export type AgentEvent =
   | { kind: 'compacting'; on: boolean }
   | { kind: 'compacted'; trigger: 'manual' | 'auto'; preTokens: number; postTokens?: number }
   | { kind: 'cleared' }
+  | { kind: 'model'; model: string; label: string }
 
 export interface AgentEventEnvelope {
   projectId: string
@@ -109,6 +127,7 @@ export const IPC = {
   addProject: 'projects:add',
   removeProject: 'projects:remove',
   addConversation: 'conversations:add',
+  closeConversation: 'conversations:close',
   startTask: 'tasks:start',
   send: 'agent:send',
   interrupt: 'agent:interrupt',
@@ -116,6 +135,7 @@ export const IPC = {
   respondPermission: 'agent:respond-permission',
   compact: 'agent:compact',
   clear: 'agent:clear',
+  listCommands: 'agent:list-commands',
   // 메인 → 렌더러
   event: 'agent:event',
   projectsChanged: 'projects:changed',
@@ -131,6 +151,8 @@ export interface WhenTerminalApi {
   addProject(): Promise<Project | null>
   removeProject(projectId: string): Promise<void>
   addConversation(projectId: string): Promise<Conversation>
+  /** 대화(세션)를 닫는다. 실행 중이면 중단한다. 마지막 대화였다면 빈 대화를 새로 만든다. 남은 대화 중 옮겨 갈 ID를 돌려준다 */
+  closeConversation(projectId: string, conversationId: string): Promise<string>
   /** 홈의 작업 지시창: 쓰지 않은 대화가 있으면 재사용하고 없으면 새로 만들어 작업을 보낸다. 대화 ID 반환 */
   startTask(projectId: string, text: string): Promise<string>
   send(projectId: string, conversationId: string, text: string): Promise<void>
@@ -141,6 +163,8 @@ export interface WhenTerminalApi {
   compact(projectId: string, conversationId: string, instructions?: string): Promise<void>
   /** 컨텍스트를 비우고 다음 메시지부터 새 세션으로 시작한다 */
   clear(projectId: string, conversationId: string): Promise<void>
+  /** 이 프로젝트에서 쓸 수 있는 슬래시 명령 (사용자·프로젝트 명령과 스킬 포함) */
+  listCommands(projectId: string): Promise<SlashCommandInfo[]>
   onEvent(cb: (e: AgentEventEnvelope) => void): () => void
   onProjectsChanged(cb: (projects: Project[]) => void): () => void
   onRateLimit(cb: (info: RateLimitInfo) => void): () => void

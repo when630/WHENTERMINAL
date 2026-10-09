@@ -1,6 +1,7 @@
-import type { AgentEventEnvelope, AgentMode, PermissionDecision, RateLimitInfo } from '@shared/types'
+import type { AgentEventEnvelope, AgentMode, PermissionDecision, RateLimitInfo, SlashCommandInfo } from '@shared/types'
 import type { ProjectStore } from '../store'
 import { AgentSession } from './session'
+import { commandsFor, remember } from './commands'
 
 /** 대화별 AgentSession을 만들고 보관한다. 동시 실행 제한(OPEN-003)은 여기에 붙일 예정. */
 export class AgentManager {
@@ -28,6 +29,29 @@ export class AgentManager {
     this.getOrCreate(projectId, conversationId).compact(instructions)
   }
 
+  /** 슬래시 명령 목록: 이 프로젝트에 살아 있는 세션이 있으면 거기서, 없으면 캐시나 잠깐 띄운 CLI에서 */
+  async listCommands(projectId: string): Promise<SlashCommandInfo[]> {
+    const project = this.store.get(projectId)
+    if (!project) return []
+    for (const conv of project.conversations) {
+      const list = await this.sessions.get(conv.id)?.commands().catch(() => null)
+      if (list) return remember(project.path, list)
+    }
+    try {
+      return await commandsFor(project.path)
+    } catch (err) {
+      console.warn('슬래시 명령 목록을 가져오지 못함', err)
+      return []
+    }
+  }
+
+  /** 대화를 닫는다: 세션을 끝내고(진행 중이면 중단) 목록에서 뺀다. 디스크의 세션 기록 파일은 남긴다 */
+  closeConversation(projectId: string, conversationId: string): string {
+    this.sessions.get(conversationId)?.dispose()
+    this.sessions.delete(conversationId)
+    return this.store.removeConversation(projectId, conversationId)
+  }
+
   /** 세션을 닫고 저장된 세션 ID를 지운다. 다음 메시지는 새 세션으로 시작 (이전 기록 파일은 지우지 않음) */
   clear(projectId: string, conversationId: string): void {
     this.sessions.get(conversationId)?.dispose()
@@ -41,10 +65,11 @@ export class AgentManager {
   }
 
   async setMode(projectId: string, conversationId: string, mode: AgentMode): Promise<void> {
-    this.store.updateConversation(projectId, conversationId, { mode })
     const session = this.sessions.get(conversationId)
-    if (session) await session.setMode(mode)
-    else this.broadcast({ projectId, conversationId, event: { kind: 'mode', mode } })
+    // 세션이 있으면 바뀐 결과가 'mode' 이벤트로 와서 저장된다 (아래 emit). 없으면 다음 시작 때 쓰도록 저장만
+    if (session) return session.setMode(mode)
+    this.store.updateConversation(projectId, conversationId, { mode })
+    this.broadcast({ projectId, conversationId, event: { kind: 'mode', mode } })
   }
 
   respondPermission(conversationId: string, requestId: string, decision: PermissionDecision): void {
@@ -76,6 +101,8 @@ export class AgentManager {
       resumeSessionId: conv.sessionId,
       emit: (event) => {
         if (event.kind === 'context') this.store.updateConversation(projectId, conversationId, { contextPercent: event.context.percent })
+        if (event.kind === 'mode') this.store.updateConversation(projectId, conversationId, { mode: event.mode })
+        if (event.kind === 'model') this.store.updateConversation(projectId, conversationId, { model: event.model, modelLabel: event.label })
         this.broadcast({ projectId, conversationId, event })
       },
       onSessionId: (sessionId) => this.store.updateConversation(projectId, conversationId, { sessionId }),

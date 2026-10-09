@@ -42,7 +42,8 @@ npm run dev
 | 홈에서 위아래 / 진행 중·보고함 | `J` `K` / `H` `L` |
 | 열기 / 보고서 보관 | `O` / `E` |
 | 실행 중단 | `Ctrl+[`, `Esc`, 선택한 글자가 없을 때 `Ctrl+C` |
-| 하위 대화 전환 / 모드 전환 | `Ctrl+Tab` / `Shift+Tab` |
+| 하위 대화 전환 / 모드 전환 | `Ctrl+Tab` / `Shift+Tab` (기본 → 편집 자동 허용 → 자동 → 플랜) |
+| 대화(세션) 닫기 (두 번) | `Ctrl+W` `Ctrl+W`, 탭의 × 두 번, 입력창에서 `/close` |
 | 컨텍스트 비우기 (두 번) / 컴팩트 | `Ctrl+L` `Ctrl+L` / `Ctrl+Shift+L`, 입력창에서 `/clear` `/compact [요약 지시]` |
 
 macOS에서도 단축키는 Cmd가 아니라 Ctrl을 씁니다. Alt는 Option(⌥) 키입니다. 복사·붙여넣기 같은 편집 키와 `Cmd+W`(창 숨기기), `Cmd+Q`(종료)는 macOS 기본대로 동작합니다.
