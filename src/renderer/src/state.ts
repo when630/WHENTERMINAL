@@ -121,6 +121,8 @@ export function applyEvent(prev: ConversationState | undefined, event: AgentEven
     case 'tool_result': {
       const idx = s.items.findLastIndex((i) => i.type === 'tool' && i.toolUseId === event.toolUseId)
       if (idx >= 0) s.items[idx] = { ...(s.items[idx] as Extract<TranscriptItem, { type: 'tool' }>), result: event.content, isError: event.isError }
+      // 남은 도구가 없으면 모델이 결과를 보고 다음 걸음을 고르는 중
+      if (!s.items.some((i) => i.type === 'tool' && i.result === undefined)) task({ activity: '다음 단계를 생각하는 중' })
       break
     }
     case 'permission_request':
