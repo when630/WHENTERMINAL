@@ -4,6 +4,7 @@ import { applyEvent, collectTasks, mostUrgentConversation, type ConversationMap,
 import { Home, type DispatchOrigin } from './Home'
 import { Chat } from './Chat'
 import { Sidebar } from './Sidebar'
+import { Ticker } from './Ticker'
 import { isEscape, isInterruptCopy, physicalCode, projectIndexFromKey } from './keys'
 
 export type View = { screen: 'home' } | { screen: 'chat'; projectId: string; conversationId: string }
@@ -18,6 +19,8 @@ export function App(): React.JSX.Element {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [openReportId, setOpenReportId] = useState<string | null>(null)
   const [focusInput, setFocusInput] = useState(0)
+  const [clearArmed, setClearArmed] = useState<string | null>(null)
+  const clearTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const dispatchOrigin = useRef<DispatchOrigin | null>(null)
   const sheetCloseRef = useRef<(() => void) | null>(null)
@@ -98,6 +101,18 @@ export function App(): React.JSX.Element {
     if (!p) return
     void window.api.startTask(p.id, text).then((id) => setSelectedId(id))
   }, [projects, dispatchIndex])
+
+  // 클리어는 되돌릴 수 없으므로 두 번 눌러야 한다 (3초 안에)
+  const requestClear = useCallback((projectId: string, conversationId: string) => {
+    if (clearTimer.current) clearTimeout(clearTimer.current)
+    if (clearArmed === conversationId) {
+      setClearArmed(null)
+      void window.api.clear(projectId, conversationId)
+      return
+    }
+    setClearArmed(conversationId)
+    clearTimer.current = setTimeout(() => setClearArmed(null), 3000)
+  }, [clearArmed])
 
   const modeOf = (projectId: string, conversationId: string): AgentMode => {
     const fromEvents = convs[conversationId]?.mode
@@ -234,6 +249,12 @@ export function App(): React.JSX.Element {
       setView({ screen: 'chat', projectId, conversationId: ids[next] })
       return
     }
+    if (e.ctrlKey && !e.altKey && code === 'KeyL') {
+      e.preventDefault()
+      if (e.shiftKey) void window.api.compact(projectId, conversationId)
+      else requestClear(projectId, conversationId)
+      return
+    }
     if (e.shiftKey && e.key === 'Tab') {
       e.preventDefault()
       const cur = modeOf(projectId, conversationId)
@@ -282,6 +303,7 @@ export function App(): React.JSX.Element {
         onAddProject={() => void window.api.addProject()}
       />
       <div className="content">
+        <Ticker running={running} reports={reports} hotkey={hotkey} />
         {view.screen === 'chat' && chatProject ? (
           <Chat
             project={chatProject}
@@ -289,6 +311,8 @@ export function App(): React.JSX.Element {
             conversationId={view.conversationId}
             convs={convs}
             mode={modeOf(view.projectId, view.conversationId)}
+            clearArmed={clearArmed === view.conversationId}
+            onClearRequest={() => requestClear(chatProject.id, view.conversationId)}
             onSelectConversation={(conversationId) => setView({ screen: 'chat', projectId: chatProject.id, conversationId })}
             onRespond={respond}
           />

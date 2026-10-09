@@ -21,6 +21,21 @@ export class AgentManager {
     return this.sessions.has(conversationId)
   }
 
+  compact(projectId: string, conversationId: string, instructions?: string): void {
+    const conv = this.store.getConversation(projectId, conversationId)
+    if (!conv) throw new Error(`대화 없음: ${projectId}/${conversationId}`)
+    // 앱을 다시 켠 뒤라 세션 객체가 없어도, 저장된 세션 ID로 이어서 컴팩트한다
+    this.getOrCreate(projectId, conversationId).compact(instructions)
+  }
+
+  /** 세션을 닫고 저장된 세션 ID를 지운다. 다음 메시지는 새 세션으로 시작 (이전 기록 파일은 지우지 않음) */
+  clear(projectId: string, conversationId: string): void {
+    this.sessions.get(conversationId)?.dispose()
+    this.sessions.delete(conversationId)
+    this.store.updateConversation(projectId, conversationId, { sessionId: undefined, contextPercent: undefined })
+    this.broadcast({ projectId, conversationId, event: { kind: 'cleared' } })
+  }
+
   async interrupt(projectId: string, conversationId: string): Promise<void> {
     await this.sessions.get(conversationId)?.interrupt()
   }
@@ -59,7 +74,10 @@ export class AgentManager {
       cwd: project.path,
       mode: conv.mode,
       resumeSessionId: conv.sessionId,
-      emit: (event) => this.broadcast({ projectId, conversationId, event }),
+      emit: (event) => {
+        if (event.kind === 'context') this.store.updateConversation(projectId, conversationId, { contextPercent: event.context.percent })
+        this.broadcast({ projectId, conversationId, event })
+      },
       onSessionId: (sessionId) => this.store.updateConversation(projectId, conversationId, { sessionId }),
       onRateLimit: this.onRateLimit,
     })

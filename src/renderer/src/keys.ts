@@ -1,6 +1,10 @@
 // 40% 배열 기준 키 규칙: 숫자 줄·방향키·F키·백틱 없이 알파벳 + 조합키만으로 모든 동작이 되게 한다.
 // 숫자와 방향키는 레이어로 누를 수 있으면 보조로 그대로 동작한다.
 
+/** macOS에서는 Alt 키 이름이 Option(⌥)이므로 화면 표기만 바꾼다. 판정은 둘 다 e.altKey */
+export const IS_MAC = /Mac/i.test(navigator.platform)
+export const ALT_LABEL = IS_MAC ? '⌥' : 'Alt'
+
 /** 프로젝트 1~9에 대응하는 홈 줄 키. Alt+A = 1번, Alt+S = 2번 … Alt+L = 9번 */
 export const HOME_ROW = ['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L'] as const
 

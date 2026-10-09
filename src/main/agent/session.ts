@@ -1,6 +1,6 @@
 import { query, type CanUseTool, type PermissionResult, type PermissionUpdate, type Query, type SDKMessage } from '@anthropic-ai/claude-agent-sdk'
 import { randomUUID } from 'node:crypto'
-import type { AgentEvent, AgentMode, AgentStatus, PermissionDecision, RateLimitInfo } from '@shared/types'
+import type { AgentEvent, AgentMode, AgentStatus, ContextInfo, PermissionDecision, RateLimitInfo } from '@shared/types'
 import { MessageQueue } from './message-queue'
 
 interface PendingPermission {
@@ -37,6 +37,8 @@ export class AgentSession {
   private sessionId?: string
   private status: AgentStatus = 'idle'
   private mode: AgentMode
+  /** 사용자가 요청한 컴팩트가 진행 중. 이때 오는 result는 작업 완료가 아니므로 상태를 바꾸지 않는다 */
+  private manualCompact = false
 
   constructor(private readonly opts: AgentSessionOptions) {
     this.mode = opts.mode
@@ -52,6 +54,18 @@ export class AgentSession {
     this.opts.emit({ kind: 'user', text })
     this.setStatus('running')
     this.queue!.push(text)
+  }
+
+  /** /compact를 같은 세션에 보낸다. 실행 중이면 거절 (끝난 뒤에 해야 요약이 온전하다) */
+  compact(instructions?: string): void {
+    const refuse = (message: string): void => this.opts.emit({ kind: 'error', message })
+    if (this.status === 'running' || this.status === 'waiting_approval') return refuse('작업이 끝난 뒤에 컴팩트할 수 있어요')
+    if (!this.q && !this.sessionId) return refuse('아직 대화가 없어 컴팩트할 내용이 없어요')
+    if (this.manualCompact) return
+    if (!this.q) this.start()
+    this.manualCompact = true
+    this.opts.emit({ kind: 'compacting', on: true })
+    this.queue!.push(instructions?.trim() ? `/compact ${instructions.trim()}` : '/compact')
   }
 
   async interrupt(): Promise<void> {
@@ -159,6 +173,18 @@ export class AgentSession {
         if (msg.subtype === 'init' && msg.session_id !== this.sessionId) {
           this.sessionId = msg.session_id
           this.opts.onSessionId(msg.session_id)
+        } else if (msg.subtype === 'status') {
+          // 자동 컴팩트도 이 메시지로 알려온다
+          if (msg.status === 'compacting') this.opts.emit({ kind: 'compacting', on: true })
+          else if (msg.compact_result) {
+            if (msg.compact_result === 'failed') this.opts.emit({ kind: 'error', message: `컴팩트 실패: ${msg.compact_error ?? '알 수 없는 오류'}` })
+            this.endCompacting()
+          }
+        } else if (msg.subtype === 'compact_boundary') {
+          const m = msg.compact_metadata
+          this.opts.emit({ kind: 'compacted', trigger: m.trigger, preTokens: m.pre_tokens, postTokens: m.post_tokens })
+          this.endCompacting()
+          void this.refreshContext()
         }
         break
       case 'stream_event':
@@ -196,9 +222,39 @@ export class AgentSession {
         break
       }
       case 'result':
+        void this.refreshContext()
+        if (this.manualCompact) {
+          // /compact의 결과: 작업이 끝난 것이 아니므로 상태·보고서는 그대로 둔다
+          if (msg.subtype !== 'success' || msg.is_error) this.opts.emit({ kind: 'error', message: '컴팩트하지 못했어요' })
+          this.endCompacting()
+          break
+        }
         this.opts.emit({ kind: 'result', subtype: msg.subtype, durationMs: msg.duration_ms, costUsd: msg.total_cost_usd })
         if (this.status !== 'stopped') this.setStatus(msg.subtype === 'success' && !msg.is_error ? 'done' : 'error')
         break
+    }
+  }
+
+  private endCompacting(): void {
+    this.manualCompact = false
+    this.opts.emit({ kind: 'compacting', on: false })
+  }
+
+  /** 마지막 응답의 사용량으로 컨텍스트 사용률을 구한다 ('summary'는 토큰 계산 API를 추가로 부르지 않음) */
+  private async refreshContext(): Promise<void> {
+    const q = this.q
+    if (!q) return
+    try {
+      const u = await q.getContextUsage({ detail: 'summary' })
+      const context: ContextInfo = {
+        percent: Math.round(u.percentage),
+        tokens: u.totalTokens,
+        max: u.maxTokens,
+        autoCompactAt: u.isAutoCompactEnabled && u.autoCompactThreshold ? Math.round((u.autoCompactThreshold / u.maxTokens) * 100) : undefined,
+      }
+      this.opts.emit({ kind: 'context', context })
+    } catch (err) {
+      console.warn('getContextUsage 실패', err)
     }
   }
 

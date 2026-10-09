@@ -39,6 +39,8 @@ export interface Conversation {
   /** SDK 세션 ID. 앱 재시작 후 resume에 사용 */
   sessionId?: string
   mode: AgentMode
+  /** 마지막으로 확인한 컨텍스트 사용률(0~100). 앱을 다시 켜도 보이도록 저장 */
+  contextPercent?: number
 }
 
 export interface Project {
@@ -62,6 +64,14 @@ export interface PermissionRequest {
   suppressAlwaysAllow?: boolean
 }
 
+/** 컨텍스트 창 사용량. autoCompactAt은 자동 컴팩트가 시작되는 사용률(%) */
+export interface ContextInfo {
+  percent: number
+  tokens: number
+  max: number
+  autoCompactAt?: number
+}
+
 export interface RateLimitInfo {
   status: 'allowed' | 'allowed_warning' | 'rejected'
   rateLimitType?: string
@@ -82,6 +92,10 @@ export type AgentEvent =
   | { kind: 'mode'; mode: AgentMode }
   | { kind: 'result'; subtype: string; durationMs: number; costUsd?: number }
   | { kind: 'error'; message: string }
+  | { kind: 'context'; context: ContextInfo }
+  | { kind: 'compacting'; on: boolean }
+  | { kind: 'compacted'; trigger: 'manual' | 'auto'; preTokens: number; postTokens?: number }
+  | { kind: 'cleared' }
 
 export interface AgentEventEnvelope {
   projectId: string
@@ -100,6 +114,8 @@ export const IPC = {
   interrupt: 'agent:interrupt',
   setMode: 'agent:set-mode',
   respondPermission: 'agent:respond-permission',
+  compact: 'agent:compact',
+  clear: 'agent:clear',
   // 메인 → 렌더러
   event: 'agent:event',
   projectsChanged: 'projects:changed',
@@ -121,6 +137,10 @@ export interface WhenTerminalApi {
   interrupt(projectId: string, conversationId: string): Promise<void>
   setMode(projectId: string, conversationId: string, mode: AgentMode): Promise<void>
   respondPermission(projectId: string, conversationId: string, requestId: string, decision: PermissionDecision): Promise<void>
+  /** 대화 내용을 요약해 컨텍스트를 줄인다. instructions는 요약할 때 중점을 둘 내용 */
+  compact(projectId: string, conversationId: string, instructions?: string): Promise<void>
+  /** 컨텍스트를 비우고 다음 메시지부터 새 세션으로 시작한다 */
+  clear(projectId: string, conversationId: string): Promise<void>
   onEvent(cb: (e: AgentEventEnvelope) => void): () => void
   onProjectsChanged(cb: (projects: Project[]) => void): () => void
   onRateLimit(cb: (info: RateLimitInfo) => void): () => void

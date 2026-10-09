@@ -116,7 +116,7 @@ export function Odo({ n }: { n: number }): React.JSX.Element {
   if (n > 9) return <span className="odo-plain">{n}</span>
   return (
     <span className="odo" aria-label={String(n)}>
-      <span className="odo-col" style={{ transform: `translateY(${-1.5 * n}em)` }} aria-hidden="true">
+      <span className="odo-col" style={{ transform: `translateY(calc(var(--odo-h, 1.5em) * ${-n}))` }} aria-hidden="true">
         {Array.from({ length: 10 }, (_, d) => (
           <span key={d}>{d}</span>
         ))}

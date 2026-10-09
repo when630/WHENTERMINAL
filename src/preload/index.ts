@@ -19,6 +19,8 @@ const api: WhenTerminalApi = {
   setMode: (projectId, conversationId, mode) => ipcRenderer.invoke(IPC.setMode, projectId, conversationId, mode),
   respondPermission: (projectId, conversationId, requestId, decision) =>
     ipcRenderer.invoke(IPC.respondPermission, projectId, conversationId, requestId, decision),
+  compact: (projectId, conversationId, instructions) => ipcRenderer.invoke(IPC.compact, projectId, conversationId, instructions),
+  clear: (projectId, conversationId) => ipcRenderer.invoke(IPC.clear, projectId, conversationId),
   onEvent: (cb) => subscribe(IPC.event, cb),
   onProjectsChanged: (cb) => subscribe(IPC.projectsChanged, cb),
   onRateLimit: (cb) => subscribe(IPC.rateLimit, cb),

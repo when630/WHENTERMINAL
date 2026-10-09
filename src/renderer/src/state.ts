@@ -1,4 +1,4 @@
-import type { AgentEvent, AgentMode, AgentStatus, PermissionRequest, Project } from '@shared/types'
+import type { AgentEvent, AgentMode, AgentStatus, ContextInfo, PermissionRequest, Project } from '@shared/types'
 import { STATUS_PRIORITY } from '@shared/types'
 
 export type TranscriptItem =
@@ -6,6 +6,7 @@ export type TranscriptItem =
   | { type: 'assistant'; text: string; streaming: boolean; at: number }
   | { type: 'tool'; toolUseId: string; name: string; input: unknown; result?: string; isError?: boolean; at: number }
   | { type: 'notice'; text: string; tone: 'info' | 'error'; at: number }
+  | { type: 'divider'; text: string; at: number }
 
 /** 작업 진행 단계. SDK가 단계를 알려주지 않으므로 사용한 도구로 추정한다 (stageForTool) */
 export const STAGES = ['계획', '탐색', '수정', '검증', '보고'] as const
@@ -33,6 +34,8 @@ export interface ConversationState {
   permissions: PermissionRequest[]
   updatedAt: number
   task?: TaskInfo
+  context?: ContextInfo
+  compacting?: boolean
 }
 
 export type ConversationMap = Record<string, ConversationState>
@@ -146,6 +149,26 @@ export function applyEvent(prev: ConversationState | undefined, event: AgentEven
     case 'error':
       finalizeStreaming()
       s.items.push({ type: 'notice', text: event.message, tone: 'error', at: now })
+      break
+    case 'context':
+      s.context = event.context
+      break
+    case 'compacting':
+      s.compacting = event.on
+      break
+    case 'compacted': {
+      const k = (n: number): string => (n >= 1000 ? `${Math.round(n / 1000)}K` : String(n))
+      const label = event.trigger === 'auto' ? '자동 컴팩트' : '컴팩트'
+      s.items.push({ type: 'divider', text: `${label} · ${k(event.preTokens)}${event.postTokens !== undefined ? ` → ${k(event.postTokens)}` : ''} 토큰`, at: now })
+      break
+    }
+    case 'cleared':
+      // 화면 기록도 비운다. 보고서(task)는 보고함에 남긴다
+      s.items = [{ type: 'divider', text: '컨텍스트를 비웠어요 · 다음 메시지부터 새 세션', at: now }]
+      s.permissions = []
+      s.status = 'idle'
+      s.context = undefined
+      s.compacting = false
       break
   }
   return s

@@ -1,6 +1,6 @@
 import type { Project, RateLimitInfo } from '@shared/types'
 import { STATUS_LABEL } from '@shared/types'
-import { HOME_ROW } from './keys'
+import { ALT_LABEL, HOME_ROW } from './keys'
 import { isActive, projectStatus, STAGES, type ConversationMap } from './state'
 
 interface Props {
@@ -29,15 +29,11 @@ export function Sidebar(props: Props): React.JSX.Element {
   return (
     <nav className="side" aria-label="프로젝트">
       <div className="brand">
-        <span className="brand-mark">W</span>
-        WHENTERMINAL
+        <span className="brand-mark" aria-hidden="true">WT<b>_</b></span>
+        <span className="brand-name">WHENTERMINAL</span>
       </div>
 
-      <button type="button" className={`nav ${activeProjectId === null ? 'on' : ''}`} onClick={props.onHome}>
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <path d="M3 10.5L12 3l9 7.5" />
-          <path d="M5 9.5V21h14V9.5" />
-        </svg>
+      <button type="button" className={`nav nav-home ${activeProjectId === null ? 'on' : ''}`} onClick={props.onHome}>
         <span className="nav-name">홈</span>
         {unreadTotal > 0 && <span className="pill">{unreadTotal}</span>}
         <kbd>Ctrl H</kbd>
@@ -58,15 +54,14 @@ export function Sidebar(props: Props): React.JSX.Element {
         const progress = live?.task ? Math.min(1, (live.task.stage + 0.5) / STAGES.length) : 0
         return (
           <div key={p.id} className="side-project">
-            <button type="button" className={`nav ${on ? 'on' : ''}`} onClick={() => props.onOpenProject(i)} title={`${p.path}\nAlt+${HOME_ROW[i] ?? '-'}`}>
+            <button type="button" className={`nav ${on ? 'on' : ''}`} onClick={() => props.onOpenProject(i)} title={`${p.path}\n${ALT_LABEL}+${HOME_ROW[i] ?? '-'}`}>
               <span className="nav-key">{HOME_ROW[i] ?? ''}</span>
               <span className="nav-name">{p.name}</span>
               {unread > 0 && <span className="pill">{unread}</span>}
               {live ? (
-                <svg className="ring" viewBox="0 0 16 16" aria-label={`진행 ${Math.round(progress * 100)}%`}>
-                  <circle className="ring-bg" cx="8" cy="8" r="6" />
-                  <circle className={`ring-fg ${status === 'waiting_approval' ? 'wait' : ''}`} cx="8" cy="8" r="6" strokeDasharray="37.7" strokeDashoffset={37.7 * (1 - progress)} />
-                </svg>
+                <span className={`minibar ${status === 'waiting_approval' ? 'wait' : ''}`} role="img" aria-label={`${STATUS_LABEL[status]} · 진행 ${Math.round(progress * 100)}%`}>
+                  <i style={{ width: `${Math.round(progress * 100)}%` }} />
+                </span>
               ) : (
                 <span className={`dot dot-${status}`} title={STATUS_LABEL[status]} />
               )}
@@ -83,6 +78,7 @@ export function Sidebar(props: Props): React.JSX.Element {
                       onClick={() => props.onOpenConversation(p.id, c.id)}
                     >
                       <span className="nav-name">{c.title}</span>
+                      <CtxPct percent={convs[c.id]?.context?.percent ?? c.contextPercent} />
                       <span className={`dot dot-${st}`} title={STATUS_LABEL[st]} />
                     </button>
                   )
@@ -97,7 +93,7 @@ export function Sidebar(props: Props): React.JSX.Element {
 
       <div className="usage">
         <div className="usage-top">
-          <span>구독 {rateLimit ? (LIMIT_LABEL[rateLimit.rateLimitType ?? ''] ?? rateLimit.rateLimitType ?? '') : ''} 한도</span>
+          <span>구독 {rateLimit ? (LIMIT_LABEL[rateLimit.rateLimitType ?? ''] ?? rateLimit.rateLimitType ?? '') : ''}<br />한도</span>
           <b className={rateLimit?.status === 'rejected' ? 'danger' : rateLimit?.status === 'allowed_warning' ? 'warn' : ''}>
             {rateLimit?.utilization !== undefined ? `${Math.round(rateLimit.utilization * 100)}%` : '–'}
           </b>
@@ -114,6 +110,12 @@ export function Sidebar(props: Props): React.JSX.Element {
       </div>
     </nav>
   )
+}
+
+/** 컨텍스트 사용률. 80% 이상이면 빨강 */
+function CtxPct({ percent }: { percent?: number }): React.JSX.Element | null {
+  if (percent === undefined) return null
+  return <span className={`ctx-pct ${percent >= 80 ? 'hot' : ''}`} title="컨텍스트 사용률">{percent}%</span>
 }
 
 function formatReset(t: number): string {
