@@ -269,7 +269,6 @@ export const IPC = {
   getUsage: 'usage:get',
   usage: 'usage:changed',
   toggleFullscreen: 'window:toggle-fullscreen',
-  fullscreenChanged: 'window:fullscreen-changed',
   getUpdate: 'update:get',
   checkUpdate: 'update:check',
   applyUpdate: 'update:apply',
@@ -352,6 +351,4 @@ export interface WhenTerminalApi {
   /** 받아 둔 업데이트가 있으면 재시작해 설치, 아니면 릴리즈 페이지를 연다 */
   applyUpdate(): void
   onUpdate(cb: (state: UpdateState) => void): () => void
-  /** 창 전체화면 여부. 페이지를 불러올 때와 바뀔 때마다 온다 */
-  onFullscreenChanged(cb: (fullscreen: boolean) => void): () => void
 }

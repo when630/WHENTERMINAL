@@ -113,10 +113,8 @@ kbd { display: inline-block; font: 500 11px/1 var(--mono); padding: 3px 5px; col
 /* ── 껍데기: 포스터 레일 + 본문 ── */
 .shell { display: flex; height: 100%; }
 .content { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-/* Windows 제목 표시줄 대신 쓰는 끌기 영역 (메인 TITLEBAR_HEIGHT와 같은 높이). 사이드바 로고도 끌 수 있다. 전체화면에서는 숨김 */
-.titlebar { height: 32px; flex: none; -webkit-app-region: drag; }
+/* Windows는 테두리 없는 창이라 사이드바 로고를 잡고 창을 옮긴다 (더블클릭하면 최대화) */
 .side .brand { -webkit-app-region: drag; }
-.fullscreen .titlebar { display: none; }
 
 .side { width: 232px; flex: none; display: flex; flex-direction: column; border-right: var(--rule-thick); overflow-y: auto; background: var(--paper); }
 .brand { display: flex; flex-direction: column; gap: 6px; padding: 16px 18px 14px; border-bottom: var(--rule); }

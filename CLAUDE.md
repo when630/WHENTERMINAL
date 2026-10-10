@@ -42,8 +42,9 @@
   - 홈 카드 선택: `H J K L` (보조: 방향키), 열기 `O`/`Enter`
   - 중단: `Esc` / `Ctrl+[` / 선택 글자 없을 때 `Ctrl+C`
   - Alt 니모닉과 겹치지 않도록 Windows에서는 기본 메뉴를 없앴다 (`Menu.setApplicationMenu(null)`). 개발 중 `Ctrl+Shift+I` 개발자 도구, `Ctrl+Shift+R` 새로고침
-- Windows 창은 제목 표시줄 없이(`titleBarStyle: 'hidden'`) 창 버튼만 겹쳐 그린다(`titleBarOverlay`, 색은 테마의 종이·먹색, 테마를 바꾸면 `setTitleBarOverlay`). 끌기 영역은 본문 맨 위 `.titlebar`(32px = 메인 `TITLEBAR_HEIGHT`)와 사이드바 로고. macOS는 기본 제목 표시줄 그대로
-- 전체화면: `F11`(고정 키, 메인 `before-input-event`) 또는 키맵 `fullscreen`(기본 `Ctrl+Shift+F`, 렌더러 → `IPC.toggleFullscreen`). 전체화면이면 `html.fullscreen`으로 `.titlebar`를 숨긴다
+- Windows 창은 테두리 없는 창(`frame: false`): 제목 표시줄·창 버튼이 없다. 사이드바 로고(`.side .brand`, `-webkit-app-region: drag`)를 잡고 옮기고 더블클릭하면 최대화, 크기 조절은 가장자리, 닫기는 `Alt+F4`(트레이로 숨김). macOS는 기본 제목 표시줄 그대로
+- 트레이 아이콘: Windows는 설정에서 고른 앱 아이콘을 16px(+1.25~2배)로 줄여 쓰고 아이콘을 바꾸면 같이 바뀐다(`makeTrayIcon`). macOS는 메뉴 막대 관례대로 흑백 템플릿 이미지
+- 전체화면: `F11`(고정 키, 메인 `before-input-event`) 또는 키맵 `fullscreen`(기본 `Ctrl+Shift+F`, 렌더러 → `IPC.toggleFullscreen`)
 - macOS도 지원한다 (`isMac` 분기, `src/main/index.ts`)
   - 단축키는 macOS에서도 Ctrl 기반 그대로. Cmd로 바꾸지 말 것. 화면의 Alt 표기만 `⌥`로 바꾼다 (`ALT_LABEL`)
   - 메뉴는 없애지 않고 앱·편집·윈도우 메뉴만 둔다. Edit 메뉴가 없으면 Cmd+C/V가 죽는다
