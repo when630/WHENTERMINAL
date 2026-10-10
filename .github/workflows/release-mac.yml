@@ -1,0 +1,53 @@
+# macOS 빌드(dmg·zip)는 macOS에서만 만들 수 있어서 GitHub의 Apple Silicon 러너에서 만든다.
+# - 릴리즈를 올리면(published) 그 태그로 빌드해 같은 릴리즈에 올린다
+# - 이미 낸 릴리즈에 다시 올리려면 Actions에서 수동 실행(tag 입력)
+# - PR에서 패키징 설정이 바뀌면 빌드만 해 본다 (올리지 않음)
+name: Release macOS
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '올릴 릴리즈 태그 (예: v0.4.0)'
+        required: true
+  pull_request:
+    paths:
+      - package.json
+      - package-lock.json
+      - .github/workflows/release-mac.yml
+
+permissions:
+  contents: write
+
+jobs:
+  mac:
+    runs-on: macos-14
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # 서명은 package.json의 identity "-"(임시 서명). 키체인에서 인증서를 찾지 않게 한다
+      - run: npm run dist:mac
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - run: ls -la release
+      - name: Upload to release
+        if: env.TAG != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V="${TAG#v}"
+          gh release upload "$TAG" \
+            "release/WHENTERMINAL-$V-arm64.dmg" \
+            "release/WHENTERMINAL-$V-arm64-mac.zip" \
+            "release/latest-mac.yml" \
+            --clobber
