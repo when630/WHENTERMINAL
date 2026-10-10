@@ -48,6 +48,8 @@ const api: WhenTerminalApi = {
   onRateLimit: (cb) => subscribe(IPC.rateLimit, cb),
   getUsage: (refresh) => ipcRenderer.invoke(IPC.getUsage, refresh),
   onUsage: (cb) => subscribe(IPC.usage, cb),
+  toggleFullscreen: () => ipcRenderer.send(IPC.toggleFullscreen),
+  onFullscreenChanged: (cb) => subscribe(IPC.fullscreenChanged, cb),
 }
 
 contextBridge.exposeInMainWorld('api', api)

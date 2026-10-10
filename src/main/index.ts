@@ -73,6 +73,13 @@ function applyAppIcon(s: Settings): void {
 
 const themeBackground = (s: Settings): string => THEMES.find((t) => t.id === s.theme)?.colors[0] ?? '#ffffff'
 
+/** Windows: 제목 표시줄 대신 창 버튼만 겹쳐 그린다. 높이는 렌더러 styles.css의 .titlebar와 맞춘다 */
+const TITLEBAR_HEIGHT = 32
+const titleBarOverlay = (s: Settings): Electron.TitleBarOverlayOptions => {
+  const [paper, ink] = THEMES.find((t) => t.id === s.theme)?.colors ?? ['#ffffff', '#0a0a0a']
+  return { color: paper, symbolColor: ink, height: TITLEBAR_HEIGHT }
+}
+
 let win: BrowserWindow | null = null
 let tray: Tray | null = null
 let quitting = false
@@ -104,6 +111,7 @@ function bootstrap(): void {
       if (error) saved = settingsStore.set({ ...saved, keymap: { ...saved.keymap, summon: before.keymap.summon } })
     }
     win?.setBackgroundColor(themeBackground(saved))
+    if (!isMac) win?.setTitleBarOverlay(titleBarOverlay(saved))
     if (saved.openAtLogin !== before.openAtLogin) applyLoginItem(saved)
     if (saved.appIcon !== before.appIcon) applyAppIcon(saved)
     // 동시 실행 수를 늘렸으면 기다리던 대화를 바로 시작
@@ -143,6 +151,7 @@ function bootstrap(): void {
     send(IPC.navigate, { projectId, conversationId })
   })
   ipcMain.on(IPC.setBadge, (_e, waiting: number, unread: number) => applyBadge(tray, waiting, unread))
+  ipcMain.on(IPC.toggleFullscreen, () => toggleFullscreen())
 
   const manager = new AgentManager(
     store,
@@ -355,6 +364,7 @@ function createWindow(): void {
     backgroundColor: themeBackground(settingsStore.get()),
     icon: iconFile(settingsStore.get().appIcon),
     autoHideMenuBar: true,
+    ...(isMac ? {} : { titleBarStyle: 'hidden', titleBarOverlay: titleBarOverlay(settingsStore.get()) }),
     webPreferences: {
       preload: join(__dirname, '../preload/index.cjs'),
       sandbox: true,
@@ -378,6 +388,20 @@ function createWindow(): void {
   win.webContents.on('will-navigate', (e, url) => {
     if (url !== win?.webContents.getURL() && !url.startsWith(process.env.ELECTRON_RENDERER_URL ?? '\0')) e.preventDefault()
   })
+  // 전체화면: F11은 고정 키라 여기서, 키맵의 대체 키(fullscreen)는 렌더러가 IPC로 보낸다
+  win.webContents.on('before-input-event', (e, input) => {
+    if (input.type === 'keyDown' && input.key === 'F11' && !input.control && !input.alt && !input.shift && !input.meta) {
+      toggleFullscreen()
+      e.preventDefault()
+    }
+  })
+  // Windows에서는 이벤트 시점에 isFullScreen()이 아직 바뀌기 전일 수 있어 이벤트별 값을 그대로 보낸다
+  const sendFullscreen = (on: boolean): void => {
+    if (win && !win.isDestroyed()) win.webContents.send(IPC.fullscreenChanged, on)
+  }
+  win.on('enter-full-screen', () => sendFullscreen(true))
+  win.on('leave-full-screen', () => sendFullscreen(false))
+  win.webContents.on('did-finish-load', () => sendFullscreen(win?.isFullScreen() ?? false))
   win.webContents.on('render-process-gone', (_e, details) => console.error('[renderer gone]', details.reason))
   if (process.env.ELECTRON_RENDERER_URL) {
     // 개발 중에는 렌더러 콘솔 경고/오류를 터미널로 넘겨 본다
@@ -393,6 +417,10 @@ function createWindow(): void {
   }
   if (process.env.ELECTRON_RENDERER_URL) win.loadURL(process.env.ELECTRON_RENDERER_URL)
   else win.loadFile(join(__dirname, '../renderer/index.html'))
+}
+
+function toggleFullscreen(): void {
+  if (win && !win.isDestroyed()) win.setFullScreen(!win.isFullScreen())
 }
 
 function createTray(): void {

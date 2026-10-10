@@ -1,5 +1,7 @@
 // 단축키 표시: 수정 키·특수 키는 아이콘, 글자 키는 글자 그대로. 화면 읽기 프로그램에는 전체 이름을 읽어 준다.
 
+import { IS_MAC } from './keys'
+
 type IconKey = 'ctrl' | 'shift' | 'alt' | 'enter' | 'esc' | 'tab' | 'space'
 
 const NAMES: Record<IconKey, string> = {
@@ -41,13 +43,31 @@ function Icon({ k }: { k: IconKey }): React.JSX.Element {
   )
 }
 
+const MODIFIERS = new Set<IconKey>(['ctrl', 'shift', 'alt'])
+
 /**
  * keys: 'ctrl shift l', 'Ctrl+Shift+Space', 'alt a' 처럼 공백이나 +로 구분.
  * 'A S D…'처럼 여러 글자를 나열하려면 그대로 넘기면 된다 (아이콘이 아닌 토큰은 글자로 표시)
+ * 표기는 기기 관례를 따른다: macOS는 아이콘(⌃ ⇧ ⌥), Windows는 글자와 +(Ctrl+Shift+L)
  */
 export function Keys({ keys, className }: { keys: string; className?: string }): React.JSX.Element {
   const tokens = keys.split(/[\s+]+/).filter(Boolean)
   const label = tokens.map((t) => NAMES[ALIASES[t.toLowerCase()]] ?? t).join('+')
+  if (!IS_MAC) {
+    // Windows: 수정 키 뒤에만 +를 붙인다 ('Alt+A S D…'의 나열 글자 사이는 띄어 쓰기만)
+    const text = tokens
+      .map((t, i) => {
+        const k = ALIASES[t.toLowerCase()]
+        const sep = i === tokens.length - 1 ? '' : k && MODIFIERS.has(k) ? '+' : ' '
+        return (k ? NAMES[k] : t) + sep
+      })
+      .join('')
+    return (
+      <kbd className={`keys ${className ?? ''}`} aria-label={label} title={label}>
+        <span className="key-ch">{text}</span>
+      </kbd>
+    )
+  }
   return (
     <kbd className={`keys ${className ?? ''}`} aria-label={label} title={label}>
       {tokens.map((t, i) => {

@@ -248,6 +248,8 @@ export const IPC = {
   rateLimit: 'usage:rate-limit',
   getUsage: 'usage:get',
   usage: 'usage:changed',
+  toggleFullscreen: 'window:toggle-fullscreen',
+  fullscreenChanged: 'window:fullscreen-changed',
 } as const
 
 /** preload가 window.api로 노출하는 API */
@@ -318,4 +320,8 @@ export interface WhenTerminalApi {
   /** 구독 한도 (5시간·주간·모델별). refresh면 캐시를 무시하고 새로 받는다 */
   getUsage(refresh?: boolean): Promise<UsageInfo | null>
   onUsage(cb: (u: UsageInfo) => void): () => void
+  /** 창 전체화면 켜고 끄기 (F11은 메인이 직접 처리) */
+  toggleFullscreen(): void
+  /** 창 전체화면 여부. 페이지를 불러올 때와 바뀔 때마다 온다 */
+  onFullscreenChanged(cb: (fullscreen: boolean) => void): () => void
 }
