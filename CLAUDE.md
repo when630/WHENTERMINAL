@@ -58,6 +58,12 @@
 - 작업 공간(OPEN-002, `main/worktree.ts`): 탭 +로 만든 대화만 `userData/worktrees`에 git worktree(`wt/<id>`). 세션·기록·peek의 폴더는 `cwdOf()`. 닫을 때 깨끗하면 정리
 - 앱 아이콘: 원본 `build/icons/*.svg` → `npm run icons`(Electron 오프스크린 렌더, Archivo 글꼴)로 `resources/icons/*.png`와 `build/icons/preview.png`. 기본·설치 파일 아이콘은 `prompt`. 설정에서 고르면 메인이 Dock(macOS)·창 아이콘을 바로 바꾼다. 패키징한 앱은 `extraResources`의 `Resources/icons`
 - 패키징: electron-builder(`package.json`의 `build`). SDK의 OS별 CLI 바이너리는 `asarUnpack`으로 풀고, 패키징한 앱에서는 `claudeExecutable()` 경로를 `pathToClaudeCodeExecutable`로 넘긴다. 렌더러에서만 쓰는 패키지는 devDependencies에 둘 것 (번들에 들어가므로)
+- 자동 업데이트(`src/main/updater.ts`): 공개 저장소의 GitHub 릴리즈를 본다. 패키징한 앱은 시작 15초 뒤·4시간마다 확인, 설정 UPDATE의 CHECK로 바로 확인. 새 버전이 있으면 사이드바 SETTINGS 위에 UPDATE 줄
+  - Windows 설치판(NSIS, 실행 파일 옆에 `Uninstall WHENTERMINAL.exe`가 있으면): `electron-updater`가 `latest.yml`을 읽어 백그라운드로 받고, RESTART로 조용히 설치 후 재실행(안 누르면 종료할 때 설치). `quitAndInstall`은 창부터 닫으므로 그 전에 `quitting`을 세운다
+  - Windows zip·macOS: 스스로 바꿀 수 없어 릴리즈 API로 새 버전만 알아채고 릴리즈 페이지를 연다 (macOS는 임시 서명이라 Squirrel.Mac 서명 검증에서 막힌다)
+- 릴리즈 내기: `package.json` 버전을 올리고 Windows에서 `npm run dist:win`(NSIS 설치판은 Windows에서만 만든다), macOS에서 `npm run dist:mac`. `gh release create vX.Y.Z`로 정식 릴리즈(초안·사전 릴리즈는 앱이 못 본다)를 만들고 올린다
+  - 자동 업데이트에 꼭 필요: `release/WHENTERMINAL-Setup-X.Y.Z.exe`, `.exe.blockmap`, `latest.yml`. 설치 파일 이름은 `latest.yml`과 맞도록 대시로 고정해 두었다(`nsis.artifactName`). 이름을 바꿔 올리면 업데이트가 404로 실패한다
+  - 그 밖에 zip(Windows·macOS)과 dmg. `dist` 스크립트는 `--publish never`라 빌드만 하고 올리지 않는다
 - 설정(`SettingsScreen.tsx`, `Ctrl+,` / macOS 메뉴 ⌘,): `userData/settings.json` (`src/main/settings.ts`). 첫 화면 전에 preload가 동기로 읽어(`initialSettings`) 테마 깜빡임이 없다
   - 테마: `:root[data-theme]`로 색 토큰만 바꾼다 (포스터·종이·세이지·먹·밤). 새 색을 쓸 때는 직접 색 대신 역할 토큰(`--sel-bg/fg`, `--on-signal`, `--code-bg/fg`, `--line`, `--shadow`)을 쓸 것
   - 단축키: 동작 목록·기본값은 `src/shared/keymap.ts`(`ACTIONS`), 판정은 `matches()`(keys.ts). App의 키 처리와 화면의 키 표시는 모두 `useKeymap()`을 거친다. 새 단축키는 ACTIONS에 추가하고 하드코딩하지 말 것

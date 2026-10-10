@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { MODE_CYCLE, openConversations, type AgentMode, type StoredTask, type PermissionDecision, type Project, type UsageInfo } from '@shared/types'
+import { MODE_CYCLE, openConversations, type AgentMode, type StoredTask, type PermissionDecision, type Project, type UpdateState, type UsageInfo } from '@shared/types'
 import { applyEvent, collectTasks, mostUrgentConversation, type ConversationMap, type TaskInfo, type TaskRef } from './state'
 import { Home, type DispatchOrigin } from './Home'
 import { Chat } from './Chat'
@@ -19,6 +19,7 @@ export function App(): React.JSX.Element {
   const [settings, setSettings] = useState<Settings>(window.api.initialSettings)
   const km = useMemo(() => effectiveKeymap(settings), [settings])
   const [usage, setUsage] = useState<UsageInfo | null>(null)
+  const [update, setUpdate] = useState<UpdateState | null>(null)
   const [hotkey, setHotkey] = useState<string | null>(null)
   const [dispatchIndex, setDispatchIndex] = useState(0)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -65,9 +66,11 @@ export function App(): React.JSX.Element {
     })
     window.api.getHotkey().then(setHotkey)
     window.api.getUsage().then(setUsage)
+    window.api.getUpdate().then(setUpdate)
     const offs = [
       window.api.onProjectsChanged(setProjects),
       window.api.onUsage(setUsage),
+      window.api.onUpdate(setUpdate),
       window.api.onFullscreenChanged((on) => document.documentElement.classList.toggle('fullscreen', on)),
       window.api.onEvent(({ conversationId, event }) => setConvs((prev) => ({ ...prev, [conversationId]: applyEvent(prev[conversationId], event) }))),
     ]
@@ -389,6 +392,7 @@ export function App(): React.JSX.Element {
         activeConversationId={view.screen === 'chat' ? view.conversationId : null}
         unreadTotal={unreadTotal}
         usage={usage}
+        update={update}
         onRefreshUsage={() => window.api.getUsage(true).then(setUsage)}
         onHome={goHome}
         onSettings={openSettings}
@@ -405,7 +409,7 @@ export function App(): React.JSX.Element {
         <Ticker running={running} reports={reports} hotkey={hotkey} />
         <div className="stage" key={view.screen === 'chat' ? `chat:${view.projectId}` : view.screen}>
           {view.screen === 'settings' ? (
-            <SettingsScreen settings={settings} activeHotkey={hotkey} onClose={closeSettings} onSaved={(next, hk) => { setSettings(next); if (hk !== undefined) setHotkey(hk) }} />
+            <SettingsScreen settings={settings} activeHotkey={hotkey} update={update} onClose={closeSettings} onSaved={(next, hk) => { setSettings(next); if (hk !== undefined) setHotkey(hk) }} />
           ) : view.screen === 'chat' && chatProject ? (
             <Chat
               project={chatProject}

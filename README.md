@@ -26,7 +26,7 @@ npm run dev
 | `npm run test:e2e` | 앱을 띄워 조작하는 테스트 (모델 호출 없음) |
 | `npm run test:e2e:live` | 모델을 실제로 부르는 테스트 (구독 사용량을 조금 씀) |
 | `npm run test:session` | 권한 요청 → 허용 → 파일 생성 흐름 통합 테스트 (구독 사용량을 조금 씀) |
-| `npm run dist:mac` / `dist:win` | 설치 파일 만들기 (`release/`). 서명은 하지 않음 |
+| `npm run dist:mac` / `dist:win` | 설치 파일 만들기 (`release/`). 서명은 하지 않음. Windows 설치판(Setup)은 릴리즈가 나오면 자동으로 업데이트됨 |
 | `npm run dist:dir` | 설치 파일 없이 앱 폴더만 빠르게 (`release/mac-arm64/WHENTERMINAL.app`) |
 
 ## 화면

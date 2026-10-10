@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { openConversations, type Project, type UsageInfo, type UsageWindow } from '@shared/types'
+import { openConversations, type Project, type UpdateState, type UsageInfo, type UsageWindow } from '@shared/types'
 import { STATUS_LABEL } from '@shared/types'
 import { ALT_LABEL, HOME_ROW } from './keys'
 import { Keys } from './KeyHint'
@@ -13,6 +13,7 @@ interface Props {
   activeConversationId: string | null
   unreadTotal: number
   usage: UsageInfo | null
+  update: UpdateState | null
   onRefreshUsage: () => Promise<unknown>
   onHome: () => void
   onSettings: () => void
@@ -104,6 +105,8 @@ export function Sidebar(props: Props): React.JSX.Element {
 
       <span className="side-spacer" />
 
+      {props.update && <UpdateRow update={props.update} />}
+
       <button type="button" className={`nav nav-settings ${props.settingsOpen ? 'on' : ''}`} onClick={props.onSettings}>
         <span className="nav-name">SETTINGS</span>
         <Keys keys={km.openSettings} />
@@ -121,6 +124,25 @@ function CtxPct({ percent }: { percent?: number }): React.JSX.Element | null {
 }
 
 /** 구독 한도: 5시간 · 주간 · 모델별 주간. 80% 이상이거나 한도 경고가 오면 빨강 */
+/** 새 버전이 있을 때만 SETTINGS 위에 나온다. 받아 뒀으면 눌러서 재시작·설치, 안내만 하는 경우는 릴리즈 페이지로 */
+function UpdateRow({ update }: { update: UpdateState }): React.JSX.Element | null {
+  const { status, latest, percent } = update
+  if (status !== 'available' && status !== 'downloading' && status !== 'ready') return null
+  const side = status === 'ready' ? 'RESTART' : status === 'downloading' ? `${percent ?? 0}%` : 'GET'
+  const title =
+    status === 'ready'
+      ? '다시 시작하면 새 버전이 설치돼요. 실행 중인 작업은 중단돼요'
+      : status === 'downloading'
+        ? '새 버전을 받고 있어요'
+        : '릴리즈 페이지에서 새 버전을 받아요'
+  return (
+    <button type="button" className={`nav nav-update ${status}`} disabled={status === 'downloading'} onClick={() => window.api.applyUpdate()} title={title}>
+      <span className="nav-name">UPDATE v{latest}</span>
+      <span className="nav-update-side">{side}</span>
+    </button>
+  )
+}
+
 function Usage({ usage, onRefresh }: { usage: UsageInfo | null; onRefresh: () => Promise<unknown> }): React.JSX.Element {
   const [loading, setLoading] = useState(false)
   const refresh = (): void => {
