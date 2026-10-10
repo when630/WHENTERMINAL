@@ -16,6 +16,7 @@ const SCOPES: ActionScope[] = ['system', 'anywhere', 'home', 'chat', 'approval']
 /** 바꿀 수 없는 키: 다른 기능이 쓰거나 비상용이라 고정 */
 const FIXED: { keys: string; label: string }[] = [
   { keys: 'esc', label: 'Interrupt · close · cancel' },
+  { keys: 'F11', label: 'Full screen' },
   { keys: `${ALT_LABEL} A S D F G H J K L`, label: 'Go to project 1–9' },
   { keys: 'ctrl 1…9', label: 'Go to project 1–9 (alt.)' },
   { keys: 'ctrl C', label: 'Interrupt (when nothing is selected)' },
