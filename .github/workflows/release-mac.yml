@@ -35,10 +35,14 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      # 서명은 package.json의 identity "-"(임시 서명). 키체인에서 인증서를 찾지 않게 한다
+      # 서명은 package.json의 identity "-"(임시 서명). 키체인에서 인증서를 찾지 않게 하고,
+      # PR 빌드도 릴리즈와 똑같이 서명한다 (electron-builder는 PR이면 서명을 건너뛴다. 임시 서명은 비밀값이 필요 없다)
       - run: npm run dist:mac
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          CSC_FOR_PULL_REQUEST: 'true'
+      # 서명이 깨지면 Apple Silicon에서 '손상됨'으로 실행이 막히므로 확인한다
+      - run: codesign --verify --deep --strict --verbose=2 release/mac-arm64/WHENTERMINAL.app
       - run: ls -la release
       - name: Upload to release
         if: env.TAG != ''
