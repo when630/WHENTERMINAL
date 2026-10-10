@@ -11,6 +11,7 @@ import { applyBadge, Notifier } from './notify'
 import { effectiveKeymap, THEMES, toAccelerator, type Settings } from '@shared/keymap'
 import { AgentManager } from './agent/manager'
 import { fetchUsage, mergeRateLimit } from './agent/usage'
+import { Updater } from './updater'
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
 const isMac = process.platform === 'darwin'
@@ -152,6 +153,13 @@ function bootstrap(): void {
   })
   ipcMain.on(IPC.setBadge, (_e, waiting: number, unread: number) => applyBadge(tray, waiting, unread))
   ipcMain.on(IPC.toggleFullscreen, () => toggleFullscreen())
+  const updater = new Updater(
+    (state) => send(IPC.updateChanged, state),
+    () => (quitting = true),
+  )
+  ipcMain.handle(IPC.getUpdate, () => updater.get())
+  ipcMain.handle(IPC.checkUpdate, () => updater.check())
+  ipcMain.on(IPC.applyUpdate, () => updater.apply())
 
   const manager = new AgentManager(
     store,
@@ -310,12 +318,14 @@ function bootstrap(): void {
   Menu.setApplicationMenu(isMac ? buildMacMenu() : null)
   createWindow()
   createTray()
+  updater.start()
 
   registerSummon(settingsStore.get())
   applyAppIcon(settingsStore.get())
 
   app.on('before-quit', () => {
     quitting = true
+    updater.stop()
     manager.disposeAll()
   })
   app.on('will-quit', () => globalShortcut.unregisterAll())

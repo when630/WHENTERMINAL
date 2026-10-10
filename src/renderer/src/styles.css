@@ -338,6 +338,15 @@ kbd { display: inline-block; font: 500 11px/1 var(--mono); padding: 3px 5px; col
 /* ── 설정 ── */
 .nav-settings { border-top: var(--rule); }
 .nav-settings .nav-name { font: 18px/1.1 var(--kr); }
+/* 새 버전 알림 줄 (SETTINGS 위). 받아 뒀으면 진하게 */
+.nav-update { border-top: var(--rule); background: var(--wash); }
+.nav-update .nav-name { font: 900 14px/1.1 var(--disp); letter-spacing: 0.02em; }
+.nav-update-side { font: 900 12px/1 var(--disp); letter-spacing: 0.06em; }
+.nav-update.ready { background: var(--sel-bg); color: var(--sel-fg); }
+.nav-update:disabled { cursor: default; }
+.upd-status { font: 900 13px/1 var(--disp); letter-spacing: 0.04em; }
+.upd-status.error { color: var(--signal-ink); }
+.upd-actions { display: inline-flex; gap: 6px; }
 .settings-title { font: 56px/0.85 var(--kr); letter-spacing: -0.02em; }
 .settings-body { flex: 1; min-height: 0; overflow-y: auto; padding-bottom: 40px; }
 .set-sec + .set-sec { border-top: var(--rule-thick); }

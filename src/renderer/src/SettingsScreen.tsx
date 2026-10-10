@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { ACTIONS, APP_ICONS, conflictsOf, DEFAULT_KEYMAP, effectiveKeymap, SCOPE_LABEL, THEMES, type ActionDef, type ActionId, type ActionScope, type Settings, type ThemeId } from '@shared/keymap'
+import type { UpdateState } from '@shared/types'
 import { Keys } from './KeyHint'
 import { ALT_LABEL, eventToBinding } from './keys'
 
@@ -7,6 +8,7 @@ interface Props {
   settings: Settings
   /** 지금 실제로 등록된 전역 호출 키 (사용자가 정하지 않았을 때 플랫폼 기본값이 다를 수 있다) */
   activeHotkey: string | null
+  update: UpdateState | null
   onClose: () => void
   onSaved: (settings: Settings, activeHotkey?: string | null) => void
 }
@@ -46,7 +48,7 @@ function validate(a: ActionDef, binding: string): string | null {
   return null
 }
 
-export function SettingsScreen({ settings, activeHotkey, onClose, onSaved }: Props): React.JSX.Element {
+export function SettingsScreen({ settings, activeHotkey, update, onClose, onSaved }: Props): React.JSX.Element {
   const [recording, setRecording] = useState<ActionId | null>(null)
   const [message, setMessage] = useState<{ id: ActionId; text: string } | null>(null)
   const km = effectiveKeymap(settings)
@@ -234,6 +236,8 @@ export function SettingsScreen({ settings, activeHotkey, onClose, onSaved }: Pro
           </div>
         </section>
 
+        <UpdateSection update={update} />
+
         <section className="set-sec" aria-labelledby="set-notify">
           <h2 id="set-notify" className="col-h">NOTIFICATIONS</h2>
           {NOTIFY.map((n) => {
@@ -332,5 +336,67 @@ export function SettingsScreen({ settings, activeHotkey, onClose, onSaved }: Pro
         </section>
       </main>
     </div>
+  )
+}
+
+const UPDATE_LABEL: Record<UpdateState['status'], string> = {
+  idle: 'NOT CHECKED',
+  checking: 'CHECKING…',
+  latest: 'UP TO DATE',
+  available: 'NEW VERSION',
+  downloading: 'DOWNLOADING',
+  ready: 'READY',
+  error: 'ERROR',
+}
+
+function updateNote(u: UpdateState | null): string {
+  const info = window.api.appInfo
+  if (u?.status === 'ready') return '다시 시작하면 설치돼요. 실행 중인 작업은 중단돼요'
+  if (u?.status === 'error') return `확인하지 못했어요: ${u.error ?? '알 수 없는 오류'}`
+  if (!info.packaged) return '개발 실행에서는 자동으로 확인하지 않아요. CHECK로 릴리즈만 볼 수 있어요'
+  if (u?.autoInstall) return '새 릴리즈가 나오면 알아서 받아 두고, 다시 시작할 때 설치해요'
+  if (info.platform === 'darwin') return '새 릴리즈가 나오면 알려 드려요. macOS는 임시 서명이라 릴리즈 페이지에서 받아 바꿔 주세요'
+  return '새 릴리즈가 나오면 알려 드려요. zip으로 푼 앱은 스스로 바꿀 수 없어요. 설치판(Setup)으로 한 번 설치하면 그다음부터는 자동이에요'
+}
+
+/** 버전·업데이트 확인. 받아 둔 업데이트는 재시작해 설치, 안내만 하는 경우는 릴리즈 페이지로 */
+function UpdateSection({ update }: { update: UpdateState | null }): React.JSX.Element {
+  const status = update?.status ?? 'idle'
+  const busy = status === 'checking' || status === 'downloading'
+  const label =
+    status === 'downloading'
+      ? `${UPDATE_LABEL[status]} v${update?.latest} · ${update?.percent ?? 0}%`
+      : (status === 'available' || status === 'ready') && update?.latest
+        ? `${UPDATE_LABEL[status]} v${update.latest}`
+        : UPDATE_LABEL[status]
+  const checked = update?.checkedAt ? new Date(update.checkedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) : null
+  return (
+    <section className="set-sec" aria-labelledby="set-update">
+      <h2 id="set-update" className="col-h">UPDATE</h2>
+      <div className="krow">
+        <span className="krow-label">
+          Version {update?.current ?? window.api.appInfo.version}
+          <span className="krow-note">
+            {updateNote(update)}
+            {checked && status !== 'checking' ? ` · 마지막 확인 ${checked}` : ''}
+          </span>
+        </span>
+        <span className={`upd-status ${status}`} role="status">
+          {label}
+        </span>
+        <span className="krow-side upd-actions">
+          {(status === 'ready' || status === 'available') && (
+            <button type="button" className="btn-pri sm" onClick={() => window.api.applyUpdate()}>
+              {status === 'ready' ? 'RESTART & UPDATE' : 'DOWNLOAD'}
+            </button>
+          )}
+          {status !== 'ready' && (
+            <button type="button" className="btn sm" disabled={busy} onClick={() => void window.api.checkUpdate()}>
+              CHECK
+            </button>
+          )}
+        </span>
+      </div>
+    </section>
   )
 }

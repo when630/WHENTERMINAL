@@ -156,6 +156,26 @@ export interface UsageWindow {
   status?: 'allowed' | 'allowed_warning' | 'rejected'
 }
 
+/** 자동 업데이트 상태. checking → latest | available(안내만) | downloading → ready(재시작하면 설치) | error */
+export type UpdateStatus = 'idle' | 'checking' | 'latest' | 'available' | 'downloading' | 'ready' | 'error'
+
+export interface UpdateState {
+  status: UpdateStatus
+  /** 지금 실행 중인 버전 */
+  current: string
+  /** 릴리즈의 최신 버전 (확인한 뒤에만) */
+  latest?: string
+  /** Windows 설치판(NSIS)이라 앱이 직접 받아 설치하는지. 아니면 릴리즈 페이지로 안내만 한다 */
+  autoInstall: boolean
+  /** 받는 중 진행률 0~100 */
+  percent?: number
+  /** 릴리즈 페이지 */
+  url?: string
+  error?: string
+  /** 마지막으로 확인을 마친 시각 (ms) */
+  checkedAt?: number
+}
+
 export interface UsageInfo {
   /** 'pro' | 'max' | 'team' … API 키면 null */
   plan: string | null
@@ -250,6 +270,10 @@ export const IPC = {
   usage: 'usage:changed',
   toggleFullscreen: 'window:toggle-fullscreen',
   fullscreenChanged: 'window:fullscreen-changed',
+  getUpdate: 'update:get',
+  checkUpdate: 'update:check',
+  applyUpdate: 'update:apply',
+  updateChanged: 'update:changed',
 } as const
 
 /** preload가 window.api로 노출하는 API */
@@ -322,6 +346,12 @@ export interface WhenTerminalApi {
   onUsage(cb: (u: UsageInfo) => void): () => void
   /** 창 전체화면 켜고 끄기 (F11은 메인이 직접 처리) */
   toggleFullscreen(): void
+  getUpdate(): Promise<UpdateState>
+  /** 지금 릴리즈를 확인한다 (받는 중·받아 둔 상태면 그대로 돌려준다) */
+  checkUpdate(): Promise<UpdateState>
+  /** 받아 둔 업데이트가 있으면 재시작해 설치, 아니면 릴리즈 페이지를 연다 */
+  applyUpdate(): void
+  onUpdate(cb: (state: UpdateState) => void): () => void
   /** 창 전체화면 여부. 페이지를 불러올 때와 바뀔 때마다 온다 */
   onFullscreenChanged(cb: (fullscreen: boolean) => void): () => void
 }
