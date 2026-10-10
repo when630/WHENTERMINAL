@@ -5,7 +5,7 @@ import { Home, type DispatchOrigin } from './Home'
 import { Chat } from './Chat'
 import { Sidebar } from './Sidebar'
 import { Ticker } from './Ticker'
-import { IS_MAC, isEscape, isInterruptCopy, matches, physicalCode, projectIndexFromKey } from './keys'
+import { isEscape, isInterruptCopy, matches, physicalCode, projectIndexFromKey } from './keys'
 import { effectiveKeymap, type ActionId, type Settings } from '@shared/keymap'
 import { applyTheme, KeymapContext } from './settings'
 import { SettingsScreen } from './SettingsScreen'
@@ -71,7 +71,6 @@ export function App(): React.JSX.Element {
       window.api.onProjectsChanged(setProjects),
       window.api.onUsage(setUsage),
       window.api.onUpdate(setUpdate),
-      window.api.onFullscreenChanged((on) => document.documentElement.classList.toggle('fullscreen', on)),
       window.api.onEvent(({ conversationId, event }) => setConvs((prev) => ({ ...prev, [conversationId]: applyEvent(prev[conversationId], event) }))),
     ]
     return () => offs.forEach((off) => off())
@@ -404,8 +403,6 @@ export function App(): React.JSX.Element {
         onRemoveProjectRequest={requestRemoveProject}
       />
       <div className="content">
-        {/* Windows: 제목 표시줄 대신 창을 끌어 옮기는 영역. 오른쪽 끝에 창 버튼이 겹쳐 그려진다 */}
-        {!IS_MAC && <div className="titlebar" />}
         <Ticker running={running} reports={reports} hotkey={hotkey} />
         <div className="stage" key={view.screen === 'chat' ? `chat:${view.projectId}` : view.screen}>
           {view.screen === 'settings' ? (

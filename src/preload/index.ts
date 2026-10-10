@@ -49,7 +49,6 @@ const api: WhenTerminalApi = {
   getUsage: (refresh) => ipcRenderer.invoke(IPC.getUsage, refresh),
   onUsage: (cb) => subscribe(IPC.usage, cb),
   toggleFullscreen: () => ipcRenderer.send(IPC.toggleFullscreen),
-  onFullscreenChanged: (cb) => subscribe(IPC.fullscreenChanged, cb),
   getUpdate: () => ipcRenderer.invoke(IPC.getUpdate),
   checkUpdate: () => ipcRenderer.invoke(IPC.checkUpdate),
   applyUpdate: () => ipcRenderer.send(IPC.applyUpdate),

@@ -64,22 +64,19 @@ function iconFile(id: Settings['appIcon']): string {
   return app.isPackaged ? join(process.resourcesPath, 'icons', `${id}.png`) : join(app.getAppPath(), 'resources', 'icons', `${id}.png`)
 }
 
-/** Dock(macOS)·창(Windows/Linux) 아이콘을 바로 바꾼다 */
+/** Dock(macOS)·창과 트레이(Windows/Linux) 아이콘을 바로 바꾼다 */
 function applyAppIcon(s: Settings): void {
   const img = nativeImage.createFromPath(iconFile(s.appIcon))
   if (img.isEmpty()) return
   if (isMac) app.dock?.setIcon(img)
-  else win?.setIcon(img)
+  else {
+    win?.setIcon(img)
+    tray?.setImage(makeTrayIcon(s))
+  }
 }
 
 const themeBackground = (s: Settings): string => THEMES.find((t) => t.id === s.theme)?.colors[0] ?? '#ffffff'
 
-/** Windows: 제목 표시줄 대신 창 버튼만 겹쳐 그린다. 높이는 렌더러 styles.css의 .titlebar와 맞춘다 */
-const TITLEBAR_HEIGHT = 32
-const titleBarOverlay = (s: Settings): Electron.TitleBarOverlayOptions => {
-  const [paper, ink] = THEMES.find((t) => t.id === s.theme)?.colors ?? ['#ffffff', '#0a0a0a']
-  return { color: paper, symbolColor: ink, height: TITLEBAR_HEIGHT }
-}
 
 let win: BrowserWindow | null = null
 let tray: Tray | null = null
@@ -112,7 +109,6 @@ function bootstrap(): void {
       if (error) saved = settingsStore.set({ ...saved, keymap: { ...saved.keymap, summon: before.keymap.summon } })
     }
     win?.setBackgroundColor(themeBackground(saved))
-    if (!isMac) win?.setTitleBarOverlay(titleBarOverlay(saved))
     if (saved.openAtLogin !== before.openAtLogin) applyLoginItem(saved)
     if (saved.appIcon !== before.appIcon) applyAppIcon(saved)
     // 동시 실행 수를 늘렸으면 기다리던 대화를 바로 시작
@@ -374,7 +370,8 @@ function createWindow(): void {
     backgroundColor: themeBackground(settingsStore.get()),
     icon: iconFile(settingsStore.get().appIcon),
     autoHideMenuBar: true,
-    ...(isMac ? {} : { titleBarStyle: 'hidden', titleBarOverlay: titleBarOverlay(settingsStore.get()) }),
+    // Windows: 제목 표시줄·창 버튼 없는 창. 끌기는 사이드바 로고(-webkit-app-region), 크기 조절은 가장자리, 닫기는 Alt+F4(트레이로)
+    frame: isMac,
     webPreferences: {
       preload: join(__dirname, '../preload/index.cjs'),
       sandbox: true,
@@ -405,13 +402,6 @@ function createWindow(): void {
       e.preventDefault()
     }
   })
-  // Windows에서는 이벤트 시점에 isFullScreen()이 아직 바뀌기 전일 수 있어 이벤트별 값을 그대로 보낸다
-  const sendFullscreen = (on: boolean): void => {
-    if (win && !win.isDestroyed()) win.webContents.send(IPC.fullscreenChanged, on)
-  }
-  win.on('enter-full-screen', () => sendFullscreen(true))
-  win.on('leave-full-screen', () => sendFullscreen(false))
-  win.webContents.on('did-finish-load', () => sendFullscreen(win?.isFullScreen() ?? false))
   win.webContents.on('render-process-gone', (_e, details) => console.error('[renderer gone]', details.reason))
   if (process.env.ELECTRON_RENDERER_URL) {
     // 개발 중에는 렌더러 콘솔 경고/오류를 터미널로 넘겨 본다
@@ -434,7 +424,7 @@ function toggleFullscreen(): void {
 }
 
 function createTray(): void {
-  tray = new Tray(makeTrayIcon())
+  tray = new Tray(makeTrayIcon(settingsStore.get()))
   tray.setToolTip('WHENTERMINAL')
   tray.setContextMenu(
     Menu.buildFromTemplate([
@@ -461,9 +451,24 @@ function toggleWindow(): void {
 const TRAY_PROMPT = new Set(['4,4', '5,5', '6,6', '7,7', '6,8', '5,9', '4,10', '5,4', '6,5', '7,6', '8,7', '7,8', '6,9', '5,10'])
 const isPromptPixel = (x: number, y: number): boolean => TRAY_PROMPT.has(`${x},${y}`) || (y === 11 && x >= 9 && x <= 12)
 
-/** 16x16 트레이 아이콘을 코드로 그린다 (리소스 파일 없이). 둥근 사각형 + 프롬프트 기호 '>' */
-function makeTrayIcon(): Electron.NativeImage {
+/**
+ * 트레이 아이콘. Windows/Linux는 설정에서 고른 앱 아이콘을 16px(+고DPI 배율)로 줄여 쓴다.
+ * macOS 메뉴 막대는 흑백 템플릿 이미지가 관례라 따로 그린다
+ */
+function makeTrayIcon(s: Settings): Electron.NativeImage {
   if (isMac) return makeMacTrayIcon()
+  const src = nativeImage.createFromPath(iconFile(s.appIcon))
+  if (src.isEmpty()) return makeFallbackTrayIcon()
+  const img = nativeImage.createEmpty()
+  for (const scaleFactor of [1, 1.25, 1.5, 2]) {
+    const px = Math.round(16 * scaleFactor)
+    img.addRepresentation({ scaleFactor, buffer: src.resize({ width: px, height: px, quality: 'best' }).toPNG() })
+  }
+  return img
+}
+
+/** 아이콘 파일을 못 읽었을 때: 16x16을 코드로 그린다. 둥근 사각형 + 프롬프트 기호 '>' */
+function makeFallbackTrayIcon(): Electron.NativeImage {
   const size = 16
   const buf = Buffer.alloc(size * size * 4)
   for (let y = 0; y < size; y++) {
