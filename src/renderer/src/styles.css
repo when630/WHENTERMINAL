@@ -74,6 +74,12 @@
 }
 
 * { box-sizing: border-box; }
+/* 스크롤바: 둥글지 않은 막대. 평소엔 옅고, 잡으면 검게 */
+::-webkit-scrollbar { width: 12px; height: 12px; }
+::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-button { display: none; }
+::-webkit-scrollbar-thumb { background: var(--gray-3); border: 3px solid transparent; background-clip: padding-box; border-radius: 0; }
+::-webkit-scrollbar-thumb:hover, ::-webkit-scrollbar-thumb:active { background-color: var(--ink); border-width: 2px; }
 html, body, #root { height: 100%; margin: 0; }
 body { background: var(--paper); color: var(--ink); font: 14px/1.5 var(--font); -webkit-font-smoothing: antialiased; }
 button { font: inherit; color: inherit; cursor: pointer; }
@@ -105,7 +111,7 @@ kbd { display: inline-block; font: 500 11px/1 var(--mono); padding: 3px 5px; col
 /* 전광판: 맨 위에서 흐르는 상태 줄 */
 .ticker { flex: none; overflow: hidden; background: var(--sel-bg); color: var(--sel-fg); padding: 8px 0; font: 600 12.5px/1 var(--disp); letter-spacing: 0.03em; }
 .ticker-run { display: flex; width: max-content; will-change: transform; }
-.ticker-run > span { white-space: pre; padding-right: 48px; }
+.ticker-run > span { white-space: pre; padding-right: 48px; min-width: var(--ticker-w, 0); }
 .ticker-run span span, .ticker-run b { white-space: pre; }
 .ticker b { color: var(--signal); font-weight: 600; }
 .ticker .keys { margin: 0 2px; padding: 1px 4px; vertical-align: -2px; font-family: var(--mono); }
@@ -564,8 +570,26 @@ kbd { display: inline-block; font: 500 11px/1 var(--mono); padding: 3px 5px; col
 .sp-files { margin: 0; list-style: none; font: 12px/1.9 var(--mono); overflow-y: auto; min-height: 0; }
 .sp-files li { overflow: hidden; text-overflow: ellipsis; }
 .sp-files li::before { content: '± '; color: var(--gray); }
+/* 턴이 끝나도 남는 것: 백그라운드 셸·모니터, 연결된 아티팩트 */
+.sp-sec { display: flex; flex-direction: column; gap: 10px; min-height: 0; animation: up 0.5s var(--ease-out) both; }
+.sp-sec-h { display: flex; align-items: baseline; justify-content: space-between; padding-bottom: 8px; border-bottom: var(--rule); }
+.sp-n { font: 900 18px/1 var(--disp); font-variant-numeric: tabular-nums; }
+.sp-bg, .sp-art { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; min-height: 0; }
+.sp-bg li { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.sp-bg-row { display: flex; align-items: center; gap: 8px; }
+.sp-bg-row b { font: 900 12.5px/1 var(--disp); letter-spacing: 0.06em; }
+.sp-bg-sq { flex: none; width: 9px; height: 9px; background: var(--ink); animation: q-pulse 1.6s var(--ease-io) infinite; }
+.sp-bg-t { margin-left: auto; font: 11px var(--mono); font-variant-numeric: tabular-nums; color: var(--gray); }
+.sp-bg-x { flex: none; padding: 3px 6px; border: 1.5px solid currentColor; background: transparent; color: var(--ink); font: 600 10px/1 var(--disp); letter-spacing: 0.08em; transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out); }
+.sp-bg-x:hover:not(:disabled) { background: var(--sel-bg); color: var(--sel-fg); border-color: var(--sel-bg); }
+.sp-bg-x:disabled { color: var(--gray); cursor: default; }
+.sp-bg-d { font: 12px/1.4 var(--mono); overflow: hidden; text-overflow: ellipsis; }
+.sp-art a { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border: var(--rule); color: inherit; text-decoration: none; font-size: 13px; font-weight: 700; transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out); }
+.sp-art a:hover { background: var(--sel-bg); color: var(--sel-fg); }
+.sp-art a span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.sp-art a i { flex: none; font-style: normal; font-family: var(--mono); }
 @media (max-width: 980px) { .chat-body.open { grid-template-columns: minmax(0, 1fr) 0px; } }
-.transcript { flex: 1; overflow-y: auto; display: flex; flex-direction: column; padding-bottom: 24px; }
+.transcript { flex: 1; overflow-x: hidden; overflow-y: auto; display: flex; flex-direction: column; padding-bottom: 24px; }
 .transcript > * { width: 100%; }
 .placeholder { margin: auto; padding: 24px; text-align: center; font: 26px/1.3 var(--kr); color: var(--gray-2); }
 .placeholder .mono { display: block; margin-top: 8px; font: 12px var(--mono); }

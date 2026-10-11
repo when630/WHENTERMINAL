@@ -51,6 +51,7 @@
   - 전역 호출 키 후보에서 `Control+Space`를 뺀다. macOS 입력 소스 전환 키라 등록이 성공해도 한/영 전환을 가로챈다
   - 트레이 아이콘은 템플릿 이미지(검정+투명), Dock 아이콘 클릭(`activate`)으로 창 다시 열기
 - 구독 한도(사이드바): `src/main/agent/usage.ts`가 SDK `usage_EXPERIMENTAL…`(실험적 API, 이름이 바뀔 수 있음)로 5시간·주간·모델별 주간 창을 받는다. 살아 있는 세션이 없으면 `withProbe`로 CLI만 띄움. 앱 시작·작업 완료 2.5초 뒤·5분마다 갱신, `rate_limit_event`는 해당 창에 바로 반영
+- 대화창 오른쪽 상태 패널(`StatusPanel`, Chat.tsx): 실행 중이거나, 백그라운드 작업(SDK `background_tasks_changed`, `ambient` 제외 → `background` 이벤트)이 있거나, 이 대화에서 Artifact 도구로 올린 페이지(`artifactsOf`, 화면 기록에서 추출)가 있으면 펼친다. CLI 프로세스가 끝나면 백그라운드 목록을 비운다
 - 기록·보고서: 대화창을 열 때 화면 기록이 비어 있으면 `getSessionMessages`로 되살린다(`agent/history.ts`). 끝난 작업의 보고서는 `Conversation.lastTask`에 저장하고, 보관 전 보고서가 있는 대화를 닫으면 `closedAt`으로 숨기기만 한다. 탭·목록은 `openConversations()` 기준
 - 첨부는 경로로: 입력창에 파일을 끌어다 놓기·첨부 버튼(`pickFiles`)·이미지 붙여넣기(`saveImage`로 userData/attachments에 저장)를 하면 경로를 넣는다. 작업 폴더 안은 `@상대경로`. 끌어다 놓은 파일 경로는 sandbox라 preload의 `webUtils.getPathForFile`로
 - 답변은 `Markdown.tsx`(react-markdown, 원시 HTML 비허용). 링크는 메인이 외부 브라우저로만 연다 (`setWindowOpenHandler`, `will-navigate` 차단)

@@ -1,6 +1,6 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { MODE_CYCLE, MODE_LABEL, openConversations, STATUS_LABEL, type UsageInfo, type SlashCommandInfo, type AgentMode, type PermissionDecision, type PermissionRequest, type Project } from '@shared/types'
-import { emptyConversation, STAGES, type ConversationMap, type TaskInfo, type TranscriptItem } from './state'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { MODE_CYCLE, MODE_LABEL, openConversations, STATUS_LABEL, type UsageInfo, type SlashCommandInfo, type AgentMode, type PermissionDecision, type PermissionRequest, type Project, type BackgroundTask } from '@shared/types'
+import { artifactsOf, describeBackground, emptyConversation, STAGES, type ArtifactLink, type ConversationMap, type TaskInfo, type TranscriptItem } from './state'
 import { HOME_ROW } from './keys'
 import { Keys } from './KeyHint'
 import { useKeymap } from './settings'
@@ -46,6 +46,9 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
   const compacting = usePresence(state.compacting ? true : null)
   // 작업 중 줄: 생각하는 중·도구 사이처럼 화면에 새로 그려지는 게 없을 때도 일하고 있음을 보인다
   const working = usePresence((state.status === 'running' || state.status === 'queued') && !state.compacting ? true : null)
+  // 턴이 끝나도 남아 있는 것들: 백그라운드 셸·모니터, 이 대화에서 올린 아티팩트. 있으면 사이드 패널을 계속 펼친다
+  const background = state.background ?? []
+  const artifacts = useMemo(() => artifactsOf(state.items), [state.items])
 
   // 이 대화를 연 시점에 이미 있던 기록은 그대로 두고, 새로 들어오는 항목만 등장 애니메이션
   const seen = useRef<{ id: string; count: number }>({ id: '', count: 0 })
@@ -318,7 +321,7 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
         </div>
       </header>
 
-      <div className={`chat-body ${busy || state.status === 'queued' ? 'open' : ''}`}>
+      <div className={`chat-body ${busy || state.status === 'queued' || background.length > 0 || artifacts.length > 0 ? 'open' : ''}`}>
       {showChanges && conv?.worktree ? (
         <WorktreePanel
           projectId={project.id}
@@ -353,7 +356,17 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
           )}
         </main>
       )}
-        {state.task && <StatusPanel task={state.task} status={state.status} />}
+        {(state.task || background.length > 0 || artifacts.length > 0) && (
+          <StatusPanel
+            task={state.task}
+            status={state.status}
+            background={background}
+            artifacts={artifacts}
+            items={state.items}
+            root={project.path}
+            onStopTask={(taskId) => window.api.stopTask(project.id, conversationId, taskId)}
+          />
+        )}
       </div>
 
       {confirm.item && (
@@ -433,16 +446,95 @@ function clock(ms: number): string {
   return sec >= 3600 ? `${Math.floor(sec / 3600)}:${mm}:${ss}` : `${mm}:${ss}`
 }
 
-/** 오른쪽 상태 패널: 실행 중에만 펼쳐지고, 끝나면 마지막 단계를 잠깐 보여 준 뒤 접힌다 */
-function StatusPanel({ task, status }: { task: TaskInfo; status: string }): React.JSX.Element {
+interface PanelProps {
+  task?: TaskInfo
+  status: string
+  background: BackgroundTask[]
+  artifacts: ArtifactLink[]
+  items: TranscriptItem[]
+  root: string
+  onStopTask: (taskId: string) => Promise<void>
+}
+
+/**
+ * 오른쪽 상태 패널: 실행 중이거나, 백그라운드 셸·모니터가 돌거나, 아티팩트가 연결돼 있으면 펼쳐진다.
+ * 그 밖에는 끝난 뒤 마지막 단계를 잠깐 보여 주고 접힌다
+ */
+function StatusPanel({ task, status, background, artifacts, items, root, onStopTask }: PanelProps): React.JSX.Element {
   const now = useNow(1000)
+  // 멈춤을 눌렀지만 아직 목록에서 빠지지 않은 작업
+  const [stopping, setStopping] = useState<string[]>([])
+  const stop = (id: string): void => {
+    setStopping((xs) => [...xs, id])
+    void onStopTask(id).finally(() => setStopping((xs) => xs.filter((x) => x !== id)))
+  }
+  const waiting = status === 'waiting_approval'
+  const live = status === 'running' || waiting || status === 'queued'
+  // 작업이 끝났는데 패널이 남아 있는 건 백그라운드·아티팩트 때문이니 그것만 보인다
+  const showTask = !!task && (live || (background.length === 0 && artifacts.length === 0))
+  return (
+    <aside className={`status-panel ${waiting ? 'waiting' : ''} ${live ? 'live' : ''}`} aria-label="작업 상태">
+      {showTask && task && <TaskStatus task={task} status={status} now={now} />}
+      {background.length > 0 && (
+        <section className="sp-sec" aria-label="백그라운드 작업">
+          <div className="sp-sec-h">
+            <span className="sp-k">BACKGROUND</span>
+            <span className="sp-n">{background.length}</span>
+          </div>
+          <ul className="sp-bg">
+            {background.map((b) => {
+              const d = describeBackground(b, items)
+              const cmd = relPath(d.command, root)
+              const desc = d.text === d.command ? cmd : d.text
+              const busy = stopping.includes(b.id)
+              return (
+                <li key={b.id} title={cmd && cmd !== desc ? `${desc}\n${cmd}` : desc}>
+                  <span className="sp-bg-row">
+                    <span className="sp-bg-sq" aria-hidden="true" />
+                    <b>{d.label}</b>
+                    <span className="sp-bg-t">{clock(now - b.startedAt)}</span>
+                    <button type="button" className="sp-bg-x" disabled={busy} onClick={() => stop(b.id)} title="이 작업만 멈춰요" aria-label={`${d.label} 멈추기`}>
+                      {busy ? '…' : 'STOP'}
+                    </button>
+                  </span>
+                  <span className="sp-bg-d">{desc}</span>
+                </li>
+              )
+            })}
+          </ul>
+        </section>
+      )}
+      {artifacts.length > 0 && (
+        <section className="sp-sec" aria-label="연결된 아티팩트">
+          <div className="sp-sec-h">
+            <span className="sp-k">ARTIFACTS</span>
+            <span className="sp-n">{artifacts.length}</span>
+          </div>
+          <ul className="sp-art">
+            {artifacts.map((a) => (
+              <li key={a.url}>
+                {/* 메인의 setWindowOpenHandler가 외부 브라우저로 연다 */}
+                <a href={a.url} target="_blank" rel="noreferrer" title={`${a.title}\n${a.url}`}>
+                  <span>{a.title}</span>
+                  <i aria-hidden="true">↗</i>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+    </aside>
+  )
+}
+
+function TaskStatus({ task, status, now }: { task: TaskInfo; status: string; now: number }): React.JSX.Element {
   const waiting = status === 'waiting_approval'
   const live = status === 'running' || waiting || status === 'queued'
   const stage = Math.min(task.stage, STAGES.length - 1)
   const word = status === 'queued' ? 'QUEUED' : waiting ? 'APPROVE' : STAGES[stage]
   const ms = task.durationMs ?? (task.finishedAt ?? now) - task.startedAt
   return (
-    <aside className={`status-panel ${waiting ? 'waiting' : ''} ${live ? 'live' : ''}`} aria-label="작업 상태">
+    <>
       <div className="sp-head">
         <span className="sp-k">STAGE</span>
         <span className="sp-word"><Roll text={word} /></span>
@@ -469,7 +561,7 @@ function StatusPanel({ task, status }: { task: TaskInfo; status: string }): Reac
           {task.files.map((f) => <li key={f} title={f}>{f.split(/[\\/]/).pop()}</li>)}
         </ul>
       )}
-    </aside>
+    </>
   )
 }
 

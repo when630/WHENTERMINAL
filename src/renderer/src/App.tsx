@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { MODE_CYCLE, openConversations, type AgentMode, type StoredTask, type PermissionDecision, type Project, type UpdateState, type UsageInfo } from '@shared/types'
-import { applyEvent, collectTasks, mostUrgentConversation, type ConversationMap, type TaskInfo, type TaskRef } from './state'
+import { applyEvent, collectBackground, collectTasks, mostUrgentConversation, type ConversationMap, type TaskInfo, type TaskRef } from './state'
 import { Home, type DispatchOrigin } from './Home'
 import { Chat } from './Chat'
 import { Sidebar } from './Sidebar'
@@ -118,6 +118,7 @@ export function App(): React.JSX.Element {
   }, [focusInput, view.screen])
 
   const { running, reports } = useMemo(() => collectTasks(projects, convs), [projects, convs])
+  const background = useMemo(() => collectBackground(projects, convs), [projects, convs])
   const flat = useMemo(() => [...running, ...reports], [running, reports])
   const unreadTotal = reports.filter((r) => r.task.unread).length
 
@@ -403,7 +404,7 @@ export function App(): React.JSX.Element {
         onRemoveProjectRequest={requestRemoveProject}
       />
       <div className="content">
-        <Ticker running={running} reports={reports} hotkey={hotkey} />
+        <Ticker running={running} reports={reports} background={background} hotkey={hotkey} />
         <div className="stage" key={view.screen === 'chat' ? `chat:${view.projectId}` : view.screen}>
           {view.screen === 'settings' ? (
             <SettingsScreen settings={settings} activeHotkey={hotkey} update={update} onClose={closeSettings} onSaved={(next, hk) => { setSettings(next); if (hk !== undefined) setHotkey(hk) }} />
