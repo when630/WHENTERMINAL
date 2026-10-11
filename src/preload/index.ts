@@ -20,6 +20,7 @@ const api: WhenTerminalApi = {
   send: (projectId, conversationId, text) => ipcRenderer.invoke(IPC.send, projectId, conversationId, text),
   interrupt: (projectId, conversationId) => ipcRenderer.invoke(IPC.interrupt, projectId, conversationId),
   stopTask: (projectId, conversationId, taskId) => ipcRenderer.invoke(IPC.stopTask, projectId, conversationId, taskId),
+  taskOutput: (projectId, conversationId, taskId) => ipcRenderer.invoke(IPC.taskOutput, projectId, conversationId, taskId),
   setMode: (projectId, conversationId, mode) => ipcRenderer.invoke(IPC.setMode, projectId, conversationId, mode),
   respondPermission: (projectId, conversationId, requestId, decision) =>
     ipcRenderer.invoke(IPC.respondPermission, projectId, conversationId, requestId, decision),

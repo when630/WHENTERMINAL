@@ -1,10 +1,11 @@
 import type { Query } from '@anthropic-ai/claude-agent-sdk'
-import { cwdOf, type ModelOption, type AgentEventEnvelope, AgentMode, PermissionDecision, RateLimitInfo, SlashCommandInfo } from '@shared/types'
+import { cwdOf, type ModelOption, type AgentEventEnvelope, type TaskOutput, AgentMode, PermissionDecision, RateLimitInfo, SlashCommandInfo } from '@shared/types'
 import type { ProjectStore } from '../store'
 import { AgentSession } from './session'
 import { commandsFor, remember, withProbe } from './commands'
 import { modelLabel, toContext } from './session'
 import { readHistory } from './history'
+import { readTaskOutput } from './task-output'
 import { removeWorktreeIfClean } from '../worktree'
 
 /** 대화별 AgentSession을 만들고 보관한다. 동시 실행 제한(OPEN-003)은 여기에 붙일 예정. */
@@ -206,6 +207,18 @@ export class AgentManager {
 
   async stopTask(_projectId: string, conversationId: string, taskId: string): Promise<void> {
     await this.sessions.get(conversationId)?.stopTask(taskId)
+  }
+
+  /** 백그라운드 작업의 출력. 작업이 끝났거나 세션이 닫혀도 파일이 남아 있으면 읽는다 */
+  async taskOutput(projectId: string, conversationId: string, taskId: string): Promise<TaskOutput | null> {
+    const sessionId = this.store.getConversation(projectId, conversationId)?.sessionId
+    if (!sessionId) return null
+    try {
+      return await readTaskOutput(sessionId, taskId)
+    } catch (err) {
+      console.warn('작업 출력을 읽지 못함', err)
+      return null
+    }
   }
 
   async setMode(projectId: string, conversationId: string, mode: AgentMode): Promise<void> {

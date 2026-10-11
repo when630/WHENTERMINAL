@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { MODE_CYCLE, openConversations, type AgentMode, type StoredTask, type PermissionDecision, type Project, type UpdateState, type UsageInfo } from '@shared/types'
 import { applyEvent, collectBackground, collectTasks, mostUrgentConversation, type ConversationMap, type TaskInfo, type TaskRef } from './state'
 import { Home, type DispatchOrigin } from './Home'
-import { Chat } from './Chat'
+import { Chat, type PanelControl } from './Chat'
 import { Sidebar } from './Sidebar'
 import { Ticker } from './Ticker'
 import { isEscape, isInterruptCopy, matches, physicalCode, projectIndexFromKey } from './keys'
@@ -31,6 +31,7 @@ export function App(): React.JSX.Element {
   const inputRef = useRef<HTMLInputElement>(null)
   const dispatchOrigin = useRef<DispatchOrigin | null>(null)
   const sheetCloseRef = useRef<(() => void) | null>(null)
+  const chatPanelRef = useRef<PanelControl | null>(null)
 
   // 테마: 처음에는 바로, 이후 바뀔 때는 부드럽게
   const themeApplied = useRef(false)
@@ -355,6 +356,10 @@ export function App(): React.JSX.Element {
     if (is('closeConversation')) return take(() => requestClose(projectId, conversationId))
     if (is('closeProject')) return take(() => requestRemoveProject(projectId))
     if (is('compact')) return take(() => void window.api.compact(projectId, conversationId))
+    // 오른쪽 패널의 하위 에이전트·백그라운드 작업 세부 내용
+    if (is('panelNext') || is('panelPrev')) return take(() => chatPanelRef.current?.step(is('panelPrev') ? -1 : 1))
+    if (is('panelBack')) return take(() => chatPanelRef.current?.back())
+    if (is('stopTask')) return take(() => chatPanelRef.current?.stop())
     if (is('clear')) return take(() => requestClear(projectId, conversationId))
     if (is('cycleMode')) {
       return take(() => {
@@ -424,6 +429,7 @@ export function App(): React.JSX.Element {
               onClose={(id) => void closeConversation(chatProject.id, id)}
               onSelectConversation={(conversationId) => setView({ screen: 'chat', projectId: chatProject.id, conversationId })}
               onRespond={respond}
+              panelRef={chatPanelRef}
             />
           ) : (
             <Home

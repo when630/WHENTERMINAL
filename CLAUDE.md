@@ -41,6 +41,7 @@
   - 프로젝트 이동: `Alt+A S D F G H J K L` = 1~9 (보조: `Ctrl+1~9`, 홈에서 `1~9`)
   - 홈 카드 선택: `H J K L` (보조: 방향키), 열기 `O`/`Enter`
   - 중단: `Esc` / `Ctrl+[` / 선택 글자 없을 때 `Ctrl+C`
+  - 패널 세부 내용: `Ctrl+J`/`Ctrl+Shift+J` 패널 순서(AGENTS → BACKGROUND)대로 펼치고 마지막 다음은 대화 기록, `Ctrl+B` 돌아가기, `Ctrl+Shift+X` 펼친 작업 멈춤. App이 Chat의 `panelRef`(`PanelControl`)로 다룬다
   - Alt 니모닉과 겹치지 않도록 Windows에서는 기본 메뉴를 없앴다 (`Menu.setApplicationMenu(null)`). 개발 중 `Ctrl+Shift+I` 개발자 도구, `Ctrl+Shift+R` 새로고침
 - Windows 창은 테두리 없는 창(`frame: false`): 제목 표시줄·창 버튼이 없다. 사이드바 로고(`.side .brand`, `-webkit-app-region: drag`)를 잡고 옮기고 더블클릭하면 최대화, 크기 조절은 가장자리, 닫기는 `Alt+F4`(트레이로 숨김). macOS는 기본 제목 표시줄 그대로
 - 트레이 아이콘: Windows는 설정에서 고른 앱 아이콘을 16px(+1.25~2배)로 줄여 쓰고 아이콘을 바꾸면 같이 바뀐다(`makeTrayIcon`). macOS는 메뉴 막대 관례대로 흑백 템플릿 이미지
@@ -52,6 +53,9 @@
   - 트레이 아이콘은 템플릿 이미지(검정+투명), Dock 아이콘 클릭(`activate`)으로 창 다시 열기
 - 구독 한도(사이드바): `src/main/agent/usage.ts`가 SDK `usage_EXPERIMENTAL…`(실험적 API, 이름이 바뀔 수 있음)로 5시간·주간·모델별 주간 창을 받는다. 살아 있는 세션이 없으면 `withProbe`로 CLI만 띄움. 앱 시작·작업 완료 2.5초 뒤·5분마다 갱신, `rate_limit_event`는 해당 창에 바로 반영
 - 대화창 오른쪽 상태 패널(`StatusPanel`, Chat.tsx): 실행 중이거나, 백그라운드 작업(SDK `background_tasks_changed`, `ambient` 제외 → `background` 이벤트)이 있거나, 이 대화에서 Artifact 도구로 올린 페이지(`artifactsOf`, 화면 기록에서 추출)가 있으면 펼친다. CLI 프로세스가 끝나면 백그라운드 목록을 비운다
+  - SDK로 띄운 CLI는 Artifact 도구가 기본으로 꺼져 있어(`sdk_default_off`) `subscriptionEnv`가 `CLAUDE_CODE_ARTIFACT=1`을 넣는다
+  - 패널의 줄(백그라운드 작업·AGENTS)을 누르면 대화 기록 자리에 세부 내용(`TaskDetail.tsx`)을 펼친다. 셸·모니터는 CLI가 쓰는 출력 파일(`<임시 폴더>/claude…/<프로젝트>/<세션 ID>/tasks/<작업 ID>.output`, `agent/task-output.ts`)을 도는 동안 1초마다 읽는다
+  - 하위 에이전트: `forwardSubagentText`로 받은 `parent_tool_use_id` 메시지를 `sub`·`sub_result` 이벤트로 보내 `ConversationState.subs`(Agent 도구 호출 ID별)에 쌓는다. `task_progress`는 `progress`. 앞에서 기다리는 에이전트는 AGENTS, 백그라운드 에이전트는 BACKGROUND에 나온다. 대화 기록의 Agent 도구를 펼치면 `SubLog`
 - 기록·보고서: 대화창을 열 때 화면 기록이 비어 있으면 `getSessionMessages`로 되살린다(`agent/history.ts`). 끝난 작업의 보고서는 `Conversation.lastTask`에 저장하고, 보관 전 보고서가 있는 대화를 닫으면 `closedAt`으로 숨기기만 한다. 탭·목록은 `openConversations()` 기준
 - 첨부는 경로로: 입력창에 파일을 끌어다 놓기·첨부 버튼(`pickFiles`)·이미지 붙여넣기(`saveImage`로 userData/attachments에 저장)를 하면 경로를 넣는다. 작업 폴더 안은 `@상대경로`. 끌어다 놓은 파일 경로는 sandbox라 preload의 `webUtils.getPathForFile`로
 - 답변은 `Markdown.tsx`(react-markdown, 원시 HTML 비허용). 링크는 메인이 외부 브라우저로만 연다 (`setWindowOpenHandler`, `will-navigate` 차단)

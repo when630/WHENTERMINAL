@@ -1,4 +1,4 @@
-import { openConversations, type AgentEvent, type AgentMode, type AgentStatus, type BackgroundTask, type ContextInfo, type PermissionRequest, type Project, type TaskInfo } from '@shared/types'
+import { openConversations, type AgentEvent, type AgentMode, type AgentProgress, type AgentStatus, type BackgroundTask, type SubItem, type ContextInfo, type PermissionRequest, type Project, type TaskInfo } from '@shared/types'
 export type { TaskInfo }
 import { STATUS_PRIORITY } from '@shared/types'
 
@@ -27,6 +27,10 @@ export interface ConversationState {
   model?: { id: string; label: string }
   /** 턴이 끝나도 살아 있는 셸·모니터 등 */
   background?: BackgroundTask[]
+  /** 하위 에이전트가 한 일. 키는 그 에이전트를 띄운 Agent 도구 호출 ID (중첩된 에이전트도 같은 표에) */
+  subs?: Record<string, SubItem[]>
+  /** 작업(하위 에이전트 등)의 진행 수치. 키는 작업을 띄운 도구 호출 ID */
+  progress?: Record<string, AgentProgress>
 }
 
 export type ConversationMap = Record<string, ConversationState>
@@ -66,6 +70,11 @@ export function activityForTool(name: string, input: unknown): string {
   if (name === 'TodoWrite') return 'TODO'
   return name.toUpperCase()
 }
+
+/** 하위 에이전트 하나가 기억할 최대 항목 수 (오래된 것부터 버린다) */
+const SUB_LIMIT = 300
+
+export const isAgentTool = (name: string): boolean => name === 'Agent' || name === 'Task'
 
 export function applyEvent(prev: ConversationState | undefined, event: AgentEvent): ConversationState {
   const s: ConversationState = prev ? { ...prev, items: [...prev.items], permissions: [...prev.permissions] } : emptyConversation()
@@ -159,6 +168,28 @@ export function applyEvent(prev: ConversationState | undefined, event: AgentEven
     case 'background':
       s.background = event.tasks
       break
+    case 'sub': {
+      const list = [...(s.subs?.[event.parent] ?? []), event.item]
+      s.subs = { ...s.subs, [event.parent]: list.length > SUB_LIMIT ? list.slice(-SUB_LIMIT) : list }
+      // 앞에서 기다리는(포그라운드) 에이전트면 작업 줄에 그 에이전트가 하는 일을 보인다
+      if (event.item.type === 'tool' && s.items.some((i) => i.type === 'tool' && i.toolUseId === event.parent && i.result === undefined)) {
+        task({ activity: `AGENT · ${activityForTool(event.item.name, event.item.input)}` })
+      }
+      break
+    }
+    case 'sub_result': {
+      const list = s.subs?.[event.parent]
+      const idx = list?.findLastIndex((i) => i.type === 'tool' && i.toolUseId === event.toolUseId) ?? -1
+      if (list && idx >= 0) {
+        const next = [...list]
+        next[idx] = { ...(next[idx] as Extract<SubItem, { type: 'tool' }>), result: event.content, isError: event.isError }
+        s.subs = { ...s.subs, [event.parent]: next }
+      }
+      break
+    }
+    case 'task_progress':
+      s.progress = { ...s.progress, [event.toolUseId]: event.progress }
+      break
     case 'model':
       s.model = { id: event.model, label: event.label }
       break
@@ -174,6 +205,8 @@ export function applyEvent(prev: ConversationState | undefined, event: AgentEven
     case 'cleared':
       // 화면 기록도 비운다. 보고서(task)는 보고함에 남긴다
       s.items = [{ type: 'divider', text: 'CLEARED · 컨텍스트를 비웠어요. 다음 메시지부터 새 세션이에요', at: now }]
+      s.subs = undefined
+      s.progress = undefined
       s.permissions = []
       s.status = 'idle'
       s.context = undefined
@@ -203,6 +236,28 @@ function backgroundLabel(type: string, tool?: string): string {
   if (t.includes('workflow')) return 'WORKFLOW'
   if (t.includes('mcp')) return 'MCP'
   return t.replace(/^local_/, '').toUpperCase() || 'TASK'
+}
+
+export type ToolItem = Extract<TranscriptItem, { type: 'tool' }>
+
+/** 앞에서 기다리는(포그라운드) 하위 에이전트: 결과가 아직 안 온 Agent 도구 호출. 백그라운드 에이전트는 BACKGROUND 쪽에 나온다 */
+export function runningAgents(items: TranscriptItem[], background: BackgroundTask[]): ToolItem[] {
+  const bg = new Set(background.map((b) => b.toolUseId))
+  return items.filter((i): i is ToolItem => i.type === 'tool' && isAgentTool(i.name) && i.result === undefined && !bg.has(i.toolUseId))
+}
+
+/** 에이전트를 띄운 도구 입력에서 설명·종류·지시문 */
+export function agentInfo(input: unknown): { description: string; type: string; prompt: string } {
+  const o = (input ?? {}) as Record<string, unknown>
+  return { description: str(o.description), type: str(o.subagent_type), prompt: str(o.prompt) }
+}
+
+/** 하위 에이전트가 지금(또는 마지막으로) 하는 일 한 줄 */
+export function subActivity(list: SubItem[] | undefined, progress?: AgentProgress): string {
+  if (progress?.summary) return progress.summary
+  const last = list?.findLast((i) => i.type === 'tool')
+  if (last?.type === 'tool') return activityForTool(last.name, last.input)
+  return list?.length ? 'WRITING' : 'STARTING'
 }
 
 export interface BackgroundRef {
@@ -315,4 +370,19 @@ export function firstPendingPermission(project: Project, convs: ConversationMap)
     if (req) return { conversationId: c.id, request: req }
   }
   return null
+}
+
+/** 프로젝트 폴더 안의 경로는 앞부분을 떼고 보여준다 */
+export function relPath(text: string, root: string): string {
+  const r = root.replace(/\\/g, '/').replace(/\/$/, '')
+  const t = text.replace(/\\/g, '/')
+  return t.toLowerCase().startsWith(r.toLowerCase() + '/') ? t.slice(r.length + 1) : text
+}
+
+/** 도구 입력에서 한 줄로 보여 줄 값 (명령·파일·패턴 …) */
+export function summarizeInput(input: unknown): string {
+  if (!input || typeof input !== 'object') return ''
+  const o = input as Record<string, unknown>
+  const v = o.command ?? o.file_path ?? o.path ?? o.pattern ?? o.url ?? o.description
+  return typeof v === 'string' ? v.split('\n')[0].slice(0, 120) : ''
 }

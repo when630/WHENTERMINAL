@@ -1,11 +1,12 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { MODE_CYCLE, MODE_LABEL, openConversations, STATUS_LABEL, type UsageInfo, type SlashCommandInfo, type AgentMode, type PermissionDecision, type PermissionRequest, type Project, type BackgroundTask } from '@shared/types'
-import { artifactsOf, describeBackground, emptyConversation, STAGES, type ArtifactLink, type ConversationMap, type TaskInfo, type TranscriptItem } from './state'
+import { MODE_CYCLE, MODE_LABEL, openConversations, STATUS_LABEL, type UsageInfo, type SlashCommandInfo, type AgentMode, type PermissionDecision, type PermissionRequest, type Project, type BackgroundTask, type AgentProgress, type SubItem } from '@shared/types'
+import { agentInfo, artifactsOf, describeBackground, emptyConversation, isAgentTool, relPath, runningAgents, STAGES, subActivity, summarizeInput, type ArtifactLink, type ConversationMap, type TaskInfo, type ToolItem, type TranscriptItem } from './state'
 import { HOME_ROW } from './keys'
 import { Keys } from './KeyHint'
 import { useKeymap } from './settings'
 import { Roll, usePresence } from './motion'
-import { useNow } from './time'
+import { clock, useNow } from './time'
+import { SubLog, TaskDetail, type DetailTarget } from './TaskDetail'
 import { Markdown } from './Markdown'
 import { AttachButton, useAttach } from './attach'
 import { WorktreePanel } from './WorktreePanel'
@@ -31,9 +32,20 @@ interface Props {
   onClose: (conversationId: string) => void
   onSelectConversation: (conversationId: string) => void
   onRespond: (projectId: string, conversationId: string, requestId: string, decision: PermissionDecision) => void
+  /** App의 전역 키 처리가 오른쪽 패널 세부 내용을 다루는 손잡이 (Chat이 그릴 때마다 갱신) */
+  panelRef: React.MutableRefObject<PanelControl | null>
 }
 
-export function Chat({ project, projects, conversationId, convs, mode, usage, clearArmed, closeArmedId, projectArmed, onClearRequest, onCloseRequest, onClose, onSelectConversation, onRespond }: Props): React.JSX.Element {
+/** 오른쪽 패널 세부 내용 단축키 (panelNext·panelPrev·panelBack·stopTask) */
+export interface PanelControl {
+  /** 패널 항목을 차례로 펼친다. 마지막 다음은 대화 기록으로 돌아온다 */
+  step: (dir: 1 | -1) => void
+  back: () => void
+  /** 펼친 백그라운드 작업을 멈춘다 */
+  stop: () => void
+}
+
+export function Chat({ project, projects, conversationId, convs, mode, usage, clearArmed, closeArmedId, projectArmed, onClearRequest, onCloseRequest, onClose, onSelectConversation, onRespond, panelRef }: Props): React.JSX.Element {
   const km = useKeymap()
   const state = convs[conversationId] ?? emptyConversation()
   const [draft, setDraft] = useState('')
@@ -49,6 +61,11 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
   // 턴이 끝나도 남아 있는 것들: 백그라운드 셸·모니터, 이 대화에서 올린 아티팩트. 있으면 사이드 패널을 계속 펼친다
   const background = state.background ?? []
   const artifacts = useMemo(() => artifactsOf(state.items), [state.items])
+  // 중단하면 결과 없이 남는 도구 호출이 있어, 실행 중일 때만 센다
+  const agents = useMemo(
+    () => (state.status === 'running' || state.status === 'waiting_approval' ? runningAgents(state.items, background) : []),
+    [state.items, state.status, background],
+  )
 
   // 이 대화를 연 시점에 이미 있던 기록은 그대로 두고, 새로 들어오는 항목만 등장 애니메이션
   const seen = useRef<{ id: string; count: number }>({ id: '', count: 0 })
@@ -203,7 +220,34 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
   }
 
   const [showChanges, setShowChanges] = useState(false)
-  useEffect(() => setShowChanges(false), [conversationId])
+  // 오른쪽 패널에서 고른 백그라운드 작업·하위 에이전트의 세부 내용 (대화 기록 자리에 펼친다)
+  const [detail, setDetail] = useState<DetailTarget | null>(null)
+  useEffect(() => {
+    setShowChanges(false)
+    setDetail(null)
+  }, [conversationId])
+  // 패널에 보이는 순서대로: AGENTS, BACKGROUND
+  const targets: DetailTarget[] = [
+    ...agents.map((a): DetailTarget => ({ kind: 'agent', toolUseId: a.toolUseId })),
+    ...background.map((b): DetailTarget => ({ kind: 'task', taskId: b.id })),
+  ]
+  const shownTask = detail?.kind === 'task' ? background.find((b) => b.id === detail.taskId) : undefined
+  panelRef.current = {
+    step: (dir) => {
+      if (targets.length === 0 && !detail) return
+      setShowChanges(false)
+      setDetail((cur) => {
+        // -1은 대화 기록. 끝난 작업을 보고 있었으면 대화 기록에서 출발한 것으로 친다
+        const at = cur ? targets.findIndex((t) => sameTarget(t, cur)) : -1
+        const n = targets.length + 1
+        return targets[((at + 1 + dir + n) % n) - 1] ?? null
+      })
+    },
+    back: () => setDetail(null),
+    stop: () => {
+      if (shownTask) void window.api.stopTask(project.id, conversationId, shownTask.id)
+    },
+  }
   const attach = useAttach({ inputRef, value: draft, setValue: setDraft, root: conv?.worktree?.path ?? project.path, onCaret: setCaret })
 
   const submit = (raw = draft): void => {
@@ -248,7 +292,7 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
             </span>
           ))}
           {conv?.worktree && (
-            <button type="button" className={`tb-btn ${showChanges ? 'armed' : ''}`} onClick={() => setShowChanges((v) => !v)} title={`작업 공간 ${conv.worktree.branch}의 변경을 보고 합쳐요`}>
+            <button type="button" className={`tb-btn ${showChanges ? 'armed' : ''}`} onClick={() => { setDetail(null); setShowChanges((v) => !v) }} title={`작업 공간 ${conv.worktree.branch}의 변경을 보고 합쳐요`}>
               CHANGES
             </button>
           )}
@@ -333,6 +377,18 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
             onSelectConversation(next)
           }}
         />
+      ) : detail ? (
+        <TaskDetail
+          key={detail.kind === 'task' ? detail.taskId : detail.toolUseId}
+          target={detail}
+          state={state}
+          projectId={project.id}
+          conversationId={conversationId}
+          root={project.path}
+          onClose={() => setDetail(null)}
+          onStopTask={(taskId) => window.api.stopTask(project.id, conversationId, taskId)}
+          keys={{ back: km.panelBack, stop: km.stopTask }}
+        />
       ) : (
         <main className="transcript" ref={scrollRef} onScroll={onScroll}>
           {state.items.length === 0 && (
@@ -342,7 +398,7 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
             </div>
           )}
           {state.items.map((item, idx) => (
-            <Item key={idx} item={item} n={item.type === 'tool' ? ++toolCount : 0} root={project.path} enter={idx >= seen.current.count} />
+            <Item key={idx} item={item} n={item.type === 'tool' ? ++toolCount : 0} root={project.path} enter={idx >= seen.current.count} subs={state.subs} progress={state.progress} />
           ))}
           {working.item && <Working status={state.status} activity={state.task?.activity} startedAt={state.task?.startedAt} leaving={working.leaving} />}
           {compacting.item && <div className={`msg compacting ${compacting.leaving ? 'leaving' : ''}`}>COMPACTING · 지금까지의 대화를 요약하고 있어요</div>}
@@ -361,9 +417,17 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
             task={state.task}
             status={state.status}
             background={background}
+            agents={agents}
             artifacts={artifacts}
             items={state.items}
+            subs={state.subs}
+            progress={state.progress}
             root={project.path}
+            selected={detail}
+            onOpen={(t) => {
+              setShowChanges(false)
+              setDetail((cur) => (cur && sameTarget(cur, t) ? null : t))
+            }}
             onStopTask={(taskId) => window.api.stopTask(project.id, conversationId, taskId)}
           />
         )}
@@ -433,34 +497,39 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
         <span><Keys keys={km.clear} /> CLEAR</span>
         <span><Keys keys={km.closeConversation} /> CLOSE</span>
         <span><Keys keys={km.compact} /> COMPACT</span>
+        {(targets.length > 0 || detail) && <span><Keys keys={km.panelNext} /> DETAILS</span>}
+        {detail && <span><Keys keys={km.panelBack} /> BACK</span>}
         {pending && <span><Keys keys={`${km.allow} ${km.always} ${km.deny}`} /> APPROVE</span>}
       </footer>
     </div>
   )
 }
 
-function clock(ms: number): string {
-  const sec = Math.max(0, Math.floor(ms / 1000))
-  const mm = String(Math.floor(sec / 60) % 60).padStart(2, '0')
-  const ss = String(sec % 60).padStart(2, '0')
-  return sec >= 3600 ? `${Math.floor(sec / 3600)}:${mm}:${ss}` : `${mm}:${ss}`
-}
-
 interface PanelProps {
   task?: TaskInfo
   status: string
   background: BackgroundTask[]
+  /** 앞에서 기다리는 하위 에이전트 (결과가 아직 안 온 Agent 도구 호출) */
+  agents: ToolItem[]
   artifacts: ArtifactLink[]
   items: TranscriptItem[]
+  subs?: Record<string, SubItem[]>
+  progress?: Record<string, AgentProgress>
   root: string
+  /** 지금 세부 내용을 펼쳐 둔 것 */
+  selected: DetailTarget | null
+  onOpen: (target: DetailTarget) => void
   onStopTask: (taskId: string) => Promise<void>
 }
+
+const sameTarget = (a: DetailTarget, b: DetailTarget): boolean =>
+  a.kind === 'task' ? b.kind === 'task' && a.taskId === b.taskId : b.kind === 'agent' && a.toolUseId === b.toolUseId
 
 /**
  * 오른쪽 상태 패널: 실행 중이거나, 백그라운드 셸·모니터가 돌거나, 아티팩트가 연결돼 있으면 펼쳐진다.
  * 그 밖에는 끝난 뒤 마지막 단계를 잠깐 보여 주고 접힌다
  */
-function StatusPanel({ task, status, background, artifacts, items, root, onStopTask }: PanelProps): React.JSX.Element {
+function StatusPanel({ task, status, background, agents, artifacts, items, subs, progress, root, selected, onOpen, onStopTask }: PanelProps): React.JSX.Element {
   const now = useNow(1000)
   // 멈춤을 눌렀지만 아직 목록에서 빠지지 않은 작업
   const [stopping, setStopping] = useState<string[]>([])
@@ -472,13 +541,43 @@ function StatusPanel({ task, status, background, artifacts, items, root, onStopT
   const live = status === 'running' || waiting || status === 'queued'
   // 작업이 끝났는데 패널이 남아 있는 건 백그라운드·아티팩트 때문이니 그것만 보인다
   const showTask = !!task && (live || (background.length === 0 && artifacts.length === 0))
+  const isSel = (t: DetailTarget): boolean => !!selected && sameTarget(selected, t)
+  const km = useKeymap()
   return (
     <aside className={`status-panel ${waiting ? 'waiting' : ''} ${live ? 'live' : ''}`} aria-label="작업 상태">
       {showTask && task && <TaskStatus task={task} status={status} now={now} />}
+      {agents.length > 0 && (
+        <section className="sp-sec" aria-label="하위 에이전트">
+          <div className="sp-sec-h">
+            <span className="sp-k">AGENTS <Keys keys={km.panelNext} /></span>
+            <span className="sp-n">{agents.length}</span>
+          </div>
+          <ul className="sp-bg">
+            {agents.map((a) => {
+              const info = agentInfo(a.input)
+              const target: DetailTarget = { kind: 'agent', toolUseId: a.toolUseId }
+              return (
+                <li key={a.toolUseId} className={isSel(target) ? 'sel' : ''}>
+                  <button type="button" className="sp-bg-open" onClick={() => onOpen(target)} title={`${info.description}\n누르면 이 에이전트가 하는 일을 자세히 봐요`}>
+                    <span className="sp-bg-row">
+                      <span className="sp-bg-sq" aria-hidden="true" />
+                      <b>AGENT</b>
+                      {info.type && <span className="sp-bg-type">{info.type}</span>}
+                      <span className="sp-bg-t">{clock(now - a.at)}</span>
+                    </span>
+                    <span className="sp-bg-d">{info.description || 'AGENT'}</span>
+                    <span className="sp-bg-now">{subActivity(subs?.[a.toolUseId], progress?.[a.toolUseId])}</span>
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        </section>
+      )}
       {background.length > 0 && (
         <section className="sp-sec" aria-label="백그라운드 작업">
           <div className="sp-sec-h">
-            <span className="sp-k">BACKGROUND</span>
+            <span className="sp-k">BACKGROUND {agents.length === 0 && <Keys keys={km.panelNext} />}</span>
             <span className="sp-n">{background.length}</span>
           </div>
           <ul className="sp-bg">
@@ -487,17 +586,22 @@ function StatusPanel({ task, status, background, artifacts, items, root, onStopT
               const cmd = relPath(d.command, root)
               const desc = d.text === d.command ? cmd : d.text
               const busy = stopping.includes(b.id)
+              const target: DetailTarget = { kind: 'task', taskId: b.id }
+              const agent = d.label === 'AGENT' && b.toolUseId ? b.toolUseId : undefined
               return (
-                <li key={b.id} title={cmd && cmd !== desc ? `${desc}\n${cmd}` : desc}>
-                  <span className="sp-bg-row">
-                    <span className="sp-bg-sq" aria-hidden="true" />
-                    <b>{d.label}</b>
-                    <span className="sp-bg-t">{clock(now - b.startedAt)}</span>
-                    <button type="button" className="sp-bg-x" disabled={busy} onClick={() => stop(b.id)} title="이 작업만 멈춰요" aria-label={`${d.label} 멈추기`}>
-                      {busy ? '…' : 'STOP'}
-                    </button>
-                  </span>
-                  <span className="sp-bg-d">{desc}</span>
+                <li key={b.id} className={isSel(target) ? 'sel' : ''}>
+                  <button type="button" className="sp-bg-open" onClick={() => onOpen(target)} title={`${cmd && cmd !== desc ? `${desc}\n${cmd}` : desc}\n누르면 ${agent ? '이 에이전트가 하는 일을' : '출력을'} 자세히 봐요`}>
+                    <span className="sp-bg-row">
+                      <span className="sp-bg-sq" aria-hidden="true" />
+                      <b>{d.label}</b>
+                      <span className="sp-bg-t">{clock(now - b.startedAt)}</span>
+                    </span>
+                    <span className="sp-bg-d">{desc}</span>
+                    {agent && <span className="sp-bg-now">{subActivity(subs?.[agent], progress?.[agent])}</span>}
+                  </button>
+                  <button type="button" className="sp-bg-x" disabled={busy} onClick={() => stop(b.id)} title="이 작업만 멈춰요" aria-label={`${d.label} 멈추기`}>
+                    {busy ? '…' : 'STOP'}
+                  </button>
                 </li>
               )
             })}
@@ -579,7 +683,7 @@ function Working({ status, activity, startedAt, leaving }: { status: string; act
   )
 }
 
-function Item({ item, n, root, enter }: { item: TranscriptItem; n: number; root: string; enter: boolean }): React.JSX.Element {
+function Item({ item, n, root, enter, subs, progress }: { item: TranscriptItem; n: number; root: string; enter: boolean; subs?: Record<string, SubItem[]>; progress?: Record<string, AgentProgress> }): React.JSX.Element {
   const e = enter ? ' enter' : ''
   switch (item.type) {
     case 'user':
@@ -596,16 +700,28 @@ function Item({ item, n, root, enter }: { item: TranscriptItem; n: number; root:
       return <div className={`divider${e}`} role="separator">■ {item.text}</div>
     case 'tool': {
       const status = item.result === undefined ? 'RUNNING' : item.isError ? 'ERROR' : 'DONE'
+      // 하위 에이전트: 그 안에서 한 일을 펼쳐 볼 수 있게 한다
+      const sub = isAgentTool(item.name) ? subs?.[item.toolUseId] : undefined
+      const subTools = progress?.[item.toolUseId]?.tools ?? sub?.filter((i) => i.type === 'tool').length ?? 0
       return (
         <details className={`tool ${item.isError ? 'error' : ''}${e}`}>
           <summary>
             <span className="tool-n">{String(n).padStart(2, '0')}</span>
             <span className="tool-name">{item.name}</span>
-            <span className="tool-arg">{relPath(summarizeInput(item.input), root)}</span>
+            <span className="tool-arg">
+              {relPath(summarizeInput(item.input), root)}
+              {sub && <span className="tool-sub"> · {subTools} TOOLS</span>}
+            </span>
             <span className={`tool-st ${item.result === undefined ? 'run' : ''}`}>{status}</span>
           </summary>
           <div className="tool-body">
             <ToolInput name={item.name} input={item.input} />
+            {sub && sub.length > 0 && (
+              <>
+                <h5>AGENT LOG · {sub.length}</h5>
+                <SubLog list={sub} subs={subs ?? {}} root={root} />
+              </>
+            )}
             {item.result !== undefined && (
               <>
                 <h5>OUTPUT</h5>
@@ -679,16 +795,3 @@ function PermissionBox({ req, leaving, onRespond }: { req: PermissionRequest; le
   )
 }
 
-function summarizeInput(input: unknown): string {
-  if (!input || typeof input !== 'object') return ''
-  const o = input as Record<string, unknown>
-  const v = o.command ?? o.file_path ?? o.path ?? o.pattern ?? o.url ?? o.description
-  return typeof v === 'string' ? v.split('\n')[0].slice(0, 120) : ''
-}
-
-/** 프로젝트 폴더 안의 경로는 앞부분을 떼고 보여준다 */
-function relPath(text: string, root: string): string {
-  const r = root.replace(/\\/g, '/').replace(/\/$/, '')
-  const t = text.replace(/\\/g, '/')
-  return t.toLowerCase().startsWith(r.toLowerCase() + '/') ? t.slice(r.length + 1) : text
-}

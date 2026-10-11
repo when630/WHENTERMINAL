@@ -7,6 +7,7 @@ export type ActionId =
   | 'addProject' | 'focusAsk' | 'down' | 'up' | 'toRunning' | 'toReports' | 'open' | 'archive' | 'newTask'
   | 'allow' | 'always' | 'deny'
   | 'nextConversation' | 'prevConversation' | 'closeConversation' | 'closeProject' | 'clear' | 'compact' | 'cycleMode' | 'interrupt'
+  | 'panelNext' | 'panelPrev' | 'panelBack' | 'stopTask'
 
 export type ActionScope = 'system' | 'anywhere' | 'home' | 'chat' | 'approval'
 
@@ -51,6 +52,11 @@ export const ACTIONS: ActionDef[] = [
   { id: 'closeProject', label: 'Close project (twice)', scope: 'chat', default: 'Ctrl+Shift+W' },
   { id: 'cycleMode', label: 'Cycle mode', scope: 'chat', default: 'Shift+Tab' },
   { id: 'interrupt', label: 'Interrupt (alt. to Esc)', scope: 'chat', default: 'Ctrl+[' },
+  // 오른쪽 패널의 하위 에이전트·백그라운드 작업 세부 내용
+  { id: 'panelNext', label: 'Next agent / task details', scope: 'chat', default: 'Ctrl+J' },
+  { id: 'panelPrev', label: 'Previous agent / task details', scope: 'chat', default: 'Ctrl+Shift+J' },
+  { id: 'panelBack', label: 'Back to chat', scope: 'chat', default: 'Ctrl+B' },
+  { id: 'stopTask', label: 'Stop shown task', scope: 'chat', default: 'Ctrl+Shift+X' },
 ]
 
 export type Keymap = Record<ActionId, string>
