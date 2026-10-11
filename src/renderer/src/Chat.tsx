@@ -36,13 +36,15 @@ interface Props {
   panelRef: React.MutableRefObject<PanelControl | null>
 }
 
-/** 오른쪽 패널 세부 내용 단축키 (panelNext·panelPrev·panelBack·stopTask) */
+/** App의 전역 키 처리가 대화창을 다루는 손잡이: 오른쪽 패널 세부 내용(panelNext·panelPrev·panelBack·stopTask)과 이름 바꾸기 */
 export interface PanelControl {
   /** 패널 항목을 차례로 펼친다. 마지막 다음은 대화 기록으로 돌아온다 */
   step: (dir: 1 | -1) => void
   back: () => void
   /** 펼친 백그라운드 작업을 멈춘다 */
   stop: () => void
+  /** 지금 탭의 이름을 고치는 칸을 연다 */
+  rename: () => void
 }
 
 export function Chat({ project, projects, conversationId, convs, mode, usage, clearArmed, closeArmedId, projectArmed, onClearRequest, onCloseRequest, onClose, onSelectConversation, onRespond, panelRef }: Props): React.JSX.Element {
@@ -220,6 +222,20 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
   }
 
   const [showChanges, setShowChanges] = useState(false)
+  // 이름을 고치는 중인 탭 (더블클릭·/rename·단축키)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const renameDone = useRef(false)
+  useEffect(() => {
+    renameDone.current = false
+  }, [editingId])
+  const commitRename = (id: string, value: string, before: string): void => {
+    if (renameDone.current) return
+    renameDone.current = true
+    setEditingId(null)
+    const v = value.trim()
+    if (v && v !== before) void window.api.renameConversation(project.id, id, v)
+    requestAnimationFrame(() => inputRef.current?.focus())
+  }
   // 오른쪽 패널에서 고른 백그라운드 작업·하위 에이전트의 세부 내용 (대화 기록 자리에 펼친다)
   const [detail, setDetail] = useState<DetailTarget | null>(null)
   useEffect(() => {
@@ -247,18 +263,24 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
     stop: () => {
       if (shownTask) void window.api.stopTask(project.id, conversationId, shownTask.id)
     },
+    rename: () => setEditingId(conversationId),
   }
   const attach = useAttach({ inputRef, value: draft, setValue: setDraft, root: conv?.worktree?.path ?? project.path, onCaret: setCaret })
 
   const submit = (raw = draft): void => {
     const text = raw.trim()
     if (!text) return
-    // 앱이 직접 처리하는 명령: /compact [요약 지시], /clear, /close
-    const cmd = /^\/(compact|clear|reset|new|close)\b\s*([\s\S]*)$/.exec(text)
+    // 앱이 직접 처리하는 명령: /compact [요약 지시], /clear, /close, /rename [이름]
+    const cmd = /^\/(compact|clear|reset|new|close|rename)\b\s*([\s\S]*)$/.exec(text)
     if (cmd) {
       setDraft('')
       if (cmd[1] === 'compact') compact(cmd[2])
       else if (cmd[1] === 'close') onClose(conversationId)
+      else if (cmd[1] === 'rename') {
+        // 이름을 같이 적으면 바로 바꾸고, 없으면 탭의 이름 칸을 연다
+        if (cmd[2].trim()) void window.api.renameConversation(project.id, conversationId, cmd[2])
+        else setEditingId(conversationId)
+      }
       else void window.api.clear(project.id, conversationId)
       return
     }
@@ -319,19 +341,50 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
               const armedHere = closeArmedId === c.id
               return (
                 <span key={c.id} className={`tab-wrap ${c.id === conversationId ? 'active' : ''} ${armedHere ? 'armed' : ''}`}>
+                {editingId === c.id ? (
+                  <span className={`tab tab-editing ${c.id === conversationId ? 'active' : ''}`}>
+                    <span className="tab-n">{String(i + 1).padStart(2, '0')}</span>
+                    <input
+                      className="tab-edit"
+                      aria-label="대화 이름"
+                      // 고치는 동안은 이 칸이 키를 처리한다 (Esc가 실행 중단으로 가지 않게)
+                      data-keys-own="true"
+                      defaultValue={c.title}
+                      maxLength={80}
+                      ref={(el) => {
+                        if (el && document.activeElement !== el) {
+                          el.focus()
+                          el.select()
+                        }
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                          e.preventDefault()
+                          commitRename(c.id, e.currentTarget.value, c.title)
+                        } else if (e.key === 'Escape') {
+                          e.preventDefault()
+                          commitRename(c.id, c.title, c.title)
+                        }
+                      }}
+                      onBlur={(e) => commitRename(c.id, e.currentTarget.value, c.title)}
+                    />
+                  </span>
+                ) : (
                 <button
                   type="button"
                   className={`tab ${c.id === conversationId ? 'active' : ''}`}
                   // 선택한 탭이 가려져 있으면 보이는 곳까지 부드럽게 끌어온다
                   ref={c.id === conversationId ? (el) => { el?.scrollIntoView({ inline: 'nearest', block: 'nearest', behavior: 'smooth' }) } : undefined}
                   onClick={() => onSelectConversation(c.id)}
-                  title={STATUS_LABEL[st]}
+                  onDoubleClick={() => setEditingId(c.id)}
+                  title={`${c.title} · ${STATUS_LABEL[st]}\n더블클릭하면 이름을 바꿔요`}
                 >
                   <span className="tab-n">{String(i + 1).padStart(2, '0')}</span>
                   <span className="tab-t">{c.title}</span>
                 {c.worktree && <span className="wt-tag" title={`작업 공간 ${c.worktree.branch}`}>WT</span>}
                   <span className={`dot dot-${st}`} />
                 </button>
+                )}
                 <button
                   type="button"
                   className="tab-x"
@@ -489,18 +542,6 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
         </div>
       </div>
 
-      <footer className="hints">
-        <span><Keys keys={km.goHome} /> HOME</span>
-        <span><Keys keys={km.nextConversation} /> TABS</span>
-        <span><Keys keys="alt A S D…" /> PROJECTS</span>
-        <span><Keys keys="esc" /> STOP</span>
-        <span><Keys keys={km.clear} /> CLEAR</span>
-        <span><Keys keys={km.closeConversation} /> CLOSE</span>
-        <span><Keys keys={km.compact} /> COMPACT</span>
-        {(targets.length > 0 || detail) && <span><Keys keys={km.panelNext} /> DETAILS</span>}
-        {detail && <span><Keys keys={km.panelBack} /> BACK</span>}
-        {pending && <span><Keys keys={`${km.allow} ${km.always} ${km.deny}`} /> APPROVE</span>}
-      </footer>
     </div>
   )
 }

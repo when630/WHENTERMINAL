@@ -64,6 +64,8 @@ export interface StoredTask extends TaskInfo {
 export interface Conversation {
   id: string
   title: string
+  /** 제목의 출처. draft: 첫 메시지를 다듬은 임시 제목, auto: CLI가 만든 세션 제목, custom: 사용자가 붙인 이름(자동으로 바꾸지 않음). 없으면 기본 이름이거나 예전 방식 */
+  titleSource?: 'draft' | 'auto' | 'custom'
   /** SDK 세션 ID. 앱 재시작 후 resume에 사용 */
   sessionId?: string
   mode: AgentMode
@@ -260,6 +262,8 @@ export type AgentEvent =
   /** 하위 에이전트의 글·도구 호출. parent는 그 에이전트를 띄운 Agent 도구 호출 */
   | { kind: 'sub'; parent: string; item: SubItem }
   | { kind: 'sub_result'; parent: string; toolUseId: string; content: string; isError: boolean }
+  /** 백그라운드 작업 알림 한 줄 (끝남·멈춤·모니터 이벤트) */
+  | { kind: 'task_note'; text: string }
   /** toolUseId는 이 작업을 띄운 도구 호출 */
   | { kind: 'task_progress'; toolUseId: string; progress: AgentProgress }
 
@@ -276,6 +280,7 @@ export const IPC = {
   removeProject: 'projects:remove',
   addConversation: 'conversations:add',
   closeConversation: 'conversations:close',
+  renameConversation: 'conversations:rename',
   reopenConversation: 'conversations:reopen',
   saveTask: 'conversations:save-task',
   startTask: 'tasks:start',
@@ -329,6 +334,8 @@ export interface WhenTerminalApi {
   addConversation(projectId: string): Promise<Conversation>
   /** 대화(세션)를 닫는다. 실행 중이면 중단한다. 마지막 대화였다면 빈 대화를 새로 만든다. 남은 대화 중 옮겨 갈 ID를 돌려준다 */
   closeConversation(projectId: string, conversationId: string): Promise<string>
+  /** 대화 이름을 직접 붙인다. 이후 자동 제목으로 바꾸지 않는다 */
+  renameConversation(projectId: string, conversationId: string, title: string): Promise<void>
   /** 닫힌 대화를 다시 탭으로 */
   reopenConversation(projectId: string, conversationId: string): Promise<void>
   /** 끝난 작업의 보고서(읽음·보관 포함)를 저장. 닫힌 대화의 보고서를 보관하면 대화도 지운다 */

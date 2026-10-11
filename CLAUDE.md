@@ -26,6 +26,8 @@
   - 컴팩트는 같은 세션에 `/compact`를 보낸다. 이때 오는 result는 작업 완료가 아니므로 상태·보고서를 바꾸지 않는다 (`manualCompact`)
   - 대화 닫기는 세션을 끝내고(실행 중이면 중단) 대화를 목록에서 뺀다. 마지막 대화면 빈 대화를 새로 만든다. `Ctrl+W` 두 번·탭 × 두 번, `/close`는 바로 닫음. 확인 로직은 클리어와 같은 `confirmTwice`(App.tsx)
   - 프로젝트 닫기: 사이드바 ×를 두 번 또는 대화창에서 `Ctrl+Shift+W` 두 번(`confirmTwice`의 `project`). 세션을 모두 끝내고 대기열에서 빼고, 변경 없는 작업 공간만 정리한 뒤 목록에서 뺀다(`disposeProject` → `store.removeProject`). 프로젝트 폴더는 건드리지 않는다
+  - 탭 제목(`agent/title.ts`, `Conversation.titleSource`): 새 세션의 첫 메시지(처음·클리어 뒤)를 보내면 규칙으로 다듬은 임시 제목(`draft`), 응답이 끝날 때마다 CLI가 세션마다 만드는 제목(`getSessionInfo().summary`, 첫 메시지와 같으면 아직 없음)으로 바꾼다(`auto`, 5초 뒤 한 번 더). 직접 붙인 이름(`custom`: 탭 더블클릭·`/rename 이름`·`Ctrl+Shift+E`)은 자동으로 바꾸지 않고 `renameSession`으로 세션 기록에도 남긴다. 모델을 따로 부르지 않는다
+  - 백그라운드 작업 알림(`<task-notification>`)은 CLI가 사용자 메시지 자리에 넣는다. 실시간·되살린 기록 모두 `taskNote()`로 한 줄 구분선(`TASK DONE · …`)
   - 클리어는 세션을 닫고 `sessionId`를 지운다. 다음 메시지가 새 세션을 만든다. 실수 방지로 `Ctrl+L`을 3초 안에 두 번 눌러야 한다
 - `src/main/store.ts` — `userData/projects.json`에 프로젝트·대화·SDK 세션 ID 저장 (재시작 시 resume)
 - `src/renderer/src/App.tsx` — 전역 키 처리 (기획서 7장 단축키 맵)
@@ -75,6 +77,7 @@
   - 단축키: 동작 목록·기본값은 `src/shared/keymap.ts`(`ACTIONS`), 판정은 `matches()`(keys.ts). App의 키 처리와 화면의 키 표시는 모두 `useKeymap()`을 거친다. 새 단축키는 ACTIONS에 추가하고 하드코딩하지 말 것
   - 고정 키(바꿀 수 없음): Esc, ⌥A~L·Ctrl+1~9 프로젝트 이동, 선택 없을 때 Ctrl+C, 방향키. 대화창·전역 범위 키는 Ctrl/Alt/Meta가 있어야 한다 (입력 중 오작동 방지)
   - 전역 호출 키(`summon`)는 메인이 다시 등록한다. 실패하면 이전 키를 되살리고 저장하지 않는다
+- 단축키 안내는 화면 하단 줄 대신 도움말(`HelpOverlay.tsx`, `help` 기본 `Ctrl+/`, 사이드바 HELP 줄)에 모은다. 범위별 묶음(지금 화면이 맨 앞)·고정 키·입력창 명령. 새 동작을 ACTIONS에 넣으면 `GROUPS`에도 넣을 것. 열려 있는 동안 App은 Esc(닫기) 말고 키를 받지 않는다
 - 단축키 표시는 `<Keys keys="ctrl shift L" />`(`KeyHint.tsx`)를 쓴다. macOS는 수정·특수 키를 아이콘으로, Windows는 글자와 +로(`Ctrl+Shift+L`) 표시한다. 파일 이름이 `keys.ts`와 대소문자만 다르면 macOS에서 충돌하므로 `KeyHint`
 - 슬래시 명령 후보: 입력창에 `/`를 치면 `SlashMenu`. 목록은 살아 있는 세션의 `supportedCommands()`, 없으면 메시지 없이 CLI만 띄워 받아 프로젝트 폴더별로 5분 캐시 (`src/main/agent/commands.ts`). `/compact` `/clear`는 앱이 직접 처리
   - 메뉴가 열린 입력창에는 `data-menu-open`을 달아 App의 전역 키 처리(Esc 중단, Ctrl+K 등)를 건너뛴다

@@ -17,6 +17,8 @@ interface Props {
   onRefreshUsage: () => Promise<unknown>
   onHome: () => void
   onSettings: () => void
+  onHelp: () => void
+  helpOpen: boolean
   settingsOpen: boolean
   onOpenProject: (index: number) => void
   onOpenConversation: (projectId: string, conversationId: string) => void
@@ -107,6 +109,10 @@ export function Sidebar(props: Props): React.JSX.Element {
 
       {props.update && <UpdateRow update={props.update} />}
 
+      <button type="button" className={`nav nav-help ${props.helpOpen ? 'on' : ''}`} onClick={props.onHelp} title="모든 단축키를 모아 봐요">
+        <span className="nav-name">HELP</span>
+        <Keys keys={km.help} />
+      </button>
       <button type="button" className={`nav nav-settings ${props.settingsOpen ? 'on' : ''}`} onClick={props.onSettings}>
         <span className="nav-name">SETTINGS</span>
         <Keys keys={km.openSettings} />

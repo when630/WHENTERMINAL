@@ -9,6 +9,8 @@ import { isEscape, isInterruptCopy, matches, physicalCode, projectIndexFromKey }
 import { effectiveKeymap, type ActionId, type Settings } from '@shared/keymap'
 import { applyTheme, KeymapContext } from './settings'
 import { SettingsScreen } from './SettingsScreen'
+import { HelpOverlay } from './HelpOverlay'
+import { usePresence } from './motion'
 
 export type View = { screen: 'home' } | { screen: 'chat'; projectId: string; conversationId: string } | { screen: 'settings'; back: View }
 
@@ -32,6 +34,9 @@ export function App(): React.JSX.Element {
   const dispatchOrigin = useRef<DispatchOrigin | null>(null)
   const sheetCloseRef = useRef<(() => void) | null>(null)
   const chatPanelRef = useRef<PanelControl | null>(null)
+  // 단축키 도움말 (하단 안내 줄 대신)
+  const [helpOpen, setHelpOpen] = useState(false)
+  const help = usePresence(helpOpen ? true : null)
 
   // 테마: 처음에는 바로, 이후 바뀔 때는 부드럽게
   const themeApplied = useRef(false)
@@ -268,6 +273,13 @@ export function App(): React.JSX.Element {
       fn()
     }
 
+    // 도움말: 어디서든 열고 닫는다. 열려 있는 동안은 Esc로 닫는 것 말고는 키를 받지 않는다
+    if (is('help')) return take(() => setHelpOpen((v) => !v))
+    if (helpOpen) {
+      if (isEscape(e, code)) take(() => setHelpOpen(false))
+      return
+    }
+
     // 어디서든: Alt+홈 줄(또는 Ctrl+숫자) 프로젝트 이동 (고정), 홈·작업 지시·설정 (키맵)
     const target = projectIndexFromKey(e, code)
     if (target !== null) return take(() => openProject(target))
@@ -360,6 +372,7 @@ export function App(): React.JSX.Element {
     if (is('panelNext') || is('panelPrev')) return take(() => chatPanelRef.current?.step(is('panelPrev') ? -1 : 1))
     if (is('panelBack')) return take(() => chatPanelRef.current?.back())
     if (is('stopTask')) return take(() => chatPanelRef.current?.stop())
+    if (is('renameConversation')) return take(() => chatPanelRef.current?.rename())
     if (is('clear')) return take(() => requestClear(projectId, conversationId))
     if (is('cycleMode')) {
       return take(() => {
@@ -401,6 +414,8 @@ export function App(): React.JSX.Element {
         onRefreshUsage={() => window.api.getUsage(true).then(setUsage)}
         onHome={goHome}
         onSettings={openSettings}
+        onHelp={() => setHelpOpen((v) => !v)}
+        helpOpen={helpOpen}
         settingsOpen={view.screen === 'settings'}
         onOpenProject={openProject}
         onOpenConversation={openChat}
@@ -439,7 +454,6 @@ export function App(): React.JSX.Element {
               selectedId={selectedId}
               openReportId={openReportId}
               dispatchIndex={Math.min(dispatchIndex, Math.max(projects.length - 1, 0))}
-              hotkey={hotkey}
               inputRef={inputRef}
               dispatchOrigin={dispatchOrigin}
               sheetCloseRef={sheetCloseRef}
@@ -458,6 +472,7 @@ export function App(): React.JSX.Element {
           )}
         </div>
       </div>
+      {help.item && <HelpOverlay context={view.screen} hotkey={hotkey} leaving={help.leaving} onClose={() => setHelpOpen(false)} />}
     </div>
     </KeymapContext.Provider>
   )

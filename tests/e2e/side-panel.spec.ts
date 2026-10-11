@@ -145,7 +145,8 @@ test('단축키로 패널 항목의 세부 내용을 차례로 열고, 돌아오
   await input.click()
   await input.fill('메모')
   const title = win.locator('.td .wt-title .kr')
-  await expect(win.locator('.hints')).toContainText('DETAILS')
+  // 패널 섹션 제목에 단축키가 보인다
+  await expect(win.locator('.status-panel section[aria-label="하위 에이전트"] .sp-k')).toContainText('Ctrl+J')
 
   // 패널 순서대로 AGENTS → BACKGROUND, 마지막 다음은 대화 기록
   await win.keyboard.press('Control+j')
@@ -175,6 +176,13 @@ test('단축키로 패널 항목의 세부 내용을 차례로 열고, 돌아오
   await win.keyboard.press('Control+Shift+x')
   await expect(input).toHaveValue('메모')
   expect(await app.evaluate(() => (globalThis as { stopped?: string[] }).stopped)).toEqual(['b2'])
+})
+
+test('백그라운드 작업 알림은 사람이 쓴 글이 아니라 한 줄 구분선으로 보인다', async ({ app, win }) => {
+  await win.keyboard.press('Alt+a')
+  await emit(app, { kind: 'task_note', text: 'TASK DONE · Monitor "test monitor" stream ended · monitor test event 5/5' })
+  await expect(win.locator('.transcript .divider')).toHaveText('■ TASK DONE · Monitor "test monitor" stream ended · monitor test event 5/5')
+  await expect(win.locator('.transcript .msg.user')).toHaveCount(0)
 })
 
 test('대화 기록은 가로로 스크롤되지 않는다', async ({ win }) => {

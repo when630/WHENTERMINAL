@@ -6,6 +6,7 @@ import { commandsFor, remember, withProbe } from './commands'
 import { modelLabel, toContext } from './session'
 import { readHistory } from './history'
 import { readTaskOutput } from './task-output'
+import { draftTitle, saveSessionTitle, sessionTitle } from './title'
 import { removeWorktreeIfClean } from '../worktree'
 
 /** 대화별 AgentSession을 만들고 보관한다. 동시 실행 제한(OPEN-003)은 여기에 붙일 예정. */
@@ -21,9 +22,12 @@ export class AgentManager {
     private readonly onRateLimit: (info: RateLimitInfo) => void,
     /** 동시 실행 수. 0이면 제한 없음 */
     private readonly maxConcurrent: () => number = () => 0,
+    /** 저장된 대화 정보(제목 등)가 바뀌었을 때 */
+    private readonly onProjectsChanged: () => void = () => {},
   ) {}
 
   send(projectId: string, conversationId: string, text: string): void {
+    this.draftTitle(projectId, conversationId, text)
     const session = this.getOrCreate(projectId, conversationId)
     // 이미 실행 중인 대화에 이어 보내는 건 자리를 더 쓰지 않는다
     if (session.isBusy()) return session.send(text)
@@ -35,6 +39,54 @@ export class AgentManager {
       return
     }
     session.send(text)
+  }
+
+  /** 새 세션의 첫 메시지(처음, 또는 클리어한 뒤)면 그 메시지로 임시 제목을 붙인다. 직접 붙인 이름은 그대로 */
+  private draftTitle(projectId: string, conversationId: string, text: string): void {
+    const conv = this.store.getConversation(projectId, conversationId)
+    if (!conv || conv.titleSource === 'custom' || conv.sessionId || this.sessions.has(conversationId)) return
+    const title = draftTitle(text)
+    if (conv.title === title && conv.titleSource === 'draft') return
+    this.store.updateConversation(projectId, conversationId, { title, titleSource: 'draft' })
+    this.onProjectsChanged()
+  }
+
+  /** CLI가 만든 세션 제목으로 바꾼다. 첫 응답 직후에는 아직 없을 수 있어 한 번 더 본다 */
+  private async refreshTitle(projectId: string, conversationId: string, retry = true): Promise<void> {
+    const project = this.store.get(projectId)
+    const conv = this.store.getConversation(projectId, conversationId)
+    if (!project || !conv?.sessionId || conv.titleSource === 'custom') return
+    try {
+      const title = await sessionTitle(conv.sessionId, cwdOf(project, conv))
+      const now = this.store.getConversation(projectId, conversationId)
+      // 기다리는 사이 사용자가 이름을 붙였거나 클리어했으면 그대로 둔다
+      if (!now || now.titleSource === 'custom' || now.sessionId !== conv.sessionId) return
+      if (!title) {
+        if (retry) setTimeout(() => void this.refreshTitle(projectId, conversationId, false), 5000)
+        return
+      }
+      if (now.title === title) return
+      this.store.updateConversation(projectId, conversationId, { title, titleSource: 'auto' })
+      this.onProjectsChanged()
+    } catch (err) {
+      console.warn('세션 제목을 읽지 못함', err)
+    }
+  }
+
+  /** 직접 이름 붙이기. 세션이 있으면 세션 기록에도 남긴다 (CLI /resume 목록과 같게) */
+  async rename(projectId: string, conversationId: string, raw: string): Promise<void> {
+    const title = raw.replace(/\s+/g, ' ').trim().slice(0, 80)
+    const project = this.store.get(projectId)
+    const conv = this.store.getConversation(projectId, conversationId)
+    if (!title || !project || !conv) return
+    this.store.updateConversation(projectId, conversationId, { title, titleSource: 'custom' })
+    if (conv.sessionId) {
+      try {
+        await saveSessionTitle(conv.sessionId, cwdOf(project, conv), title)
+      } catch (err) {
+        console.warn('세션 이름을 저장하지 못함', err)
+      }
+    }
   }
 
   private atCapacity(): boolean {
@@ -268,6 +320,7 @@ export class AgentManager {
         if (event.kind === 'context') this.store.updateConversation(projectId, conversationId, { contextPercent: event.context.percent })
         if (event.kind === 'mode') this.store.updateConversation(projectId, conversationId, { mode: event.mode })
         if (event.kind === 'model') this.store.updateConversation(projectId, conversationId, { model: event.model, modelLabel: event.label })
+        if (event.kind === 'result') void this.refreshTitle(projectId, conversationId)
         this.broadcast({ projectId, conversationId, event })
       },
       onSessionId: (sessionId) => this.store.updateConversation(projectId, conversationId, { sessionId }),

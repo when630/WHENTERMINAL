@@ -170,6 +170,8 @@ function bootstrap(): void {
       if (usage) send(IPC.usage, usage)
     },
     () => settingsStore.get().maxConcurrent,
+    // 제목이 바뀌면 (임시 제목·자동 제목) 탭·사이드바를 다시 그린다
+    () => projectsChanged(),
   )
   ipcMain.handle(IPC.getUsage, (_e, refresh?: boolean) =>
     refresh || !usage || Date.now() - usage.fetchedAt > USAGE_STALE_MS ? refreshUsage() : usage,
@@ -240,6 +242,10 @@ function bootstrap(): void {
   )
   ipcMain.handle(IPC.interrupt, (_e, projectId: string, conversationId: string) => manager.interrupt(projectId, conversationId))
   ipcMain.handle(IPC.stopTask, (_e, projectId: string, conversationId: string, taskId: string) => manager.stopTask(projectId, conversationId, taskId))
+  ipcMain.handle(IPC.renameConversation, async (_e, projectId: string, conversationId: string, title: string) => {
+    await manager.rename(projectId, conversationId, title)
+    projectsChanged()
+  })
   ipcMain.handle(IPC.taskOutput, (_e, projectId: string, conversationId: string, taskId: string) => manager.taskOutput(projectId, conversationId, taskId))
   ipcMain.handle(IPC.setMode, async (_e, projectId: string, conversationId: string, mode: AgentMode) => {
     await manager.setMode(projectId, conversationId, mode)

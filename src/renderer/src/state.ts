@@ -190,6 +190,10 @@ export function applyEvent(prev: ConversationState | undefined, event: AgentEven
     case 'task_progress':
       s.progress = { ...s.progress, [event.toolUseId]: event.progress }
       break
+    case 'task_note':
+      finalizeStreaming()
+      s.items.push({ type: 'divider', text: event.text, at: now })
+      break
     case 'model':
       s.model = { id: event.model, label: event.label }
       break
