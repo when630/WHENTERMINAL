@@ -80,6 +80,8 @@ export interface Conversation {
   closedAt?: number
   /** 사용자가 고른 모델 (SDK ModelInfo.value). 없으면 설정의 기본 모델 */
   modelChoice?: string
+  /** 사용자가 고른 effort. 없으면 모델·설정의 기본값 */
+  effort?: EffortLevel
   /** 하위 대화의 별도 작업 공간 (git worktree). 있으면 세션이 이 폴더에서 돈다 */
   worktree?: { path: string; branch: string }
 }
@@ -135,6 +137,30 @@ export interface ModelOption {
   displayName: string
   description: string
   resolvedModel?: string
+  /** 이 모델이 받는 effort 단계 (effort를 안 받으면 없음) */
+  efforts?: EffortLevel[]
+}
+
+/** 생각·작업에 들이는 노력 (SDK EffortLevel). max는 세션에서만 (설정 파일에 저장되지 않음) */
+export type EffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+export const EFFORT_LEVELS: EffortLevel[] = ['low', 'medium', 'high', 'xhigh', 'max']
+export const EFFORT_LABEL: Record<EffortLevel, string> = { low: 'LOW', medium: 'MEDIUM', high: 'HIGH', xhigh: 'XHIGH', max: 'MAX' }
+
+/** 이 대화의 effort를 고를 때 보여 줄 것 */
+export interface EffortInfo {
+  /** 지금 모델이 받는 단계. 비어 있으면 effort를 받지 않는 모델 */
+  levels: EffortLevel[]
+  /** 고르지 않았을 때 쓰는 값 (Claude Code 설정의 effortLevel). 모르면 null = 모델 기본값 */
+  saved: EffortLevel | null
+}
+
+/** 대화 폴더의 git 브랜치 */
+export interface GitBranch {
+  /** 브랜치 이름. 분리된 HEAD면 짧은 커밋 */
+  name: string
+  detached: boolean
+  /** 커밋하지 않은 변경(추적 중인 파일)이 있다 */
+  dirty: boolean
 }
 
 /** 입력창에서 /로 고를 수 있는 명령 (SDK SlashCommand와 같은 모양) */
@@ -196,12 +222,25 @@ export interface RateLimitInfo {
 }
 
 /** 대화창 아래 터미널의 셸. auto는 Windows면 pwsh(없으면 PowerShell), macOS면 $SHELL */
-export type TerminalShell = 'auto' | 'powershell' | 'gitbash' | 'cmd' | 'zsh' | 'bash'
+export type TerminalShell = 'auto' | 'pwsh' | 'powershell' | 'gitbash' | 'cmd' | 'wsl' | 'zsh' | 'bash' | 'fish'
+
+/** 이 컴퓨터에서 고를 수 있는 셸 (설치된 것만, auto가 맨 앞) */
+export interface TerminalShellOption {
+  id: TerminalShell
+  /** 라벨 (PWSH, GIT BASH …) */
+  label: string
+  /** 실제로 띄우는 셸 (auto를 풀어 쓴 것) */
+  kind: TerminalShell
+  /** 실행 파일 (auto면 지금 고르는 셸의 설명) */
+  note: string
+}
 
 /** 떠 있는 터미널 */
 export interface TerminalInfo {
   /** 표시 이름 (pwsh, Git Bash, zsh …) */
   shell: string
+  /** 실제로 띄운 셸 (auto를 풀어 쓴 것) */
+  kind: TerminalShell
   cwd: string
   pid: number
 }
@@ -328,6 +367,9 @@ export const IPC = {
   pickFiles: 'files:pick',
   listModels: 'agent:list-models',
   setModel: 'agent:set-model',
+  getEffort: 'agent:get-effort',
+  setEffort: 'agent:set-effort',
+  gitBranch: 'git:branch',
   loadHistory: 'agent:load-history',
   getSettingsSync: 'settings:get-sync',
   appInfo: 'app:info',
@@ -347,6 +389,8 @@ export const IPC = {
   terminalWrite: 'terminal:write',
   terminalResize: 'terminal:resize',
   terminalClose: 'terminal:close',
+  terminalShells: 'terminal:shells',
+  terminalNotify: 'terminal:notify',
   // 메인 → 렌더러
   terminalData: 'terminal:data',
   terminalExit: 'terminal:exit',
@@ -409,6 +453,11 @@ export interface WhenTerminalApi {
   listModels(projectId: string): Promise<ModelOption[]>
   /** 이 대화의 모델을 바꾼다. 실행 중이면 다음 응답부터, 아니면 다음 시작부터 */
   setModel(projectId: string, conversationId: string, option: ModelOption): Promise<void>
+  getEffort(projectId: string, conversationId: string): Promise<EffortInfo>
+  /** 이 대화의 effort를 바꾼다. null이면 기본값으로. 실행 중이면 다음 요청부터 */
+  setEffort(projectId: string, conversationId: string, effort: EffortLevel | null): Promise<void>
+  /** 대화 폴더의 지금 브랜치. git 저장소가 아니면 null */
+  gitBranch(projectId: string, conversationId: string): Promise<GitBranch | null>
   /** 저장된 세션의 지난 대화를 읽어 'history' 이벤트로 보낸다 (화면 기록이 비어 있을 때) */
   loadHistory(projectId: string, conversationId: string): Promise<void>
   /** 첫 화면을 그리기 전에 테마를 적용하려고 동기로 읽는다 */
@@ -421,7 +470,8 @@ export interface WhenTerminalApi {
   /** macOS 메뉴의 '설정…'(⌘,) */
   onOpenSettings(cb: () => void): () => void
   /** 알림을 눌렀을 때 그 대화로 */
-  onNavigate(cb: (to: { projectId: string; conversationId: string }) => void): () => void
+  /** terminal이 있으면 그 터미널(termId)을 펼친다 */
+  onNavigate(cb: (to: { projectId: string; conversationId: string; terminal?: string }) => void): () => void
   /** Dock 배지·트레이 툴팁: 확인 대기 수와 새 보고 수 */
   setBadge(waiting: number, unread: number): void
   onEvent(cb: (e: AgentEventEnvelope) => void): () => void
@@ -432,14 +482,19 @@ export interface WhenTerminalApi {
   onUsage(cb: (u: UsageInfo) => void): () => void
   /** 모든 프로젝트의 열린 대화 내용에서 찾는다 (세션 기록 기준) */
   searchConversations(query: string): Promise<SearchHit[]>
-  /** 이 대화의 터미널: 살아 있으면 그대로(지금까지의 출력과 함께), 없으면 대화 폴더에서 새로 띄운다 */
-  terminalOpen(projectId: string, conversationId: string, cols: number, rows: number): Promise<TerminalInfo & { buffer: string }>
-  terminalWrite(conversationId: string, data: string): void
-  terminalResize(conversationId: string, cols: number, rows: number): void
+  /** 터미널 하나(termId, 대화마다 여러 개): 살아 있으면 그대로(지금까지의 출력과 함께), 없으면 대화 폴더에서 새로 띄운다.
+   *  shell을 주면 그 셸로 띄우고 다음 터미널의 기본값(설정 terminalShell)으로도 저장한다 */
+  terminalOpen(projectId: string, conversationId: string, termId: string, cols: number, rows: number, shell?: TerminalShell): Promise<TerminalInfo & { buffer: string }>
+  /** 이 컴퓨터에서 고를 수 있는 셸 */
+  terminalShells(): Promise<TerminalShellOption[]>
+  terminalWrite(termId: string, data: string): void
+  terminalResize(termId: string, cols: number, rows: number): void
   /** 셸을 끝낸다 */
-  terminalClose(conversationId: string): Promise<void>
-  onTerminalData(cb: (e: { conversationId: string; data: string }) => void): () => void
-  onTerminalExit(cb: (e: { conversationId: string; code: number }) => void): () => void
+  terminalClose(termId: string): Promise<void>
+  onTerminalData(cb: (e: { termId: string; data: string }) => void): () => void
+  onTerminalExit(cb: (e: { termId: string; code: number }) => void): () => void
+  /** 터미널에서 오래 돈 명령이 끝났을 때 OS 알림 (창을 보고 있지 않을 때) */
+  notifyTerminal(projectId: string, conversationId: string, termId: string, title: string, body: string): void
   getUpdate(): Promise<UpdateState>
   /** 지금 릴리즈를 확인한다 (받는 중·받아 둔 상태면 그대로 돌려준다) */
   checkUpdate(): Promise<UpdateState>

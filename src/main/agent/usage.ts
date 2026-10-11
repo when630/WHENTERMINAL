@@ -1,6 +1,7 @@
 import type { Query } from '@anthropic-ai/claude-agent-sdk'
 import { homedir } from 'node:os'
 import type { RateLimitInfo, UsageInfo, UsageWindow } from '@shared/types'
+import { formatReset, limitLevel, type LimitLevel } from '@shared/usage'
 import { withProbe } from './commands'
 
 type Raw = Awaited<ReturnType<Query['usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET']>>
@@ -56,6 +57,34 @@ export function mergeRateLimit(u: UsageInfo | null, info: RateLimitInfo): UsageI
       : w,
   )
   return { ...u, windows }
+}
+
+/**
+ * 한도 경고 알림: 창마다 80 → 95 → 100 단계를 처음 넘을 때 한 번씩. 초기화되면(resetsAt이 바뀌면) 다시 센다.
+ * 앱을 켰을 때 이미 넘어 있으면 95 이상만 알린다 (켤 때마다 80% 알림이 뜨지 않게)
+ */
+export class UsageAlerts {
+  private seen = new Map<string, { level: LimitLevel; resetsAt: number | null }>()
+
+  check(u: UsageInfo): { id: string; title: string; body: string }[] {
+    if (!u.available) return []
+    const out: { id: string; title: string; body: string }[] = []
+    for (const w of u.windows) {
+      const level = limitLevel(w)
+      const prev = this.seen.get(w.id)
+      const fresh = !prev || prev.resetsAt !== w.resetsAt
+      const before = fresh ? 0 : prev.level
+      this.seen.set(w.id, { level: Math.max(level, before) as LimitLevel, resetsAt: w.resetsAt })
+      if (level <= before || (!prev && level < 95)) continue
+      const reset = w.resetsAt ? formatReset(w.resetsAt) : ''
+      out.push(
+        level === 100
+          ? { id: w.id, title: `LIMIT · ${w.label} 한도를 다 썼어요`, body: reset ? `${reset}. 그 전에는 요청이 거절될 수 있어요` : '요청이 거절될 수 있어요' }
+          : { id: w.id, title: `LIMIT · ${w.label} ${w.percent ?? level}%`, body: reset || '곧 한도에 닿아요' },
+      )
+    }
+    return out
+  }
 }
 
 /** 살아 있는 세션이 있으면 거기서, 없으면 CLI만 잠깐 띄워 받는다 (실험적 API) */

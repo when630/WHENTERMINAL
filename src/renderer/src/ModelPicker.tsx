@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import type { ModelOption, UsageInfo } from '@shared/types'
+import { EFFORT_LABEL, type EffortInfo, type EffortLevel, type ModelOption, type UsageInfo } from '@shared/types'
+import { modelFamily as family } from '@shared/usage'
 
 interface Props {
   projectId: string
@@ -9,9 +10,6 @@ interface Props {
   choice?: string
   usage: UsageInfo | null
 }
-
-/** 모델 계열 이름 ('Fable 5.1' → 'fable', 'claude-opus-5-5' → 'opus') */
-const family = (s: string): string => s.toLowerCase().replace(/^claude-/, '').split(/[\s-]/)[0]
 
 /**
  * 모델 칸: 누르면 고를 수 있는 모델이 펼쳐진다. 주간 한도를 다 쓴 계열에는 표시를 붙인다.
@@ -97,4 +95,102 @@ export function ModelPicker({ projectId, conversationId, current, choice, usage 
       )}
     </div>
   )
+}
+
+interface EffortProps {
+  /** 이 대화에서 고른 값. 없으면 기본값 */
+  choice?: EffortLevel
+  info: EffortInfo | null
+  onPick: (effort: EffortLevel | null) => void
+}
+
+/** 기본값 행에 붙일 설명 */
+const effortDefault = (info: EffortInfo | null): string => (info?.saved ? `설정을 따라요 · ${EFFORT_LABEL[info.saved]}` : '모델 기본값을 따라요')
+
+/**
+ * effort 칸: 누르면 지금 모델이 받는 단계가 펼쳐진다. 위아래·Ctrl+N/P로 이동, Enter로 고르기, Esc로 닫기.
+ * 고르지 않았으면 설정(effortLevel)이나 모델 기본값을 쓴다
+ */
+export function EffortPicker({ choice, info, onPick }: EffortProps): React.JSX.Element {
+  const [open, setOpen] = useState(false)
+  const [index, setIndex] = useState(0)
+  const boxRef = useRef<HTMLDivElement>(null)
+  const rows: (EffortLevel | null)[] = [null, ...(info?.levels ?? [])]
+  const none = info !== null && info.levels.length === 0
+
+  useEffect(() => {
+    if (!open) return
+    setIndex(Math.max(0, rows.indexOf(choice ?? null)))
+    const close = (e: MouseEvent): void => {
+      if (!boxRef.current?.contains(e.target as Node)) setOpen(false)
+    }
+    window.addEventListener('mousedown', close)
+    return () => window.removeEventListener('mousedown', close)
+  }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const pick = (e: EffortLevel | null): void => {
+    setOpen(false)
+    onPick(e)
+  }
+  const onKey = (e: React.KeyboardEvent): void => {
+    const ctrl = e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey
+    const step = e.key === 'ArrowDown' || (ctrl && (e.code === 'KeyN' || e.code === 'KeyJ')) ? 1 : e.key === 'ArrowUp' || (ctrl && (e.code === 'KeyP' || e.code === 'KeyK')) ? -1 : 0
+    if (step) setIndex((i) => (i + step + rows.length) % rows.length)
+    else if (e.key === 'Enter') pick(rows[index])
+    else if (e.key === 'Escape') setOpen(false)
+    else return
+    e.preventDefault()
+    e.stopPropagation()
+  }
+
+  const shown = choice ? EFFORT_LABEL[choice] : info?.saved ? EFFORT_LABEL[info.saved] : 'DEFAULT'
+  return (
+    <div className="model-pick" ref={boxRef}>
+      <button
+        type="button"
+        className={`meta ${open ? 'open' : ''} ${choice ? '' : 'meta-default'}`}
+        title={none ? '이 모델은 effort를 받지 않아요' : choice ? '이 대화에서 고른 effort예요' : effortDefault(info)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        disabled={none}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <span className="meta-k">EFFORT</span>
+        <span className="meta-v effort-v">{none ? '–' : shown}</span>
+        <span className="model-caret" aria-hidden="true">▾</span>
+      </button>
+      {open && (
+        <div className="model-list effort-list" role="listbox" aria-label="effort 고르기" tabIndex={-1} data-keys-own="true" onKeyDown={onKey} ref={(el) => { el?.focus() }}>
+          {rows.map((r, i) => {
+            const on = (choice ?? null) === r
+            return (
+              <button
+                key={r ?? 'default'}
+                type="button"
+                role="option"
+                aria-selected={on}
+                className={`model-row ${i === index ? 'hi' : ''} ${on ? 'on' : ''}`}
+                onMouseMove={() => i !== index && setIndex(i)}
+                onClick={() => pick(r)}
+              >
+                <span className="model-name">
+                  {r ? EFFORT_LABEL[r] : 'Default'}
+                  {on && <span className="model-now">IN USE</span>}
+                </span>
+                <span className="model-desc">{r ? EFFORT_NOTE[r] : effortDefault(info)}</span>
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+const EFFORT_NOTE: Record<EffortLevel, string> = {
+  low: '가장 빠르고 적게 써요. 간단한 질문·수정',
+  medium: '속도와 깊이의 균형',
+  high: '깊이 생각해요',
+  xhigh: '더 깊이. 어려운 문제',
+  max: '가장 깊이. 이 세션에만 적용돼요 (설정에 저장되지 않음)',
 }

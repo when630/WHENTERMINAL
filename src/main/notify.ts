@@ -16,8 +16,27 @@ export class Notifier {
     private readonly store: ProjectStore,
     private readonly getWin: () => BrowserWindow | null,
     private readonly getSettings: () => Settings,
-    private readonly open: (projectId: string, conversationId: string) => void,
+    private readonly open: (projectId: string, conversationId: string, terminal?: string) => void,
   ) {}
+
+  private quiet(): boolean {
+    const win = this.getWin()
+    return !!win && win.isVisible() && win.isFocused() && !this.getSettings().notify.whenFocused
+  }
+
+  /** 아래 터미널에서 오래 돈 명령이 끝났다 (렌더러가 그 터미널을 보고 있지 않을 때만 보낸다) */
+  terminalDone(projectId: string, conversationId: string, termId: string, title: string, body: string): void {
+    if (!this.getSettings().notify.terminal || this.quiet()) return
+    const project = this.store.get(projectId)
+    if (!project) return
+    this.show(`term:${termId}`, `${title} · ${project.name}`, body, () => this.open(projectId, conversationId, termId))
+  }
+
+  /** 구독 한도 경고 (창 단위로 한 번씩) */
+  usage(id: string, title: string, body: string): void {
+    if (!this.getSettings().notify.usage) return
+    this.show(`usage:${id}`, title, body, () => this.open('', ''))
+  }
 
   handle({ projectId, conversationId, event }: AgentEventEnvelope): void {
     const s = this.getSettings().notify
@@ -30,24 +49,25 @@ export class Notifier {
 
     if (event.kind === 'permission_request' && s.approval) {
       const r = event.request
-      this.show(conversationId, `NEEDS YOU · ${project.name}`, r.title ?? `${r.toolName} 실행을 허락해 달라고 해요`, projectId)
+      this.show(conversationId, `NEEDS YOU · ${project.name}`, r.title ?? `${r.toolName} 실행을 허락해 달라고 해요`, () => this.open(projectId, conversationId))
       if (isMac && !focused) app.dock?.bounce('informational')
     } else if (event.kind === 'status' && s.done && (event.status === 'done' || event.status === 'error')) {
       const head = event.status === 'done' ? 'DONE' : 'ERROR'
-      this.show(conversationId, `${head} · ${project.name}`, conv.title, projectId)
+      this.show(conversationId, `${head} · ${project.name}`, conv.title, () => this.open(projectId, conversationId))
     } else if (event.kind === 'permission_resolved') {
       // 앱에서 이미 응답했으면 남은 확인 알림을 치운다
       this.shown.get(conversationId)?.close()
     }
   }
 
-  private show(conversationId: string, title: string, body: string, projectId: string): void {
+  /** key가 같은 알림은 새 것으로 바꾼다 */
+  private show(key: string, title: string, body: string, onClick: () => void): void {
     if (!Notification.isSupported()) return
-    this.shown.get(conversationId)?.close()
+    this.shown.get(key)?.close()
     const n = new Notification({ title, body, silent: false })
-    n.on('click', () => this.open(projectId, conversationId))
-    n.on('close', () => this.shown.get(conversationId) === n && this.shown.delete(conversationId))
-    this.shown.set(conversationId, n)
+    n.on('click', onClick)
+    n.on('close', () => this.shown.get(key) === n && this.shown.delete(key))
+    this.shown.set(key, n)
     n.show()
   }
 }

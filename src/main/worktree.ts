@@ -3,6 +3,7 @@ import { existsSync, mkdirSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { promisify } from 'node:util'
+import type { GitBranch } from '@shared/types'
 
 const run = promisify(execFile)
 const git = async (cwd: string, ...args: string[]): Promise<string> => (await run('git', ['-C', cwd, ...args], { timeout: 20_000 })).stdout.trim()
@@ -32,6 +33,29 @@ async function removeWorktreeDir(projectPath: string, path: string, force: boole
     }
   }
   return false
+}
+
+/** 지금 브랜치. 분리된 HEAD면 짧은 커밋. git 저장소가 아니면 null */
+export async function branchOf(path: string): Promise<GitBranch | null> {
+  let name: string
+  let detached = false
+  try {
+    name = await git(path, 'symbolic-ref', '--short', '-q', 'HEAD')
+  } catch {
+    try {
+      name = await git(path, 'rev-parse', '--short', 'HEAD')
+      detached = true
+    } catch {
+      return null
+    }
+  }
+  let dirty = false
+  try {
+    dirty = (await git(path, 'status', '--porcelain', '--untracked-files=no')).length > 0
+  } catch {
+    // 상태는 몰라도 된다
+  }
+  return { name, detached, dirty }
 }
 
 export async function isGitRepo(path: string): Promise<boolean> {

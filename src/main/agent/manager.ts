@@ -1,5 +1,5 @@
-import type { Query } from '@anthropic-ai/claude-agent-sdk'
-import { cwdOf, type ModelOption, type AgentEventEnvelope, type TaskOutput, AgentMode, PermissionDecision, RateLimitInfo, SlashCommandInfo } from '@shared/types'
+import { resolveSettings, type Query } from '@anthropic-ai/claude-agent-sdk'
+import { cwdOf, EFFORT_LEVELS, type EffortInfo, type EffortLevel, type ModelOption, type AgentEventEnvelope, type TaskOutput, AgentMode, PermissionDecision, RateLimitInfo, SlashCommandInfo } from '@shared/types'
 import type { ProjectStore } from '../store'
 import { AgentSession } from './session'
 import { commandsFor, remember, withProbe } from './commands'
@@ -141,7 +141,7 @@ export class AgentManager {
     if (this.models && Date.now() - this.models.at < 10 * 60_000) return this.models.list
     const project = this.store.get(projectId)
     const fetch = (q: Query): Promise<ModelOption[]> =>
-      q.supportedModels().then((l) => l.map((m) => ({ value: m.value, displayName: m.displayName, description: m.description, resolvedModel: m.resolvedModel })))
+      q.supportedModels().then((l) => l.map((m) => ({ value: m.value, displayName: m.displayName, description: m.description, resolvedModel: m.resolvedModel, efforts: m.supportsEffort === false ? [] : (m.supportedEffortLevels ?? undefined) })))
     const live = this.liveQuery()
     const list = live ? await fetch(live) : await withProbe(project?.path ?? process.cwd(), fetch)
     this.models = { at: Date.now(), list }
@@ -157,6 +157,37 @@ export class AgentManager {
     const label = /^claude-/.test(id) ? modelLabel(id) : option.displayName
     this.store.updateConversation(projectId, conversationId, { model: id, modelLabel: label })
     this.broadcast({ projectId, conversationId, event: { kind: 'model', model: id, label } })
+  }
+
+  /** 이 대화의 모델이 받는 effort 단계와, 고르지 않았을 때 쓰는 설정값 */
+  async getEffort(projectId: string, conversationId: string): Promise<EffortInfo> {
+    const project = this.store.get(projectId)
+    const conv = this.store.getConversation(projectId, conversationId)
+    const list = await this.listModels(projectId).catch(() => [] as ModelOption[])
+    const choice = conv?.modelChoice ?? 'default'
+    const row =
+      list.find((m) => m.value === choice) ??
+      (conv?.model ? list.find((m) => m.value === conv.model || m.resolvedModel === conv.model) : undefined)
+    const levels = row?.efforts ?? EFFORT_LEVELS
+    let saved: EffortLevel | null = null
+    try {
+      const { effective } = await resolveSettings({ cwd: project && conv ? cwdOf(project, conv) : undefined })
+      const model = conv?.model?.replace(/\[.*\]$/, '')
+      const fromEnv = process.env.CLAUDE_CODE_EFFORT_LEVEL as EffortLevel | undefined
+      saved = (model ? effective.modelSettings?.[model]?.effortLevel : undefined) ?? effective.effortLevel ?? (fromEnv && EFFORT_LEVELS.includes(fromEnv) ? fromEnv : null)
+    } catch {
+      // 설정을 못 읽으면 모델 기본값으로 안내
+    }
+    return { levels, saved }
+  }
+
+  async setEffort(projectId: string, conversationId: string, effort: EffortLevel | null): Promise<void> {
+    this.store.updateConversation(projectId, conversationId, { effort: effort ?? undefined })
+    try {
+      await this.sessions.get(conversationId)?.setEffort(effort)
+    } catch (err) {
+      this.broadcast({ projectId, conversationId, event: { kind: 'error', message: `effort를 바꾸지 못했어요: ${err instanceof Error ? err.message : String(err)}` } })
+    }
   }
 
   async loadHistory(projectId: string, conversationId: string): Promise<void> {
@@ -312,6 +343,7 @@ export class AgentManager {
       mode: conv.mode,
       resumeSessionId: conv.sessionId,
       model: conv.modelChoice && conv.modelChoice !== 'default' ? conv.modelChoice : undefined,
+      effort: conv.effort,
       emit: (event) => {
         // 실행이 끝나 자리가 나면 다음 차례를 시작한다
         if (event.kind === 'status' && event.status !== 'running' && event.status !== 'waiting_approval' && event.status !== 'queued') {

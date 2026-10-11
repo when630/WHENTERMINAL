@@ -13,6 +13,8 @@ import { HelpOverlay } from './HelpOverlay'
 import { SearchOverlay } from './SearchOverlay'
 import type { SearchHit } from '@shared/types'
 import { usePresence } from './motion'
+import { newTerminal, showTerminal, stepTerminal } from './terminal'
+import { pruneDrafts } from './drafts'
 
 export type View = { screen: 'home' } | { screen: 'chat'; projectId: string; conversationId: string } | { screen: 'settings'; back: View }
 
@@ -59,7 +61,11 @@ export function App(): React.JSX.Element {
     const offs = [
       window.api.onSettingsChanged(setSettings),
       window.api.onOpenSettings(() => openSettingsRef.current()),
-      window.api.onNavigate(({ projectId, conversationId }) => openChatRef.current(projectId, conversationId)),
+      window.api.onNavigate(({ projectId, conversationId, terminal }) => {
+        openChatRef.current(projectId, conversationId)
+        // 터미널 알림: 대화를 연 뒤 그 터미널을 펼친다
+        if (terminal) requestAnimationFrame(() => showTerminal(conversationId, terminal))
+      }),
     ]
     return () => offs.forEach((off) => off())
   }, [])
@@ -67,6 +73,8 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     window.api.listProjects().then((list) => {
       setProjects(list)
+      // 닫아서 없어진 대화의 입력 초안을 치운다 (홈 작업 지시창은 프로젝트별)
+      pruneDrafts(new Set(list.flatMap((p) => [`home:${p.id}`, ...p.conversations.map((c) => c.id)])))
       // 저장된 보고서로 보고함을 되살린다 (이번 실행에서 이미 상태가 있는 대화는 그대로)
       setConvs((prev) => {
         const next = { ...prev }
@@ -277,7 +285,7 @@ export function App(): React.JSX.Element {
     if (owner?.menuOpen === 'true' || owner?.keysOwn === 'true') return
     // 터미널에 포커스가 있으면 키는 셸 몫이다 (Esc·Ctrl+C·Ctrl+L·Ctrl+K …). 앱을 오가는 키 몇 개만 앱이 받는다
     if ((e.target as HTMLElement | null)?.closest?.('[data-terminal]')) {
-      const app = (['terminal', 'goHome', 'help', 'search', 'nextConversation', 'prevConversation', 'newConversation', 'openSettings'] as ActionId[]).some((id) => matches(e, km[id]))
+      const app = (['terminal', 'terminalNew', 'terminalNext', 'terminalPrev', 'goHome', 'help', 'search', 'nextConversation', 'prevConversation', 'newConversation', 'openSettings'] as ActionId[]).some((id) => matches(e, km[id]))
       if (!app && projectIndexFromKey(e, physicalCode(e)) === null) return
       // 셸에는 가지 않게
       e.stopPropagation()
@@ -407,6 +415,9 @@ export function App(): React.JSX.Element {
     if (is('stopTask')) return take(() => chatPanelRef.current?.stop())
     if (is('renameConversation')) return take(() => chatPanelRef.current?.rename())
     if (is('terminal')) return take(() => chatPanelRef.current?.terminal())
+    if (is('terminalNew')) return take(() => newTerminal(projectId, conversationId))
+    if (is('terminalNext') || is('terminalPrev')) return take(() => stepTerminal(projectId, conversationId, is('terminalPrev') ? -1 : 1))
+    if (is('cycleEffort')) return take(() => chatPanelRef.current?.cycleEffort())
     // 새 탭: 탭 줄의 +와 같다 (설정에 따라 작업 공간을 만든다)
     if (is('newConversation')) {
       return take(() => void window.api.addConversation(projectId).then((c) => setView({ screen: 'chat', projectId, conversationId: c.id })))

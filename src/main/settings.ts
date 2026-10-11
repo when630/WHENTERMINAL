@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { ACTIONS, APP_ICONS, DEFAULT_SETTINGS, normalize, THEMES, type Settings } from '@shared/keymap'
 import type { TerminalShell } from '@shared/types'
 
-const TERMINAL_SHELLS: TerminalShell[] = ['auto', 'powershell', 'gitbash', 'cmd', 'zsh', 'bash']
+const TERMINAL_SHELLS: TerminalShell[] = ['auto', 'pwsh', 'powershell', 'gitbash', 'cmd', 'wsl', 'zsh', 'bash', 'fish']
 
 /** userData/settings.json. 읽지 못하거나 모르는 값은 기본값으로 */
 export class SettingsStore {
@@ -48,6 +48,8 @@ function sanitize(raw: unknown): Settings {
   const notify = {
     approval: typeof n.approval === 'boolean' ? n.approval : d.approval,
     done: typeof n.done === 'boolean' ? n.done : d.done,
+    terminal: typeof n.terminal === 'boolean' ? n.terminal : d.terminal,
+    usage: typeof n.usage === 'boolean' ? n.usage : d.usage,
     whenFocused: typeof n.whenFocused === 'boolean' ? n.whenFocused : d.whenFocused,
   }
   const maxConcurrent = Number.isInteger(o.maxConcurrent) && o.maxConcurrent! >= 0 && o.maxConcurrent! <= 16 ? o.maxConcurrent! : DEFAULT_SETTINGS.maxConcurrent

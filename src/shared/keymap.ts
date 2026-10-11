@@ -10,6 +10,7 @@ export type ActionId =
   | 'allow' | 'always' | 'deny'
   | 'nextConversation' | 'prevConversation' | 'closeConversation' | 'closeProject' | 'clear' | 'compact' | 'cycleMode' | 'interrupt'
   | 'panelNext' | 'panelPrev' | 'panelBack' | 'stopTask' | 'renameConversation' | 'newConversation' | 'terminal'
+  | 'terminalNew' | 'terminalNext' | 'terminalPrev' | 'terminalFind' | 'cycleEffort'
 
 export type ActionScope = 'system' | 'anywhere' | 'home' | 'chat' | 'approval'
 
@@ -49,6 +50,11 @@ export const ACTIONS: ActionDef[] = [
   { id: 'deny', label: 'Deny', scope: 'approval', default: 'N' },
   { id: 'newConversation', label: 'New tab', scope: 'chat', default: 'Ctrl+Shift+T' },
   { id: 'terminal', label: 'Terminal: open / focus / fold', scope: 'chat', default: 'Ctrl+T' },
+  { id: 'terminalNew', label: 'Terminal: new tab', scope: 'chat', default: 'Ctrl+Alt+T' },
+  { id: 'terminalNext', label: 'Terminal: next tab', scope: 'chat', default: 'Ctrl+Alt+J' },
+  { id: 'terminalPrev', label: 'Terminal: previous tab', scope: 'chat', default: 'Ctrl+Alt+K' },
+  // 터미널에 포커스가 있을 때만 (xterm이 받는다)
+  { id: 'terminalFind', label: 'Terminal: find in output', scope: 'chat', default: 'Ctrl+F' },
   { id: 'nextConversation', label: 'Next tab', scope: 'chat', default: 'Ctrl+Tab' },
   { id: 'prevConversation', label: 'Previous tab', scope: 'chat', default: 'Ctrl+Shift+Tab' },
   { id: 'closeConversation', label: 'Close tab (twice)', scope: 'chat', default: 'Ctrl+W' },
@@ -56,6 +62,7 @@ export const ACTIONS: ActionDef[] = [
   { id: 'compact', label: 'Compact', scope: 'chat', default: 'Ctrl+Shift+L' },
   { id: 'closeProject', label: 'Close project (twice)', scope: 'chat', default: 'Ctrl+Shift+W' },
   { id: 'cycleMode', label: 'Cycle mode', scope: 'chat', default: 'Shift+Tab' },
+  { id: 'cycleEffort', label: 'Cycle effort', scope: 'chat', default: 'Ctrl+Shift+O' },
   { id: 'interrupt', label: 'Interrupt (alt. to Esc)', scope: 'chat', default: 'Ctrl+[' },
   // 오른쪽 패널의 하위 에이전트·백그라운드 작업 세부 내용
   { id: 'panelNext', label: 'Next agent / task details', scope: 'chat', default: 'Ctrl+J' },
@@ -130,6 +137,10 @@ export interface NotifySettings {
   approval: boolean
   /** 작업이 끝나면 (오류·중단 포함) */
   done: boolean
+  /** 아래 터미널에서 오래 돈 명령이 끝나면 */
+  terminal: boolean
+  /** 구독 한도가 80%·95%를 넘거나 다 쓰면 */
+  usage: boolean
   /** 창을 보고 있을 때도 알림 */
   whenFocused: boolean
 }
@@ -162,7 +173,7 @@ export interface Settings {
   keymap: Partial<Keymap>
 }
 
-export const DEFAULT_SETTINGS: Settings = { theme: 'poster', appIcon: 'prompt', maxConcurrent: 3, worktree: true, openAtLogin: false, terminalShell: 'auto', notify: { approval: true, done: true, whenFocused: false }, keymap: {} }
+export const DEFAULT_SETTINGS: Settings = { theme: 'poster', appIcon: 'prompt', maxConcurrent: 3, worktree: true, openAtLogin: false, terminalShell: 'auto', notify: { approval: true, done: true, terminal: true, usage: true, whenFocused: false }, keymap: {} }
 
 export function effectiveKeymap(settings: Settings): Keymap {
   return { ...DEFAULT_KEYMAP, ...settings.keymap }

@@ -1,6 +1,6 @@
 import { query, type SlashCommand, type CanUseTool, type PermissionResult, type PermissionUpdate, type Query, type SDKMessage } from '@anthropic-ai/claude-agent-sdk'
 import { randomUUID } from 'node:crypto'
-import { isAgentMode, type AgentEvent, type AgentMode, type AgentStatus, type BackgroundTask, type ContextInfo, type PermissionDecision, type RateLimitInfo } from '@shared/types'
+import { isAgentMode, type EffortLevel, type AgentEvent, type AgentMode, type AgentStatus, type BackgroundTask, type ContextInfo, type PermissionDecision, type RateLimitInfo } from '@shared/types'
 import { MessageQueue } from './message-queue'
 import { claudeExecutable } from '../executable'
 import { outputPathIn, rememberTaskOutput } from './task-output'
@@ -17,6 +17,8 @@ export interface AgentSessionOptions {
   mode: AgentMode
   /** 사용자가 고른 모델. 없으면 설정의 기본 모델 */
   model?: string
+  /** 사용자가 고른 effort. 없으면 모델·설정의 기본값 */
+  effort?: EffortLevel
   /** 이전에 저장한 SDK 세션 ID. 있으면 이어서 시작 */
   resumeSessionId?: string
   emit: (event: AgentEvent) => void
@@ -90,6 +92,12 @@ export class AgentSession {
   async setModel(value: string | undefined): Promise<void> {
     this.opts.model = value
     if (this.q) await this.q.setModel(value)
+  }
+
+  /** effort 바꾸기. 살아 있으면 다음 요청부터(세션 단위 설정), 아니면 다음 시작 때. null이면 모델 기본값으로 */
+  async setEffort(effort: EffortLevel | null): Promise<void> {
+    this.opts.effort = effort ?? undefined
+    if (this.q) await this.q.applyFlagSettings({ effortLevel: effort })
   }
 
   /** 살아 있는 SDK Query. 프로세스가 끝났으면 null */
@@ -209,6 +217,7 @@ export class AgentSession {
         systemPrompt: { type: 'preset', preset: 'claude_code' },
         resume: this.sessionId,
         model: this.opts.model,
+        effort: this.opts.effort,
         pathToClaudeCodeExecutable: claudeExecutable(),
       },
     })
