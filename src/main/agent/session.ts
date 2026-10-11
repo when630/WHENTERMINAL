@@ -1,6 +1,6 @@
 import { query, type SlashCommand, type CanUseTool, type PermissionResult, type PermissionUpdate, type Query, type SDKMessage } from '@anthropic-ai/claude-agent-sdk'
 import { randomUUID } from 'node:crypto'
-import { isAgentMode, type AgentEvent, type AgentMode, type AgentStatus, type ContextInfo, type PermissionDecision, type RateLimitInfo } from '@shared/types'
+import { isAgentMode, type AgentEvent, type AgentMode, type AgentStatus, type BackgroundTask, type ContextInfo, type PermissionDecision, type RateLimitInfo } from '@shared/types'
 import { MessageQueue } from './message-queue'
 import { claudeExecutable } from '../executable'
 
@@ -63,6 +63,9 @@ export class AgentSession {
   /** 사용자가 요청한 컴팩트가 진행 중. 이때 오는 result는 작업 완료가 아니므로 상태를 바꾸지 않는다 */
   private manualCompact = false
   private model?: string
+  /** 백그라운드 작업 id → 띄운 도구 호출 (task_started에서) */
+  private taskTools = new Map<string, string>()
+  private background: BackgroundTask[] = []
 
   constructor(private readonly opts: AgentSessionOptions) {
     this.mode = opts.mode
@@ -131,6 +134,16 @@ export class AgentSession {
     this.setStatus('stopped')
   }
 
+  /** 백그라운드 작업 하나를 멈춘다. 끝나면 background_tasks_changed로 목록에서 빠진다 */
+  async stopTask(taskId: string): Promise<void> {
+    if (!this.q) return
+    try {
+      await this.q.stopTask(taskId)
+    } catch (err) {
+      this.opts.emit({ kind: 'error', message: `백그라운드 작업을 멈추지 못했어요: ${err instanceof Error ? err.message : String(err)}` })
+    }
+  }
+
   /** 모드를 바꾼다. 계정·모델이 그 모드를 지원하지 않으면(auto 등) 원래 모드를 유지하고 알린다 */
   async setMode(mode: AgentMode): Promise<void> {
     if (this.q) {
@@ -166,6 +179,7 @@ export class AgentSession {
     this.q?.close()
     this.q = null
     this.queue = null
+    this.setBackground([])
   }
 
   private start(): void {
@@ -230,6 +244,8 @@ export class AgentSession {
         this.queue?.close()
         this.q = null
         this.queue = null
+        // 백그라운드 작업은 CLI 프로세스와 함께 끝난다
+        this.setBackground([])
       }
     }
   }
@@ -264,6 +280,28 @@ export class AgentSession {
           this.opts.emit({ kind: 'compacted', trigger: m.trigger, preTokens: m.pre_tokens, postTokens: m.post_tokens })
           this.endCompacting()
           void this.refreshContext()
+        } else if (msg.subtype === 'task_started') {
+          if (msg.tool_use_id) this.taskTools.set(msg.task_id, msg.tool_use_id)
+          // background_tasks_changed가 먼저 왔으면 도구 호출만 채워 넣는다
+          if (msg.tool_use_id && this.background.some((t) => t.id === msg.task_id && !t.toolUseId)) {
+            this.setBackground(this.background.map((t) => (t.id === msg.task_id ? { ...t, toolUseId: msg.tool_use_id } : t)))
+          }
+        } else if (msg.subtype === 'task_notification') {
+          this.taskTools.delete(msg.task_id)
+        } else if (msg.subtype === 'background_tasks_changed') {
+          // 전체 목록이 온다 (바꿔치기). 활동이 아닌 감시자(ambient)는 뺀다
+          const now = Date.now()
+          this.setBackground(
+            msg.tasks
+              .filter((t) => !t.ambient)
+              .map((t) => ({
+                id: t.task_id,
+                type: t.task_type,
+                description: t.description,
+                toolUseId: this.taskTools.get(t.task_id),
+                startedAt: this.background.find((b) => b.id === t.task_id)?.startedAt ?? now,
+              })),
+          )
         }
         break
       case 'stream_event':
@@ -354,6 +392,12 @@ export class AgentSession {
       this.opts.emit({ kind: 'permission_resolved', requestId })
     }
     this.pending.clear()
+  }
+
+  private setBackground(tasks: BackgroundTask[]): void {
+    if (tasks.length === 0 && this.background.length === 0) return
+    this.background = tasks
+    this.opts.emit({ kind: 'background', tasks })
   }
 
   private setStatus(status: AgentStatus): void {

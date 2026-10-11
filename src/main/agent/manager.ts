@@ -204,6 +204,10 @@ export class AgentManager {
     await this.sessions.get(conversationId)?.interrupt()
   }
 
+  async stopTask(_projectId: string, conversationId: string, taskId: string): Promise<void> {
+    await this.sessions.get(conversationId)?.stopTask(taskId)
+  }
+
   async setMode(projectId: string, conversationId: string, mode: AgentMode): Promise<void> {
     const session = this.sessions.get(conversationId)
     // 세션이 있으면 바뀐 결과가 'mode' 이벤트로 와서 저장된다 (아래 emit). 없으면 다음 시작 때 쓰도록 저장만

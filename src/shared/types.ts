@@ -200,6 +200,17 @@ export type HistoryItem =
   | { type: 'tool'; toolUseId: string; name: string; input: unknown; result?: string; isError?: boolean }
   | { type: 'divider'; text: string }
 
+/** 턴이 끝나도 살아 있는 백그라운드 작업 (셸·모니터·하위 에이전트 등). SDK background_tasks_changed에서 */
+export interface BackgroundTask {
+  id: string
+  /** SDK task_type 그대로 (local_bash, local_agent …) */
+  type: string
+  description: string
+  /** 이 작업을 띄운 도구 호출. 화면 기록의 도구 이름·명령을 찾는 데 쓴다 */
+  toolUseId?: string
+  startedAt: number
+}
+
 /** 메인 → 렌더러 이벤트 (대화 단위) */
 export type AgentEvent =
   | { kind: 'status'; status: AgentStatus }
@@ -221,6 +232,8 @@ export type AgentEvent =
   | { kind: 'history'; items: HistoryItem[] }
   /** 대기열 순번 (1부터) */
   | { kind: 'queue'; position: number }
+  /** 살아 있는 백그라운드 작업 전체 (바꿔치기) */
+  | { kind: 'background'; tasks: BackgroundTask[] }
 
 export interface AgentEventEnvelope {
   projectId: string
@@ -240,6 +253,7 @@ export const IPC = {
   startTask: 'tasks:start',
   send: 'agent:send',
   interrupt: 'agent:interrupt',
+  stopTask: 'agent:stop-task',
   setMode: 'agent:set-mode',
   respondPermission: 'agent:respond-permission',
   compact: 'agent:compact',
@@ -295,6 +309,8 @@ export interface WhenTerminalApi {
   startTask(projectId: string, text: string, continueId?: string): Promise<string>
   send(projectId: string, conversationId: string, text: string): Promise<void>
   interrupt(projectId: string, conversationId: string): Promise<void>
+  /** 백그라운드 작업(셸·모니터 등) 하나만 멈춘다. 대화의 실행은 그대로 */
+  stopTask(projectId: string, conversationId: string, taskId: string): Promise<void>
   setMode(projectId: string, conversationId: string, mode: AgentMode): Promise<void>
   respondPermission(projectId: string, conversationId: string, requestId: string, decision: PermissionDecision): Promise<void>
   /** 대화 내용을 요약해 컨텍스트를 줄인다. instructions는 요약할 때 중점을 둘 내용 */

@@ -3,11 +3,13 @@ import { HOME_ROW } from './keys'
 import { reducedMotion } from './motion'
 import { Keys } from './KeyHint'
 import { useKeymap } from './settings'
-import { STAGES, type TaskRef } from './state'
+import { STAGES, type BackgroundRef, type TaskRef } from './state'
 
 interface Props {
   running: TaskRef[]
   reports: TaskRef[]
+  /** 턴이 끝나도 도는 셸·모니터 등 */
+  background: BackgroundRef[]
   hotkey: string | null
 }
 
@@ -15,28 +17,57 @@ interface Props {
 /** 초당 이동 거리(px). 길이가 달라도 읽는 속도가 같게 */
 const SPEED = 46
 
-export function Ticker({ running, reports, hotkey }: Props): React.JSX.Element {
+export function Ticker({ running, reports, background, hotkey }: Props): React.JSX.Element {
   const km = useKeymap()
   const runRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const el = runRef.current
-    if (!el || reducedMotion()) return
-    let offset = 0
+    const box = el?.parentElement
+    if (!el || !box) return
+    // 한 벌이 창 너비보다 짧으면 다음 벌이 화면 가운데서 튀어나오므로, 한 벌의 최소 너비를 창 너비로 맞춘다
+    const fit = (): void => el.style.setProperty('--ticker-w', `${box.getBoundingClientRect().width}px`)
+    fit()
+    const ro = new ResizeObserver(fit)
+    ro.observe(box)
+    // 처음에는 오른쪽 끝 바깥에서 들어온다
+    let offset = -box.clientWidth
     let last = performance.now()
     let raf = 0
     const tick = (now: number): void => {
-      // 창이 숨어 있다 돌아오면 dt가 커지므로 상한을 둔다
-      const dt = Math.min(now - last, 64) / 1000
+      // 프레임이 드물게 와도(부하·절전) 속도는 그대로. 창이 숨었다 돌아올 때는 visibilitychange에서 last를 다시 잡는다
+      const dt = Math.min(now - last, 250) / 1000
       last = now
       const half = el.scrollWidth / 2
       if (half > 0) {
-        offset = (offset + SPEED * dt) % half
+        offset += SPEED * dt
+        if (offset >= half) offset %= half
         el.style.transform = `translate3d(${-offset}px, 0, 0)`
       }
       raf = requestAnimationFrame(tick)
     }
-    raf = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(raf)
+    const start = (): void => {
+      cancelAnimationFrame(raf)
+      if (reducedMotion()) {
+        el.style.transform = ''
+        return
+      }
+      last = performance.now()
+      raf = requestAnimationFrame(tick)
+    }
+    const onVisible = (): void => {
+      if (!document.hidden) start()
+    }
+    // 앱이 떠 있는 동안 OS의 애니메이션 효과 설정이 바뀌어도 따라간다
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)')
+    start()
+    document.addEventListener('visibilitychange', onVisible)
+    mq.addEventListener('change', start)
+    return () => {
+      cancelAnimationFrame(raf)
+      ro.disconnect()
+      document.removeEventListener('visibilitychange', onVisible)
+      mq.removeEventListener('change', start)
+    }
   }, [])
   const unread = reports.filter((r) => r.task.unread).length
   const parts: { text: string; alert?: boolean; keys?: string; after?: string }[] = running.map((r) => {
@@ -45,7 +76,10 @@ export function Ticker({ running, reports, hotkey }: Props): React.JSX.Element {
     if (r.state.status === 'queued') return { text: `${name}  QUEUED` }
     return { text: `${name}  ${STAGES[Math.min(r.task.stage, STAGES.length - 1)]} · ${r.task.activity}` }
   })
-  if (running.length === 0) parts.push({ text: '■ NO RUNNING TASKS · ', keys: km.dispatch, after: ' NEW TASK' })
+  for (const b of background) {
+    parts.push({ text: `■ ${HOME_ROW[b.projectIndex] ?? ''} ${b.project.name.toUpperCase()}  ${b.label}${b.text ? ` · ${b.text}` : ''}` })
+  }
+  if (running.length === 0 && background.length === 0) parts.push({ text: '■ NO RUNNING TASKS · ', keys: km.dispatch, after: ' NEW TASK' })
   if (unread > 0) parts.push({ text: `■ ${unread} NEW REPORT${unread > 1 ? 'S' : ''}` })
   if (hotkey) parts.push({ text: '■ ', keys: hotkey, after: ' SUMMON' })
 

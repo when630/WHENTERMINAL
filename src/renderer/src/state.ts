@@ -1,4 +1,4 @@
-import { openConversations, type AgentEvent, type AgentMode, type AgentStatus, type ContextInfo, type PermissionRequest, type Project, type TaskInfo } from '@shared/types'
+import { openConversations, type AgentEvent, type AgentMode, type AgentStatus, type BackgroundTask, type ContextInfo, type PermissionRequest, type Project, type TaskInfo } from '@shared/types'
 export type { TaskInfo }
 import { STATUS_PRIORITY } from '@shared/types'
 
@@ -25,6 +25,8 @@ export interface ConversationState {
   /** 기록 파일에서 되살린 항목 수 (등장 애니메이션을 하지 않을 몫) */
   restored?: number
   model?: { id: string; label: string }
+  /** 턴이 끝나도 살아 있는 셸·모니터 등 */
+  background?: BackgroundTask[]
 }
 
 export type ConversationMap = Record<string, ConversationState>
@@ -154,6 +156,9 @@ export function applyEvent(prev: ConversationState | undefined, event: AgentEven
         s.restored = s.items.length
       }
       break
+    case 'background':
+      s.background = event.tasks
+      break
     case 'model':
       s.model = { id: event.model, label: event.label }
       break
@@ -178,7 +183,77 @@ export function applyEvent(prev: ConversationState | undefined, event: AgentEven
   return s
 }
 
-export const isActive = (st: AgentStatus): boolean => st === 'running' || st === 'waiting_approval' || st === 'queued'
+/** 백그라운드 작업의 종류 라벨과 보여 줄 설명. 띄운 도구 호출이 화면 기록에 있으면 그 이름·명령을 쓴다 */
+export function describeBackground(b: BackgroundTask, items: TranscriptItem[]): { label: string; text: string; command: string } {
+  const found = b.toolUseId ? items.findLast((i) => i.type === 'tool' && i.toolUseId === b.toolUseId) : undefined
+  const tool = found?.type === 'tool' ? found : undefined
+  const o = (tool?.input ?? {}) as Record<string, unknown>
+  const command = (str(o.command) || str(o.description) || str(o.prompt)).split('\n')[0]
+  return { label: backgroundLabel(b.type, tool?.name), text: b.description || command, command }
+}
+
+function backgroundLabel(type: string, tool?: string): string {
+  if (tool === 'Bash' || tool === 'PowerShell') return 'SHELL'
+  if (tool === 'Monitor') return 'MONITOR'
+  if (tool === 'Agent' || tool === 'Task') return 'AGENT'
+  const t = type.toLowerCase()
+  if (t.includes('monitor')) return 'MONITOR'
+  if (t.includes('bash') || t.includes('shell')) return 'SHELL'
+  if (t.includes('agent')) return 'AGENT'
+  if (t.includes('workflow')) return 'WORKFLOW'
+  if (t.includes('mcp')) return 'MCP'
+  return t.replace(/^local_/, '').toUpperCase() || 'TASK'
+}
+
+export interface BackgroundRef {
+  project: Project
+  projectIndex: number
+  conversationId: string
+  id: string
+  label: string
+  text: string
+}
+
+/** 모든 대화의 살아 있는 백그라운드 작업 (전광판용) */
+export function collectBackground(projects: Project[], convs: ConversationMap): BackgroundRef[] {
+  const out: BackgroundRef[] = []
+  projects.forEach((project, projectIndex) => {
+    for (const c of project.conversations) {
+      const state = convs[c.id]
+      for (const b of state?.background ?? []) {
+        const { label, text } = describeBackground(b, state!.items)
+        out.push({ project, projectIndex, conversationId: c.id, id: b.id, label, text })
+      }
+    }
+  })
+  return out
+}
+
+export interface ArtifactLink {
+  url: string
+  title: string
+}
+
+const ARTIFACT_URL = /https:\/\/claude\.ai\/(?:code\/)?artifact\/[\w-]+/
+
+/** 이 대화에서 Artifact 도구로 올린(또는 고친) 페이지. 같은 링크는 마지막 것 하나만, 최근 것이 위로 */
+export function artifactsOf(items: TranscriptItem[]): ArtifactLink[] {
+  const byUrl = new Map<string, ArtifactLink>()
+  for (const item of items) {
+    if (item.type !== 'tool' || item.name !== 'Artifact' || item.isError || !item.result) continue
+    const o = (item.input ?? {}) as Record<string, unknown>
+    // 올리기(action 없음·publish)만. list·read 등은 연결된 페이지가 아니다
+    if (o.action !== undefined && o.action !== 'publish') continue
+    const url = ARTIFACT_URL.exec(item.result)?.[0] ?? (typeof o.url === 'string' ? ARTIFACT_URL.exec(o.url)?.[0] : undefined)
+    if (!url) continue
+    const title = str(o.title) || baseName(str(o.file_path)) || url
+    byUrl.delete(url)
+    byUrl.set(url, { url, title })
+  }
+  return [...byUrl.values()].reverse()
+}
+
+export const isActive =(st: AgentStatus): boolean => st === 'running' || st === 'waiting_approval' || st === 'queued'
 
 /** 카드 상태 = 하위 대화 중 가장 급한 것 (기획서 5장) */
 export function projectStatus(project: Project, convs: ConversationMap): AgentStatus {
