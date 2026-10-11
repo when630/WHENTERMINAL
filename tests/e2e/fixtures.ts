@@ -64,18 +64,39 @@ export function makeEnv(seed: Seed): Env {
   }
 }
 
+/**
+ * 테스트가 끝난 앱을 끝낸다. 앱이 시작할 때 띄운 CLI 탐색(한도·peek·명령 목록)과 셸이 남아 있으면 정상 종료가 2초쯤 걸리고
+ * 남은 자식 프로세스가 임시 폴더를 잡는다. 저장할 것은 이미 다 썼으므로 Windows에서는 프로세스 트리째 바로 끝낸다
+ */
+async function quit(app: ElectronApplication): Promise<void> {
+  const pid = app.process().pid
+  if (process.platform === 'win32' && pid) {
+    try {
+      execSync(`taskkill /T /F /PID ${pid}`, { stdio: 'ignore' })
+    } catch {
+      // 이미 끝남
+    }
+  }
+  await app.close().catch(() => {})
+}
+
 /** 테스트 하나 = 앱 하나. 끝나면 닫고 임시 폴더를 지운다. 화면 오류가 있으면 실패 */
 export const test = base.extend<{ seed: Seed; env: Env; app: ElectronApplication; win: Page }>({
   seed: [{ projects: [{ name: 'alpha' }] }, { option: true }],
   env: async ({ seed }, use) => {
     const env = makeEnv(seed)
     await use(env)
-    rmSync(env.root, { recursive: true, force: true })
+    // 끝낸 프로세스의 파일 잠금이 잠깐 남을 수 있다. 임시 폴더라 끝내 못 지워도 테스트 실패로 치지 않는다
+    try {
+      rmSync(env.root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+    } catch {
+      // OS가 나중에 정리
+    }
   },
   app: async ({ env }, use) => {
     const { app, errors } = await env.launch()
     await use(app)
-    await app.close()
+    await quit(app)
     if (errors.length) throw new Error(`화면 오류: ${errors.join(' / ')}`)
   },
   win: async ({ app }, use) => {

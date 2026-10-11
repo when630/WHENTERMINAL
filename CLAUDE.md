@@ -11,6 +11,8 @@
 - `npm run test:e2e` — 실제 앱(out/)을 Playwright로 띄워 조작하는 테스트. 모델을 부르지 않음 (설정·단축키·/·@ 메뉴·첨부·대화 닫기·보고함·작업 공간). 기능을 바꾸면 이걸 먼저 돌릴 것
 - `npm run test:e2e:live` — 모델을 실제로 부르는 `@live` 테스트 (승인 흐름·대기열·컴팩트·클리어). 구독 사용량을 조금 씀
   - 테스트마다 임시 사용자 데이터·프로젝트를 만든다(`tests/e2e/fixtures.ts`의 `seed`). 실제 데이터는 건드리지 않음
+  - 파일 3개를 함께 돌린다(`workers: 3`, 파일 안의 테스트는 차례로). 일부만: `npm run test:e2e -- terminal`(파일 이름), `-- -g "검색"`(테스트 이름)
+  - 끝난 앱은 정상 종료를 기다리지 않고 프로세스 트리째 끝낸다(`quit`). 시간을 기다리는 동작은 테스트에서 줄여 쓴다(예: 터미널 명령 끝남 기준 `window.__termLongMs`)
 - `npm run test:session` — `AgentSession` 통합 테스트 (권한 요청→허용→파일 생성). 구독 사용량을 조금 씀
 
 ## 구조
@@ -51,12 +53,13 @@
 - Windows 창은 테두리 없는 창(`frame: false`): 제목 표시줄·창 버튼이 없다. 사이드바 로고(`.side .brand`, `-webkit-app-region: drag`)를 잡고 옮기고 더블클릭하면 최대화, 크기 조절은 가장자리, 닫기는 `Alt+F4`(트레이로 숨김). macOS는 기본 제목 표시줄 그대로
 - 트레이 아이콘: Windows는 설정에서 고른 앱 아이콘을 16px(+1.25~2배)로 줄여 쓰고 아이콘을 바꾸면 같이 바뀐다(`makeTrayIcon`). macOS는 메뉴 막대 관례대로 흑백 템플릿 이미지
 - 터미널(대화창 아래 서랍): 메인 `terminal.ts`(node-pty, 터미널마다 셸 하나, 폴더는 `cwdOf`) ↔ 렌더러 `terminal.tsx`(xterm, 터미널마다 화면 하나를 만들어 두고 탭을 옮기면 다시 붙인다)
-  - 대화마다 터미널 탭 여러 개. 셸은 `termId`(`대화 ID#번호`)로 구분하고, 대화를 닫으면 `closeConversation`으로 그 대화의 셸을 모두 끝낸다. 탭 줄은 둘 이상일 때만. `terminalNew`(Ctrl+Alt+T)·`terminalNext/Prev`(Ctrl+Alt+J/K), 서랍 오른쪽 ×는 지금 탭만 닫는다
+  - 대화마다 터미널 탭 여러 개. 셸은 `termId`(`대화 ID#번호`)로 구분하고, 대화를 닫으면 `closeConversation`으로 그 대화의 셸을 모두 끝낸다. 탭 줄은 둘 이상일 때만. `terminalNew`(Ctrl+Alt+T)·`terminalNext/Prev`(Ctrl+Alt+J/K)·`terminalClose`(Ctrl+Alt+W, 서랍 오른쪽 ×와 같이 지금 탭만 바로 닫는다)
   - 찾기: 터미널에서 `terminalFind`(Ctrl+F, xterm 키 처리라 터미널 포커스일 때만) → `FindBar`(@xterm/addon-search, 결과 강조 때문에 `allowProposedApi: true`)
   - 링크: URL(@xterm/addon-web-links)과 파일 경로(`PATH_RE` 링크 제공자)는 Ctrl/Cmd+클릭만. 경로는 `pathForComposer`로 입력창 커서 자리에 `@상대경로 (L줄)`
   - 명령 끝남: 셸 통합 없이 Enter로 시작(`onInput`) → 출력이 0.8초 잠잠하고 커서 줄이 프롬프트(`PROMPT_END`)면 끝. 10초 넘게 돌았고 그 탭을 보고 있지 않으면 탭에 표시(`done`)하고 `notifyTerminal` → 알림을 누르면 그 탭(`navigate`의 `terminal`)
   - 키맵 `terminal`(기본 `Ctrl+T`): 닫힘·접힘이면 펼치고 터미널로, 펼쳐져 있으면 입력창 → 터미널, 터미널에서 누르면 접고 입력창으로. 접어도 셸은 돈다. 높이는 끌어서(localStorage)
-  - 터미널에 포커스가 있으면(`[data-terminal]`) App은 앱을 오가는 키(terminal·goHome·help·search·탭 이동·새 탭·설정·⌥A~L)만 받고 나머지(Esc·Ctrl+C·Ctrl+L …)는 셸로. 선택이 있을 때 Ctrl+C·Ctrl+Shift+C 복사, Ctrl+Shift+V 붙여넣기
+  - 열기·접기·펼치기·닫기 움직임(`useDrawerMotion`): 서랍 높이만 한 번 움직이고, 그동안 `.term-body` 높이를 고정해 xterm이 프레임마다 fit하지 않게 한다. 접히는 동안(`folding`)은 펼친 모습 그대로, 닫히는 동안(`leaving`)은 마지막 화면을 붙잡아 둔다. 대화를 옮겨 바뀐 것은 움직이지 않는다
+  - 터미널에 포커스가 있으면(`[data-terminal]`) App은 앱을 오가는 키(terminal·terminalClose·goHome·help·search·탭 이동·새 탭·설정·⌥A~L)만 받고 나머지(Esc·Ctrl+C·Ctrl+L …)는 셸로. 선택이 있을 때 Ctrl+C·Ctrl+Shift+C 복사, Ctrl+Shift+V 붙여넣기
   - Bash·PowerShell 도구 줄의 RUN IN TERMINAL: 명령을 입력줄에 넣기만 한다(실행은 사용자 Enter). SEND TO CLAUDE: 선택한 출력을 입력창에 코드 블록으로
   - 대화·프로젝트 닫기, 작업 공간 버리기 전에 셸을 끝낸다 (셸이 작업 공간 폴더를 잡고 있으면 지울 수 없다). 셸은 설정 `terminalShell`(AUTO는 pwsh → PowerShell, macOS는 $SHELL), 환경 변수는 사용자 것 그대로
   - 셸 고르기: 서랍 머리의 셸 이름(`ShellPicker`)을 누르면 이 컴퓨터에 있는 셸(`availableShells`: pwsh·PowerShell·Git Bash·cmd·WSL / zsh·bash·fish, WSL은 레지스트리 `Lxss`로 확인)이 펼쳐진다. 고르면 지금 셸을 끝내고 새로 띄우며, 다음 터미널의 기본값(`terminalShell`)으로도 저장한다
@@ -95,7 +98,7 @@
   - 단축키: 동작 목록·기본값은 `src/shared/keymap.ts`(`ACTIONS`), 판정은 `matches()`(keys.ts). App의 키 처리와 화면의 키 표시는 모두 `useKeymap()`을 거친다. 새 단축키는 ACTIONS에 추가하고 하드코딩하지 말 것
   - 고정 키(바꿀 수 없음): Esc, ⌥A~L·Ctrl+1~9 프로젝트 이동, 선택 없을 때 Ctrl+C, 방향키. 대화창·전역 범위 키는 Ctrl/Alt/Meta가 있어야 한다 (입력 중 오작동 방지)
   - 전역 호출 키(`summon`)는 메인이 다시 등록한다. 실패하면 이전 키를 되살리고 저장하지 않는다
-- 단축키 안내는 화면 하단 줄 대신 도움말(`HelpOverlay.tsx`, `help` 기본 `Ctrl+/`, 사이드바 HELP 줄)에 모은다. 범위별 묶음(지금 화면이 맨 앞)·고정 키·입력창 명령. 새 동작을 ACTIONS에 넣으면 `GROUPS`에도 넣을 것. 열려 있는 동안 App은 Esc(닫기) 말고 키를 받지 않는다
+- 단축키 안내는 화면 하단 줄 대신 도움말(`HelpOverlay.tsx`, `help` 기본 `Ctrl+/`, 사이드바 HELP 줄)에 모은다. 범위별 묶음(지금 화면이 맨 앞)·고정 키·입력창 명령. 터미널 키는 TERMINAL 묶음에 모으고 서랍 버튼에는 키를 붙이지 않는다(툴팁만). 새 동작을 ACTIONS에 넣으면 `GROUPS`에도 넣을 것. 열려 있는 동안 App은 Esc(닫기) 말고 키를 받지 않는다
 - 단축키 표시는 `<Keys keys="ctrl shift L" />`(`KeyHint.tsx`)를 쓴다. macOS는 수정·특수 키를 아이콘으로, Windows는 글자와 +로(`Ctrl+Shift+L`) 표시한다. 파일 이름이 `keys.ts`와 대소문자만 다르면 macOS에서 충돌하므로 `KeyHint`
 - 슬래시 명령 후보: 입력창에 `/`를 치면 `SlashMenu`. 목록은 살아 있는 세션의 `supportedCommands()`, 없으면 메시지 없이 CLI만 띄워 받아 프로젝트 폴더별로 5분 캐시 (`src/main/agent/commands.ts`). `/compact` `/clear`는 앱이 직접 처리
   - 메뉴가 열린 입력창에는 `data-menu-open`을 달아 App의 전역 키 처리(Esc 중단, Ctrl+K 등)를 건너뛴다

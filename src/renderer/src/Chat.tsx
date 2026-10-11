@@ -8,7 +8,7 @@ import { useKeymap } from './settings'
 import { Roll, usePresence } from './motion'
 import { clock, useNow } from './time'
 import { SubLog, TaskDetail, type DetailTarget } from './TaskDetail'
-import { pathForComposer, runInTerminal, TerminalDrawer, toggleTerminal } from './terminal'
+import { closeTerminal, pathForComposer, runInTerminal, TerminalDrawer, toggleTerminal } from './terminal'
 import { Markdown } from './Markdown'
 import { AttachButton, useAttach } from './attach'
 import { WorktreePanel } from './WorktreePanel'
@@ -53,6 +53,8 @@ export interface PanelControl {
   rename: () => void
   /** 아래 터미널: 펼치고 터미널로 / 터미널 ↔ 입력창 / 터미널에서 누르면 접기 */
   terminal: () => void
+  /** 지금 터미널 탭을 닫는다 */
+  closeTerminal: () => void
   /** effort를 다음 단계로 (기본값 → LOW → … → 기본값) */
   cycleEffort: () => void
 }
@@ -307,6 +309,17 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
   }
   // 오른쪽 패널에서 고른 백그라운드 작업·하위 에이전트의 세부 내용 (대화 기록 자리에 펼친다)
   const [detail, setDetail] = useState<DetailTarget | null>(null)
+  // 아래 터미널이 열리며 기록 칸이 줄어들 때도 맨 아래를 붙잡는다
+  const transcriptShown = !(showChanges && conv?.worktree) && !detail
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const ro = new ResizeObserver(() => {
+      if (stick.current) el.scrollTop = el.scrollHeight
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [transcriptShown])
   useEffect(() => {
     setShowChanges(false)
     setDetail(null)
@@ -334,6 +347,7 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
     },
     rename: () => setEditingId(conversationId),
     terminal: () => toggleTerminal(project.id, conversationId, () => inputRef.current?.focus()),
+    closeTerminal: () => closeTerminal(conversationId, () => inputRef.current?.focus()),
     cycleEffort: () => {
       if (!effortInfo?.levels.length) return
       const rows: (EffortLevel | null)[] = [null, ...effortInfo.levels]

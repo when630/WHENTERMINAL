@@ -285,7 +285,7 @@ export function App(): React.JSX.Element {
     if (owner?.menuOpen === 'true' || owner?.keysOwn === 'true') return
     // 터미널에 포커스가 있으면 키는 셸 몫이다 (Esc·Ctrl+C·Ctrl+L·Ctrl+K …). 앱을 오가는 키 몇 개만 앱이 받는다
     if ((e.target as HTMLElement | null)?.closest?.('[data-terminal]')) {
-      const app = (['terminal', 'terminalNew', 'terminalNext', 'terminalPrev', 'goHome', 'help', 'search', 'nextConversation', 'prevConversation', 'newConversation', 'openSettings'] as ActionId[]).some((id) => matches(e, km[id]))
+      const app = (['terminal', 'terminalNew', 'terminalNext', 'terminalPrev', 'terminalClose', 'goHome', 'help', 'search', 'nextConversation', 'prevConversation', 'newConversation', 'openSettings'] as ActionId[]).some((id) => matches(e, km[id]))
       if (!app && projectIndexFromKey(e, physicalCode(e)) === null) return
       // 셸에는 가지 않게
       e.stopPropagation()
@@ -417,6 +417,7 @@ export function App(): React.JSX.Element {
     if (is('terminal')) return take(() => chatPanelRef.current?.terminal())
     if (is('terminalNew')) return take(() => newTerminal(projectId, conversationId))
     if (is('terminalNext') || is('terminalPrev')) return take(() => stepTerminal(projectId, conversationId, is('terminalPrev') ? -1 : 1))
+    if (is('terminalClose')) return take(() => chatPanelRef.current?.closeTerminal())
     if (is('cycleEffort')) return take(() => chatPanelRef.current?.cycleEffort())
     // 새 탭: 탭 줄의 +와 같다 (설정에 따라 작업 공간을 만든다)
     if (is('newConversation')) {

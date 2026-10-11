@@ -10,7 +10,7 @@ export type ActionId =
   | 'allow' | 'always' | 'deny'
   | 'nextConversation' | 'prevConversation' | 'closeConversation' | 'closeProject' | 'clear' | 'compact' | 'cycleMode' | 'interrupt'
   | 'panelNext' | 'panelPrev' | 'panelBack' | 'stopTask' | 'renameConversation' | 'newConversation' | 'terminal'
-  | 'terminalNew' | 'terminalNext' | 'terminalPrev' | 'terminalFind' | 'cycleEffort'
+  | 'terminalNew' | 'terminalNext' | 'terminalPrev' | 'terminalClose' | 'terminalFind' | 'cycleEffort'
 
 export type ActionScope = 'system' | 'anywhere' | 'home' | 'chat' | 'approval'
 
@@ -53,6 +53,7 @@ export const ACTIONS: ActionDef[] = [
   { id: 'terminalNew', label: 'Terminal: new tab', scope: 'chat', default: 'Ctrl+Alt+T' },
   { id: 'terminalNext', label: 'Terminal: next tab', scope: 'chat', default: 'Ctrl+Alt+J' },
   { id: 'terminalPrev', label: 'Terminal: previous tab', scope: 'chat', default: 'Ctrl+Alt+K' },
+  { id: 'terminalClose', label: 'Terminal: close tab', scope: 'chat', default: 'Ctrl+Alt+W' },
   // 터미널에 포커스가 있을 때만 (xterm이 받는다)
   { id: 'terminalFind', label: 'Terminal: find in output', scope: 'chat', default: 'Ctrl+F' },
   { id: 'nextConversation', label: 'Next tab', scope: 'chat', default: 'Ctrl+Tab' },
