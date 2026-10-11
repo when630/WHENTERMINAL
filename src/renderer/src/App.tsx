@@ -255,7 +255,7 @@ export function App(): React.JSX.Element {
   const modeOf = (projectId: string, conversationId: string): AgentMode => {
     const fromEvents = convs[conversationId]?.mode
     const conv = projects.find((p) => p.id === projectId)?.conversations.find((c) => c.id === conversationId)
-    return fromEvents ?? conv?.mode ?? 'default'
+    return fromEvents ?? conv?.mode ?? 'auto'
   }
 
   // 전역 키 처리 (기획서 7장, 40% 배열 기준은 keys.ts). 최신 상태를 쓰기 위해 ref로 핸들러를 갱신한다.

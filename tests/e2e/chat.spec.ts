@@ -86,6 +86,8 @@ test('Ctrl+W 두 번으로 대화를 닫고, 마지막이면 빈 대화가 생�
   await win.keyboard.press('Control+KeyW')
   await expect(win.locator('.tab-wrap')).toHaveCount(1)
   await expect(win.locator('.tab.active .tab-t')).toHaveText('대화 1')
+  // 새로 만든 대화는 자동 모드로 시작한다
+  await expect(win.locator('.meta-mode .meta-v')).toHaveText('AUTO')
 })
 
 test('프로젝트 닫기: 사이드바 × 두 번, 대화창 Ctrl+Shift+W 두 번. 폴더는 남는다', async ({ win, env }) => {
