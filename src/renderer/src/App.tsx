@@ -10,6 +10,8 @@ import { effectiveKeymap, type ActionId, type Settings } from '@shared/keymap'
 import { applyTheme, KeymapContext } from './settings'
 import { SettingsScreen } from './SettingsScreen'
 import { HelpOverlay } from './HelpOverlay'
+import { SearchOverlay } from './SearchOverlay'
+import type { SearchHit } from '@shared/types'
 import { usePresence } from './motion'
 
 export type View = { screen: 'home' } | { screen: 'chat'; projectId: string; conversationId: string } | { screen: 'settings'; back: View }
@@ -37,6 +39,15 @@ export function App(): React.JSX.Element {
   // 단축키 도움말 (하단 안내 줄 대신)
   const [helpOpen, setHelpOpen] = useState(false)
   const help = usePresence(helpOpen ? true : null)
+  // 대화 검색 (Ctrl+Shift+F). 결과를 고르면 그 대화를 열고 jump로 그 메시지까지 스크롤한다
+  const [searchOpen, setSearchOpen] = useState(false)
+  const search = usePresence(searchOpen ? true : null)
+  const [jump, setJump] = useState<{ conversationId: string; query: string; ordinal: number; nonce: number } | null>(null)
+  const openHit = (hit: SearchHit, query: string): void => {
+    setSearchOpen(false)
+    openChat(hit.projectId, hit.conversationId)
+    setJump({ conversationId: hit.conversationId, query, ordinal: hit.ordinal, nonce: Date.now() })
+  }
 
   // 테마: 처음에는 바로, 이후 바뀔 때는 부드럽게
   const themeApplied = useRef(false)
@@ -274,9 +285,25 @@ export function App(): React.JSX.Element {
     }
 
     // 도움말: 어디서든 열고 닫는다. 열려 있는 동안은 Esc로 닫는 것 말고는 키를 받지 않는다
-    if (is('help')) return take(() => setHelpOpen((v) => !v))
-    if (helpOpen) {
-      if (isEscape(e, code)) take(() => setHelpOpen(false))
+    if (is('help')) {
+      return take(() => {
+        setSearchOpen(false)
+        setHelpOpen((v) => !v)
+      })
+    }
+    if (is('search')) {
+      return take(() => {
+        setHelpOpen(false)
+        setSearchOpen((v) => !v)
+      })
+    }
+    if (helpOpen || searchOpen) {
+      if (isEscape(e, code)) {
+        take(() => {
+          setHelpOpen(false)
+          setSearchOpen(false)
+        })
+      }
       return
     }
 
@@ -291,7 +318,6 @@ export function App(): React.JSX.Element {
       })
     }
     if (is('openSettings')) return take(() => openSettings())
-    if (is('fullscreen')) return take(() => window.api.toggleFullscreen())
 
     if (view.screen === 'settings') {
       if (e.key === 'Escape' && !typing) take(() => closeSettings())
@@ -373,6 +399,10 @@ export function App(): React.JSX.Element {
     if (is('panelBack')) return take(() => chatPanelRef.current?.back())
     if (is('stopTask')) return take(() => chatPanelRef.current?.stop())
     if (is('renameConversation')) return take(() => chatPanelRef.current?.rename())
+    // 새 탭: 탭 줄의 +와 같다 (설정에 따라 작업 공간을 만든다)
+    if (is('newConversation')) {
+      return take(() => void window.api.addConversation(projectId).then((c) => setView({ screen: 'chat', projectId, conversationId: c.id })))
+    }
     if (is('clear')) return take(() => requestClear(projectId, conversationId))
     if (is('cycleMode')) {
       return take(() => {
@@ -445,6 +475,7 @@ export function App(): React.JSX.Element {
               onSelectConversation={(conversationId) => setView({ screen: 'chat', projectId: chatProject.id, conversationId })}
               onRespond={respond}
               panelRef={chatPanelRef}
+              jump={jump?.conversationId === view.conversationId ? jump : null}
             />
           ) : (
             <Home
@@ -472,6 +503,7 @@ export function App(): React.JSX.Element {
           )}
         </div>
       </div>
+      {search.item && <SearchOverlay leaving={search.leaving} onOpen={openHit} onClose={() => setSearchOpen(false)} />}
       {help.item && <HelpOverlay context={view.screen} hotkey={hotkey} leaving={help.leaving} onClose={() => setHelpOpen(false)} />}
     </div>
     </KeymapContext.Provider>

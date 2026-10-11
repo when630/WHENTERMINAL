@@ -47,7 +47,9 @@
   - Alt 니모닉과 겹치지 않도록 Windows에서는 기본 메뉴를 없앴다 (`Menu.setApplicationMenu(null)`). 개발 중 `Ctrl+Shift+I` 개발자 도구, `Ctrl+Shift+R` 새로고침
 - Windows 창은 테두리 없는 창(`frame: false`): 제목 표시줄·창 버튼이 없다. 사이드바 로고(`.side .brand`, `-webkit-app-region: drag`)를 잡고 옮기고 더블클릭하면 최대화, 크기 조절은 가장자리, 닫기는 `Alt+F4`(트레이로 숨김). macOS는 기본 제목 표시줄 그대로
 - 트레이 아이콘: Windows는 설정에서 고른 앱 아이콘을 16px(+1.25~2배)로 줄여 쓰고 아이콘을 바꾸면 같이 바뀐다(`makeTrayIcon`). macOS는 메뉴 막대 관례대로 흑백 템플릿 이미지
-- 전체화면: `F11`(고정 키, 메인 `before-input-event`) 또는 키맵 `fullscreen`(기본 `Ctrl+Shift+F`, 렌더러 → `IPC.toggleFullscreen`)
+- 전체화면: `F11` 고정 (메인 `before-input-event`). 키맵 동작은 없다
+- 새 탭: 키맵 `newConversation`(기본 `Ctrl+Shift+T`). 탭 줄의 +와 같다
+- 대화 검색(`SearchOverlay.tsx`, 키맵 `search` 기본 `Ctrl+Shift+F`): 모든 프로젝트의 열린 대화를 세션 기록(`readHistory`, 끝 400개)에서 찾는다(`agent/search.ts`, 기록 파일 `lastModified`가 같으면 캐시). 띄어 쓴 말이 모두 들어간 내 메시지·답변·도구 호출. 고르면 그 대화를 열고 `jump`로 그 메시지까지 스크롤·강조. 무엇을 찾을지와 몇 번째로 맞았는지(`ordinal`)는 메인·렌더러가 `@shared/search`의 같은 함수로 센다
 - macOS도 지원한다 (`isMac` 분기, `src/main/index.ts`)
   - 단축키는 macOS에서도 Ctrl 기반 그대로. Cmd로 바꾸지 말 것. 화면의 Alt 표기만 `⌥`로 바꾼다 (`ALT_LABEL`)
   - 메뉴는 없애지 않고 앱·편집·윈도우 메뉴만 둔다. Edit 메뉴가 없으면 Cmd+C/V가 죽는다

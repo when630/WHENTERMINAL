@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { MODE_CYCLE, MODE_LABEL, openConversations, STATUS_LABEL, type UsageInfo, type SlashCommandInfo, type AgentMode, type PermissionDecision, type PermissionRequest, type Project, type BackgroundTask, type AgentProgress, type SubItem } from '@shared/types'
 import { agentInfo, artifactsOf, describeBackground, emptyConversation, isAgentTool, relPath, runningAgents, STAGES, subActivity, summarizeInput, type ArtifactLink, type ConversationMap, type TaskInfo, type ToolItem, type TranscriptItem } from './state'
 import { HOME_ROW } from './keys'
+import { matchesTerms, searchableText, searchTerms } from '@shared/search'
 import { Keys } from './KeyHint'
 import { useKeymap } from './settings'
 import { Roll, usePresence } from './motion'
@@ -34,6 +35,8 @@ interface Props {
   onRespond: (projectId: string, conversationId: string, requestId: string, decision: PermissionDecision) => void
   /** App의 전역 키 처리가 오른쪽 패널 세부 내용을 다루는 손잡이 (Chat이 그릴 때마다 갱신) */
   panelRef: React.MutableRefObject<PanelControl | null>
+  /** 대화 검색에서 고른 메시지: 이 대화에서 검색어가 맞은 ordinal번째 항목으로 스크롤한다 */
+  jump?: { query: string; ordinal: number; nonce: number } | null
 }
 
 /** App의 전역 키 처리가 대화창을 다루는 손잡이: 오른쪽 패널 세부 내용(panelNext·panelPrev·panelBack·stopTask)과 이름 바꾸기 */
@@ -47,7 +50,7 @@ export interface PanelControl {
   rename: () => void
 }
 
-export function Chat({ project, projects, conversationId, convs, mode, usage, clearArmed, closeArmedId, projectArmed, onClearRequest, onCloseRequest, onClose, onSelectConversation, onRespond, panelRef }: Props): React.JSX.Element {
+export function Chat({ project, projects, conversationId, convs, mode, usage, clearArmed, closeArmedId, projectArmed, onClearRequest, onCloseRequest, onClose, onSelectConversation, onRespond, panelRef, jump }: Props): React.JSX.Element {
   const km = useKeymap()
   const state = convs[conversationId] ?? emptyConversation()
   const [draft, setDraft] = useState('')
@@ -110,6 +113,37 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
     const streaming = lastItem?.type === 'assistant' && lastItem.streaming
     el.scrollTo({ top: el.scrollHeight, behavior: streaming ? 'instant' : 'smooth' })
   }, [state.items.length, lastItem, !!permission.item, compacting.item, working.item])
+  // 검색 결과로 열었으면 그 메시지로 스크롤하고 잠깐 강조한다. 기록을 되살리는 중이면 다 들어올 때까지 기다린다
+  const jumped = useRef(0)
+  useEffect(() => {
+    if (!jump || jumped.current === jump.nonce || state.items.length === 0) return
+    const terms = searchTerms(jump.query)
+    const hits: number[] = []
+    state.items.forEach((item, i) => {
+      const t = searchableText(item)
+      if (t && matchesTerms(t.text, terms)) hits.push(i)
+    })
+    if (hits.length === 0) {
+      // 기록이 아직 덜 들어왔을 수 있다 (되살린 기록은 한꺼번에 오므로 restored가 있으면 끝)
+      if (state.restored === undefined && needsHistory) return
+      jumped.current = jump.nonce
+      return
+    }
+    jumped.current = jump.nonce
+    const idx = hits[Math.min(jump.ordinal, hits.length - 1)]
+    setDetail(null)
+    setShowChanges(false)
+    stick.current = false
+    // 맨 아래로 따라가는 스크롤이 끝난 뒤에 옮긴다
+    setTimeout(() => {
+      const el = scrollRef.current?.children[idx] as HTMLElement | undefined
+      if (!el) return
+      el.scrollIntoView({ block: 'center' })
+      el.classList.add('hit')
+      setTimeout(() => el.classList.remove('hit'), 2400)
+    }, 120)
+  }, [jump?.nonce, state.items.length, state.restored]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // 권한 요청이 오면 입력창에서 포커스를 빼서 Y/A/N이 바로 먹게 한다
   useEffect(() => {
     if (pending) inputRef.current?.blur()

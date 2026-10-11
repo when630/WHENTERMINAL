@@ -10,6 +10,7 @@ import { SettingsStore } from './settings'
 import { applyBadge, Notifier } from './notify'
 import { effectiveKeymap, THEMES, toAccelerator, type Settings } from '@shared/keymap'
 import { AgentManager } from './agent/manager'
+import { searchConversations } from './agent/search'
 import { fetchUsage, mergeRateLimit } from './agent/usage'
 import { Updater } from './updater'
 
@@ -148,7 +149,7 @@ function bootstrap(): void {
     send(IPC.navigate, { projectId, conversationId })
   })
   ipcMain.on(IPC.setBadge, (_e, waiting: number, unread: number) => applyBadge(tray, waiting, unread))
-  ipcMain.on(IPC.toggleFullscreen, () => toggleFullscreen())
+  ipcMain.handle(IPC.searchConversations, (_e, query: string) => searchConversations(store.list(), query))
   const updater = new Updater(
     (state) => send(IPC.updateChanged, state),
     () => (quitting = true),
@@ -403,7 +404,7 @@ function createWindow(): void {
   win.webContents.on('will-navigate', (e, url) => {
     if (url !== win?.webContents.getURL() && !url.startsWith(process.env.ELECTRON_RENDERER_URL ?? '\0')) e.preventDefault()
   })
-  // 전체화면: F11은 고정 키라 여기서, 키맵의 대체 키(fullscreen)는 렌더러가 IPC로 보낸다
+  // 전체화면은 F11 고정 (Ctrl+Shift+F는 대화 검색)
   win.webContents.on('before-input-event', (e, input) => {
     if (input.type === 'keyDown' && input.key === 'F11' && !input.control && !input.alt && !input.shift && !input.meta) {
       toggleFullscreen()

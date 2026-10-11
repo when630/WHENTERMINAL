@@ -3,11 +3,11 @@
 // 글자·숫자·기호 키는 물리 키(e.code) 기준이라 한글 입력 상태에서도 같은 키로 동작한다.
 
 export type ActionId =
-  | 'summon' | 'goHome' | 'dispatch' | 'openSettings' | 'fullscreen' | 'help'
+  | 'summon' | 'goHome' | 'dispatch' | 'openSettings' | 'search' | 'help'
   | 'addProject' | 'focusAsk' | 'down' | 'up' | 'toRunning' | 'toReports' | 'open' | 'archive' | 'newTask'
   | 'allow' | 'always' | 'deny'
   | 'nextConversation' | 'prevConversation' | 'closeConversation' | 'closeProject' | 'clear' | 'compact' | 'cycleMode' | 'interrupt'
-  | 'panelNext' | 'panelPrev' | 'panelBack' | 'stopTask' | 'renameConversation'
+  | 'panelNext' | 'panelPrev' | 'panelBack' | 'stopTask' | 'renameConversation' | 'newConversation'
 
 export type ActionScope = 'system' | 'anywhere' | 'home' | 'chat' | 'approval'
 
@@ -31,7 +31,7 @@ export const ACTIONS: ActionDef[] = [
   { id: 'goHome', label: 'Go home', scope: 'anywhere', default: 'Ctrl+H' },
   { id: 'dispatch', label: 'New task', scope: 'anywhere', default: 'Ctrl+K' },
   { id: 'openSettings', label: 'Settings', scope: 'anywhere', default: 'Ctrl+,' },
-  { id: 'fullscreen', label: 'Full screen (alt. to F11)', scope: 'anywhere', default: 'Ctrl+Shift+F' },
+  { id: 'search', label: 'Search all conversations', scope: 'anywhere', default: 'Ctrl+Shift+F' },
   { id: 'help', label: 'Keyboard shortcuts', scope: 'anywhere', default: 'Ctrl+/' },
   { id: 'addProject', label: 'Add project', scope: 'home', default: 'Ctrl+N' },
   { id: 'focusAsk', label: 'Focus task input', scope: 'home', default: 'I' },
@@ -45,6 +45,7 @@ export const ACTIONS: ActionDef[] = [
   { id: 'allow', label: 'Allow', scope: 'approval', default: 'Y' },
   { id: 'always', label: 'Always allow', scope: 'approval', default: 'A' },
   { id: 'deny', label: 'Deny', scope: 'approval', default: 'N' },
+  { id: 'newConversation', label: 'New tab', scope: 'chat', default: 'Ctrl+Shift+T' },
   { id: 'nextConversation', label: 'Next tab', scope: 'chat', default: 'Ctrl+Tab' },
   { id: 'prevConversation', label: 'Previous tab', scope: 'chat', default: 'Ctrl+Shift+Tab' },
   { id: 'closeConversation', label: 'Close tab (twice)', scope: 'chat', default: 'Ctrl+W' },
