@@ -102,7 +102,7 @@ test('아래 터미널: 셸 이름을 눌러 다른 셸로 바꾸고, 다음 터
   await expect(term.locator('.term-shell')).toHaveText(/^cmd/, { timeout: 20_000 })
 })
 
-test('아래 터미널: 탭 여러 개 (+·Ctrl+Alt+T 만들기, Ctrl+Alt+J/K 옮기기, × 닫기)', async ({ win }) => {
+test('아래 터미널: 탭 여러 개 (+·Ctrl+Alt+T 만들기, Ctrl+Alt+J/K 옮기기, ×·Ctrl+Alt+W 닫기)', async ({ win }) => {
   test.setTimeout(90_000)
   await win.keyboard.press('Alt+a')
   const term = win.locator('.term')
@@ -144,11 +144,24 @@ test('아래 터미널: 탭 여러 개 (+·Ctrl+Alt+T 만들기, Ctrl+Alt+J/K �
   await expect(term.locator('.term-tab')).toHaveCount(2)
   await term.locator('.term-tab').nth(1).click()
   await expect(rows).toContainText('second-tab')
-  await term.locator('.term-x').click()
+  // Ctrl+Alt+W: 터미널에서 눌러도 앱이 받아 지금 탭을 닫고, 남은 탭의 터미널로
+  await expect.poll(() => win.evaluate(() => !!document.activeElement?.closest('[data-terminal]'))).toBe(true)
+  await win.keyboard.press('Control+Alt+w')
   await expect(term.locator('.term-tab')).toHaveCount(0)
   await expect(rows).toContainText('first-tab')
-  await term.locator('.term-x').click()
+  await expect.poll(() => win.evaluate(() => !!document.activeElement?.closest('[data-terminal]'))).toBe(true)
+  // 마지막 탭이면 서랍을 닫고 입력창으로 돌아간다
+  await win.keyboard.press('Control+Alt+w')
   await expect(term).toHaveCount(0)
+  await expect(win.locator('#composer-input')).toBeFocused()
+
+  // 입력창에서도 닫힌다 (포커스는 입력창 그대로)
+  await win.keyboard.press('Control+t')
+  await expect(rows).not.toBeEmpty({ timeout: 20_000 })
+  await win.locator('#composer-input').click()
+  await win.keyboard.press('Control+Alt+w')
+  await expect(term).toHaveCount(0)
+  await expect(win.locator('#composer-input')).toBeFocused()
 })
 
 test('아래 터미널: Ctrl+F 찾기, 경로 Ctrl+클릭은 입력창에 @경로', async ({ win }) => {
@@ -191,16 +204,19 @@ test.describe('명령 끝남', () => {
   // OS 알림은 끄고 화면 표시만 본다
   test.use({ seed: { projects: [{ name: 'alpha' }], settings: { notify: { approval: true, done: true, terminal: false, usage: false, whenFocused: false } } } })
 
-  test('아래 터미널: 다른 탭을 보는 동안 10초 넘게 돈 명령이 끝나면 그 탭에 표시, 보면 지운다', async ({ win }) => {
+  test('아래 터미널: 다른 탭을 보는 동안 오래(앱은 10초, 여기서는 2초) 돈 명령이 끝나면 그 탭에 표시, 보면 지운다', async ({ win }) => {
     test.setTimeout(120_000)
     test.skip(process.platform !== 'win32', 'PowerShell 명령')
+    await win.evaluate(() => {
+      ;(window as { __termLongMs?: number }).__termLongMs = 2000
+    })
     await win.keyboard.press('Alt+a')
     const term = win.locator('.term')
     const rows = term.locator('.xterm-rows')
     await win.locator('#composer-input').click()
     await win.keyboard.press('Control+t')
     await expect(rows).toContainText('>', { timeout: 20_000 })
-    await win.keyboard.type('Start-Sleep -Seconds 11; echo slept-done')
+    await win.keyboard.type('Start-Sleep -Seconds 3; echo slept-done')
     await win.keyboard.press('Enter')
     // 짧게 끝나는 명령은 표시하지 않는다: 다른 탭에서 바로 끝나는 echo
     await win.keyboard.press('Control+Alt+t')

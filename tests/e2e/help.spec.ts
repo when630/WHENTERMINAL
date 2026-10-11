@@ -29,6 +29,11 @@ test.describe('단축키 도움말', () => {
     await expect(chat.locator('dl > div', { hasText: 'Compact' }).locator('dt')).toContainText('Ctrl+Alt+M')
     await expect(chat.locator('dl > div', { hasText: 'Rename tab' }).locator('dt')).toContainText('Ctrl+Shift+E')
     await expect(help.locator('.help-group', { hasText: 'COMMANDS' })).toContainText('/rename')
+    // 터미널 키는 TERMINAL 묶음에 따로 모인다
+    const term = help.locator('.help-group', { has: win.locator('h2', { hasText: 'TERMINAL' }) })
+    await expect(term.locator('dl > div', { hasText: 'find in output' }).locator('dt')).toContainText('Ctrl+F')
+    await expect(term).toContainText('Ctrl+Click')
+    await expect(chat).not.toContainText('Terminal:')
     // 같은 키를 다시 누르면 닫힌다
     await win.keyboard.press('Control+/')
     await expect(help).toHaveCount(0)

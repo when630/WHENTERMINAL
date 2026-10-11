@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { cloneElement, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactElement } from 'react'
 import { Terminal, type ILink } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { SearchAddon, type ISearchOptions } from '@xterm/addon-search'
@@ -6,8 +6,8 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import '@xterm/xterm/css/xterm.css'
 import { DEFAULT_KEYMAP, type Keymap } from '@shared/keymap'
 import type { TerminalInfo, TerminalShell, TerminalShellOption } from '@shared/types'
-import { Keys } from './KeyHint'
 import { matches } from './keys'
+import { EASE, reducedMotion } from './motion'
 import { useKeymap } from './settings'
 
 // 대화창 아래 터미널 서랍. 대화마다 터미널 탭 여러 개, 탭마다 셸 하나(메인의 node-pty, termId로 구분)와 xterm 화면 하나.
@@ -152,6 +152,8 @@ function wire(): void {
 // 서버처럼 계속 도는 명령은 프롬프트로 돌아오지 않으니 알리지 않는다
 
 const LONG_MS = 10_000
+// e2e 테스트는 window.__termLongMs로 줄여 기다리는 시간을 아낀다
+const longMs = (): number => (window as { __termLongMs?: number }).__termLongMs ?? LONG_MS
 const QUIET_MS = 800
 /** 줄 끝이 프롬프트 기호 (PS C:\x> · C:\x> · user@host:~$ · % · ❯ …) */
 const PROMPT_END = /[>$#%❯➜λ»]$/
@@ -187,7 +189,7 @@ function watchQuiet(termId: string, e: Entry): void {
     if (!cmd || e.term.buffer.active.type !== 'normal' || !PROMPT_END.test(cursorLine(e.term).trimEnd())) return
     e.cmd = undefined
     const ms = Date.now() - cmd.at - QUIET_MS
-    if (ms >= LONG_MS) commandDone(termId, e, cmd.text, ms)
+    if (ms >= longMs()) commandDone(termId, e, cmd.text, ms)
   }, QUIET_MS)
 }
 
@@ -345,8 +347,8 @@ function activeTab(projectId: string, conversationId: string): string {
   return ui.active && ui.tabs[ui.active] ? ui.active : addTab(projectId, conversationId)
 }
 
-/** 탭을 닫는다 (셸을 끝낸다). 마지막 탭이면 서랍도 닫는다 */
-function closeTab(conversationId: string, termId: string): void {
+/** 탭을 닫는다 (셸을 끝낸다). 마지막 탭이면 서랍도 닫는다. refocus면 남은 탭의 터미널로 포커스를 옮긴다 */
+function closeTab(conversationId: string, termId: string, refocus = true): void {
   void window.api.terminalClose(termId)
   disposeEntry(termId)
   setUi(conversationId, (ui) => {
@@ -356,7 +358,7 @@ function closeTab(conversationId: string, termId: string): void {
     delete tabs[termId]
     if (order.length === 0) return { ...CLOSED, seq: ui.seq }
     const active = ui.active === termId ? order[Math.min(at, order.length - 1)] : ui.active
-    return { order, tabs, active, focus: ui.focus + 1 }
+    return { order, tabs, active, focus: refocus ? ui.focus + 1 : ui.focus }
   })
 }
 
@@ -537,6 +539,15 @@ export function toggleTerminal(projectId: string, conversationId: string, onLeav
   }
 }
 
+/** 지금 터미널 탭을 닫는다 (서랍의 ×와 같다). 터미널에서 닫았는데 남은 탭이 없으면 입력창으로 (onLeave) */
+export function closeTerminal(conversationId: string, onLeave: () => void): void {
+  const ui = getUi(conversationId)
+  if (!ui.open || !ui.active) return
+  const wasFocused = focused()
+  closeTab(conversationId, ui.active, wasFocused)
+  if (wasFocused && !getUi(conversationId).open) onLeave()
+}
+
 /** 새 터미널 탭 (서랍이 닫혀 있으면 열면서) */
 export function newTerminal(projectId: string, conversationId: string): void {
   addTab(projectId, conversationId)
@@ -581,6 +592,7 @@ export function TerminalDrawer({ projectId, conversationId, onSend, onPath }: Dr
   const km = useKeymap()
   const ui = useTerminalUi(conversationId)
   const hostRef = useRef<HTMLDivElement>(null)
+  const sectionRef = useRef<HTMLElement>(null)
   const [height, setHeight] = useState(savedHeight)
   const [selection, setSelection] = useState(false)
   // 버튼을 누르는 사이 선택이 풀릴 수 있어 마지막 선택 글자를 따로 둔다
@@ -643,7 +655,24 @@ export function TerminalDrawer({ projectId, conversationId, onSend, onPath }: Dr
     if (ui.open && ui.expanded && ui.focus && active) requestAnimationFrame(() => entries.get(active)?.term.focus())
   }, [ui.focus, conversationId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (!ui.open || !active) return null
+  // 열고 닫고 접는 움직임. 접히는 동안(folding)은 펼친 모습 그대로 높이만 줄이고, 닫히는 동안(leaving)은 마지막 화면을 붙잡아 둔다
+  const isOpen = ui.open && !!active
+  const [seen, setSeen] = useState({ conv: conversationId, open: isOpen, expanded: ui.expanded })
+  const [folding, setFolding] = useState(false)
+  const [leaving, setLeaving] = useState(false)
+  const lastView = useRef<ReactElement<{ className: string }> | null>(null)
+  if (seen.conv !== conversationId || seen.open !== isOpen || seen.expanded !== ui.expanded) {
+    // 대화를 옮겨서 바뀐 것은 움직이지 않는다
+    const same = seen.conv === conversationId && !reducedMotion()
+    setSeen({ conv: conversationId, open: isOpen, expanded: ui.expanded })
+    setLeaving(same && seen.open && !isOpen && lastView.current !== null)
+    setFolding(same && isOpen && seen.open && seen.expanded && !ui.expanded)
+  }
+  const look = ui.expanded || folding
+  const phase = leaving ? 'leaving' : !isOpen ? 'closed' : folding ? 'folding' : look ? 'open' : 'folded'
+  useDrawerMotion(sectionRef, conversationId, phase, () => setFolding(false), () => setLeaving(false))
+
+  if (!isOpen) return leaving && lastView.current ? cloneElement(lastView.current, { className: `${lastView.current.props.className} leaving` }) : null
 
   const startResize = (ev: React.PointerEvent): void => {
     ev.preventDefault()
@@ -685,9 +714,9 @@ export function TerminalDrawer({ projectId, conversationId, onSend, onPath }: Dr
   const entry = entries.get(active)
   const anyDone = ui.order.some((t) => ui.tabs[t]?.done)
 
-  return (
-    <section className={`term ${ui.expanded ? 'open' : 'folded'}`} style={ui.expanded ? { height } : undefined} aria-label="터미널">
-      {ui.expanded && <div className="term-grip" onPointerDown={startResize} title="끌어서 높이를 바꿔요" aria-hidden="true" />}
+  const view = (
+    <section ref={sectionRef} className={`term ${look ? 'open' : 'folded'}`} style={look ? { height } : undefined} aria-label="터미널">
+      {look && <div className="term-grip" onPointerDown={startResize} title="끌어서 높이를 바꿔요" aria-hidden="true" />}
       <header className="term-head">
         <button type="button" className="term-title" onClick={fold} title={ui.expanded ? '접어요 (셸은 계속 돌아요)' : '펼쳐요'} aria-expanded={ui.expanded}>
           <span className={`term-sq ${tab?.exited === undefined ? '' : 'off'}`} aria-hidden="true" />
@@ -726,25 +755,96 @@ export function TerminalDrawer({ projectId, conversationId, onSend, onPath }: Dr
             <button type="button" className="term-btn" onClick={restart}>RESTART</button>
           )}
           {ui.expanded && (
-            <button type="button" className={`term-btn ${ui.finding ? 'armed' : ''}`} onClick={() => openFind(conversationId)} title="출력에서 찾아요">
-              FIND <Keys keys={km.terminalFind} />
+            <button type="button" className={`term-btn ${ui.finding ? 'armed' : ''}`} onClick={() => openFind(conversationId)} title={`출력에서 찾아요 (${km.terminalFind})`}>
+              FIND
             </button>
           )}
           {/* 누를 때 포커스를 옮기지 않아 선택이 유지된다 */}
           <button type="button" className="term-btn" disabled={!selection} onMouseDown={(ev) => ev.preventDefault()} onClick={send} title="선택한 출력을 입력창에 붙여 Claude에게 물어봐요">
             SEND TO CLAUDE
           </button>
-          <button type="button" className="term-btn" onClick={fold} title={ui.expanded ? '접어요 (셸은 계속 돌아요)' : '펼쳐요'}>
-            {ui.expanded ? 'FOLD' : 'UNFOLD'} <Keys keys={km.terminal} />
+          <button type="button" className="term-btn" onClick={fold} title={`${ui.expanded ? '접어요 (셸은 계속 돌아요)' : '펼쳐요'} (${km.terminal})`}>
+            {ui.expanded ? 'FOLD' : 'UNFOLD'}
           </button>
-          <button type="button" className="term-btn term-x" onClick={() => closeTab(conversationId, active)} title={ui.order.length > 1 ? '이 터미널의 셸을 끝내고 닫아요' : '셸을 끝내고 닫아요'} aria-label="터미널 닫기">×</button>
+          <button type="button" className="term-btn term-x" onClick={() => closeTab(conversationId, active)} title={`${ui.order.length > 1 ? '이 터미널의 셸을 끝내고 닫아요' : '셸을 끝내고 닫아요'} (${km.terminalClose})`} aria-label="터미널 닫기">×</button>
         </div>
       </header>
-      <div className="term-body" hidden={!ui.expanded}>
+      <div className="term-body" hidden={!look}>
         {ui.finding && entry && <FindBar key={active} entry={entry} focusKey={ui.find} onClose={() => setUi(conversationId, { finding: false })} />}
         {/* data-terminal: 여기에 포커스가 있으면 App이 Esc·Ctrl+C 등을 가로채지 않고 셸로 보낸다 */}
         <div className="term-host" ref={hostRef} data-terminal="true" />
       </div>
     </section>
   )
+  lastView.current = view
+  return view
+}
+
+type Phase = 'closed' | 'open' | 'folded' | 'folding' | 'leaving'
+
+/**
+ * 서랍 높이를 이전 모습에서 새 모습으로 움직인다 (한 번씩만, 끌어서 바꾼 높이는 움직이지 않음).
+ * 움직이는 동안 본문 높이를 고정해 xterm이 프레임마다 다시 맞추지(fit) 않게 하고, 바깥 틀이 잘라 보인다
+ */
+function useDrawerMotion(ref: React.RefObject<HTMLElement | null>, conversationId: string, phase: Phase, onFolded: () => void, onLeft: () => void): void {
+  const last = useRef<{ conv: string; phase: Phase; h: number } | null>(null)
+  const anim = useRef<Animation | null>(null)
+  const stop = (): void => {
+    anim.current?.cancel()
+    anim.current = null
+    const el = ref.current
+    el?.classList.remove('moving')
+    const body = el?.querySelector<HTMLElement>('.term-body')
+    if (body) {
+      body.style.flex = ''
+      body.style.height = ''
+    }
+  }
+  useLayoutEffect(() => {
+    const el = ref.current
+    const before = last.current
+    const height = (): number => el?.getBoundingClientRect().height ?? 0
+    last.current = { conv: conversationId, phase, h: height() }
+    if (before?.phase === phase && before.conv === conversationId) return
+    if (!el || !before || before.conv !== conversationId || (before.phase === 'closed' && phase !== 'open' && phase !== 'folded') || reducedMotion()) {
+      stop()
+      return
+    }
+    // 움직이던 중이면 지금 보이는 높이에서 이어 간다
+    const from = before.phase === 'closed' ? 0 : anim.current ? height() : before.h
+    stop()
+    const head = el.querySelector<HTMLElement>('.term-head')
+    const body = el.querySelector<HTMLElement>('.term-body')
+    const border = parseFloat(getComputedStyle(el).borderTopWidth) || 0
+    const natural = height()
+    const to = phase === 'folding' ? border + (head?.clientHeight ?? 0) : phase === 'leaving' ? 0 : natural
+    const done = phase === 'folding' ? onFolded : phase === 'leaving' ? onLeft : undefined
+    if (Math.abs(from - to) < 2) {
+      done?.()
+      return
+    }
+    if (body && !body.hidden) {
+      const bodyHeight = body.getBoundingClientRect().height
+      body.style.flex = '0 0 auto'
+      body.style.height = `${bodyHeight}px`
+      if (phase === 'open') body.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 260, delay: 60, easing: EASE, fill: 'backwards' })
+    }
+    el.classList.add('moving')
+    const growing = to > from
+    // 접히고 닫히는 끝 모습은 다음 렌더가 이어받을 때까지 붙잡아 둔다 (한 프레임 튐 방지)
+    const a = el.animate([{ height: `${from}px` }, { height: `${to}px` }], {
+      duration: growing ? 320 : phase === 'leaving' ? 200 : 240,
+      easing: growing ? EASE : 'cubic-bezier(0.65, 0, 0.35, 1)',
+      fill: done ? 'forwards' : 'none',
+    })
+    anim.current = a
+    a.onfinish = () => {
+      if (anim.current !== a) return
+      if (done) return done()
+      stop()
+      // 다음 움직임의 출발 높이
+      if (last.current) last.current.h = height()
+    }
+  })
+  useEffect(() => () => anim.current?.cancel(), [])
 }

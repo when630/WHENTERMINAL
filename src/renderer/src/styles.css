@@ -801,8 +801,10 @@ pre { font: 12.5px/1.65 var(--mono); background: transparent; padding: 0; overfl
 .transcript > .hit { box-shadow: inset 6px 0 0 var(--ink); background: var(--wash); transition: background var(--t-slow) var(--ease-io), box-shadow var(--t-slow) var(--ease-io); }
 
 /* 대화창 아래 터미널 (Ctrl+T). 접으면 머리줄만 남고 셸은 계속 돈다 */
-.term { position: relative; flex: none; display: flex; flex-direction: column; min-height: 0; border-top: var(--rule-thick); background: var(--code-bg); color: var(--code-fg); }
+.term { position: relative; flex: none; display: flex; flex-direction: column; min-height: 0; border-top: var(--rule-thick); background: var(--code-bg); color: var(--code-fg); transition: background-color var(--t-fast) var(--ease-io), color var(--t-fast) var(--ease-io); }
 .term.folded { background: var(--paper); color: var(--ink); }
+.term.moving { overflow: hidden; }
+.term.leaving { pointer-events: none; }
 .term-grip { position: absolute; top: -6px; left: 0; right: 0; height: 10px; cursor: ns-resize; z-index: 2; }
 .term-head { flex: none; display: flex; align-items: center; gap: 8px; padding: 0 12px 0 0; border-bottom: 1px solid color-mix(in srgb, currentColor 22%, transparent); }
 .term.folded .term-head { border-bottom: 0; }

@@ -6,7 +6,7 @@ import { useKeymap } from './settings'
 export type HelpContext = 'home' | 'chat' | 'settings'
 
 interface Group {
-  id: ActionScope | 'commands'
+  id: ActionScope | 'terminal' | 'commands'
   title: string
   note: string
   /** 키맵의 동작 (바꾼 키가 그대로 보인다) */
@@ -44,14 +44,26 @@ const GROUPS: Group[] = [
     id: 'chat',
     title: 'CHAT',
     note: '대화창. 입력 중에도 Ctrl 조합은 동작해요',
-    actions: ['terminal', 'terminalNew', 'terminalNext', 'terminalPrev', 'terminalFind', 'newConversation', 'nextConversation', 'prevConversation', 'renameConversation', 'closeConversation', 'closeProject', 'clear', 'compact', 'cycleMode', 'cycleEffort', 'interrupt', 'panelNext', 'panelPrev', 'panelBack', 'stopTask'],
+    actions: ['newConversation', 'nextConversation', 'prevConversation', 'renameConversation', 'closeConversation', 'closeProject', 'clear', 'compact', 'cycleMode', 'cycleEffort', 'interrupt', 'panelNext', 'panelPrev', 'panelBack', 'stopTask'],
     fixed: [
       ['esc', 'Interrupt'],
       ['ctrl C', 'Interrupt (no text selected)'],
       ['enter', 'Send'],
       ['shift enter', 'New line'],
-      ['ctrl shift C', 'Terminal: copy (or Ctrl+C with a selection)'],
-      ['ctrl shift V', 'Terminal: paste'],
+    ],
+  },
+  {
+    id: 'terminal',
+    title: 'TERMINAL',
+    note: '대화창 아래 터미널. 포커스가 있으면 Esc·Ctrl+C 같은 키는 셸로 가요',
+    actions: ['terminal', 'terminalNew', 'terminalNext', 'terminalPrev', 'terminalClose', 'terminalFind'],
+    fixed: [
+      ['ctrl shift C', 'Copy (or Ctrl+C with a selection)'],
+      ['ctrl shift V', 'Paste'],
+      ['ctrl Click', 'Open link · Insert file path'],
+      ['enter', 'Find: next result'],
+      ['shift enter', 'Find: previous result'],
+      ['esc', 'Find: close'],
     ],
   },
   {
