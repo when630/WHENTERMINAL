@@ -1,7 +1,6 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
 import type { SearchHit } from '@shared/types'
 import { searchTerms } from '@shared/search'
-import { Keys } from './KeyHint'
 import { HOME_ROW, matches } from './keys'
 import { useKeymap } from './settings'
 
@@ -115,11 +114,6 @@ export function SearchOverlay({ leaving, onOpen, onClose }: { leaving: boolean; 
             </li>
           ))}
         </ol>
-        <footer className="search-foot">
-          <span><Keys keys="ctrl J" /> <Keys keys="ctrl K" /> MOVE</span>
-          <span><Keys keys="enter" /> OPEN</span>
-          <span><Keys keys="esc" /> CLOSE</span>
-        </footer>
       </div>
     </div>
   )

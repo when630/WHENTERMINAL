@@ -3,7 +3,6 @@ import type { AgentProgress, SubItem, TaskOutput } from '@shared/types'
 import { agentInfo, describeBackground, isAgentTool, relPath, subActivity, summarizeInput, type ConversationState, type ToolItem } from './state'
 import { clock, useNow } from './time'
 import { Markdown } from './Markdown'
-import { Keys } from './KeyHint'
 
 /** 오른쪽 패널에서 고른 것: 백그라운드 작업(셸·모니터·백그라운드 에이전트) 또는 앞에서 도는 하위 에이전트 */
 export type DetailTarget = { kind: 'task'; taskId: string } | { kind: 'agent'; toolUseId: string }
@@ -17,11 +16,10 @@ interface Props {
   onClose: () => void
   onStopTask: (taskId: string) => Promise<void>
   /** 대화로 돌아가기·멈춤 단축키 (버튼에 표시) */
-  keys: { back: string; stop: string }
 }
 
 /** 백그라운드 작업·하위 에이전트의 세부 내용. 대화 기록 자리에 대신 펼친다 (작업 공간 CHANGES처럼) */
-export function TaskDetail({ target, state, projectId, conversationId, root, onClose, onStopTask, keys }: Props): React.JSX.Element {
+export function TaskDetail({ target, state, projectId, conversationId, root, onClose, onStopTask }: Props): React.JSX.Element {
   const now = useNow(1000)
   const background = state.background ?? []
   const task = target.kind === 'task' ? background.find((b) => b.id === target.taskId) : undefined
@@ -51,7 +49,6 @@ export function TaskDetail({ target, state, projectId, conversationId, root, onC
         onClose={onClose}
         onStop={task ? () => { setStopping(true); void onStopTask(task.id).finally(() => setStopping(false)) } : undefined}
         stopping={stopping}
-        keys={keys}
       />
     )
   }
@@ -69,10 +66,10 @@ export function TaskDetail({ target, state, projectId, conversationId, root, onC
         <div className="wt-actions">
           {task && (
             <button type="button" className="btn" disabled={stopping} onClick={() => { setStopping(true); void onStopTask(task.id).finally(() => setStopping(false)) }} title="이 작업만 멈춰요">
-              {stopping ? 'STOPPING…' : 'STOP'} <Keys keys={keys.stop} />
+              {stopping ? 'STOPPING…' : 'STOP'}
             </button>
           )}
-          <button type="button" className="btn ghost" onClick={onClose}>BACK TO CHAT <Keys keys={keys.back} /></button>
+          <button type="button" className="btn ghost" onClick={onClose}>BACK TO CHAT</button>
         </div>
       </header>
       {info && (
@@ -145,10 +142,9 @@ interface AgentProps {
   onClose: () => void
   onStop?: () => void
   stopping: boolean
-  keys: { back: string; stop: string }
 }
 
-function AgentDetail({ toolUseId, item, subs, progress, live, background, startedAt, now, root, onClose, onStop, stopping, keys }: AgentProps): React.JSX.Element {
+function AgentDetail({ toolUseId, item, subs, progress, live, background, startedAt, now, root, onClose, onStop, stopping }: AgentProps): React.JSX.Element {
   const info = agentInfo(item?.input)
   const list = subs[toolUseId] ?? []
   const tools = progress?.tools ?? list.filter((i) => i.type === 'tool').length
@@ -170,10 +166,10 @@ function AgentDetail({ toolUseId, item, subs, progress, live, background, starte
         <div className="wt-actions">
           {onStop && (
             <button type="button" className="btn" disabled={stopping} onClick={onStop} title="이 에이전트만 멈춰요">
-              {stopping ? 'STOPPING…' : 'STOP'} <Keys keys={keys.stop} />
+              {stopping ? 'STOPPING…' : 'STOP'}
             </button>
           )}
-          <button type="button" className="btn ghost" onClick={onClose}>BACK TO CHAT <Keys keys={keys.back} /></button>
+          <button type="button" className="btn ghost" onClick={onClose}>BACK TO CHAT</button>
         </div>
       </header>
       <div className="td-meta">

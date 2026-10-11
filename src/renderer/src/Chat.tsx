@@ -3,8 +3,6 @@ import { MODE_CYCLE, MODE_LABEL, openConversations, STATUS_LABEL, type EffortInf
 import { agentInfo, artifactsOf, describeBackground, emptyConversation, isAgentTool, relPath, runningAgents, STAGES, subActivity, summarizeInput, type ArtifactLink, type ConversationMap, type TaskInfo, type ToolItem, type TranscriptItem } from './state'
 import { HOME_ROW } from './keys'
 import { matchesTerms, searchableText, searchTerms } from '@shared/search'
-import { Keys } from './KeyHint'
-import { useKeymap } from './settings'
 import { Equalizer, Roll, usePresence } from './motion'
 import { clock, useNow } from './time'
 import { SubLog, TaskDetail, type DetailTarget } from './TaskDetail'
@@ -60,7 +58,6 @@ export interface PanelControl {
 }
 
 export function Chat({ project, projects, conversationId, convs, mode, usage, clearArmed, closeArmedId, projectArmed, onClearRequest, onCloseRequest, onClose, onSelectConversation, onRespond, panelRef, jump }: Props): React.JSX.Element {
-  const km = useKeymap()
   const state = convs[conversationId] ?? emptyConversation()
   // 쓰던 글은 대화마다 남는다 (탭을 옮기거나 앱을 껐다 켜도)
   const [draft, setDraft] = useDraft(conversationId)
@@ -410,7 +407,7 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
         <div className="tb-right">
           {otherWaiting.map(({ p, i, n }) => (
             <span key={p.id} className="badge other">
-              <Keys keys={`alt ${HOME_ROW[i]}`} /> {p.name} NEEDS YOU {n}
+              {p.name} NEEDS YOU {n}
             </span>
           ))}
           {conv?.worktree && (
@@ -427,10 +424,10 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
             </span>
           </div>
           <button type="button" className="tb-btn" disabled={!canCompact} onClick={() => compact()} title="대화를 요약해 컨텍스트를 줄여요 (/compact)">
-            {state.compacting ? 'COMPACTING' : 'COMPACT'} <Keys keys={km.compact} />
+            {state.compacting ? 'COMPACTING' : 'COMPACT'}
           </button>
           <button type="button" className={`tb-btn ${clearArmed ? 'armed' : ''}`} onClick={onClearRequest} title="컨텍스트를 비우고 새 세션으로 시작해요 (/clear)">
-            {clearArmed ? 'AGAIN' : 'CLEAR'} <Keys keys={km.clear} />
+            {clearArmed ? 'AGAIN' : 'CLEAR'}
           </button>
           <span className={`badge badge-${state.status}`}>{STATUS_LABEL[state.status]}</span>
         </div>
@@ -513,7 +510,6 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
             <button type="button" className={`meta meta-mode mode-${mode}`} onClick={cycleMode} title="권한 모드 바꾸기">
               <span className="meta-k">MODE</span>
               <span className="meta-v">{MODE_LABEL[mode]}</span>
-              <Keys keys={km.cycleMode} />
             </button>
           </div>
         </div>
@@ -541,7 +537,6 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
           root={project.path}
           onClose={() => setDetail(null)}
           onStopTask={(taskId) => window.api.stopTask(project.id, conversationId, taskId)}
-          keys={{ back: km.panelBack, stop: km.stopTask }}
         />
       ) : (
         <main className="transcript" ref={scrollRef} onScroll={onScroll}>
@@ -591,15 +586,15 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
         <div className={`confirm ${confirm.leaving ? 'leaving' : ''}`} role="alert">
           {confirm.item === 'project' ? (
             <>
-              <Keys keys={km.closeProject} /> 를 한 번 더 누르면 {project.name} 프로젝트를 목록에서 닫아요. 실행 중인 작업은 멈추고, 폴더와 파일은 그대로예요
+              한 번 더 누르면 {project.name} 프로젝트를 목록에서 닫아요. 실행 중인 작업은 멈추고, 폴더와 파일은 그대로예요
             </>
           ) : confirm.item === 'close' ? (
             <>
-              <Keys keys={km.closeConversation} /> 를 한 번 더 누르면 {state.status === 'running' || state.status === 'waiting_approval' ? '실행 중인 작업을 멈추고 ' : ''}이 대화를 닫아요
+              한 번 더 누르면 {state.status === 'running' || state.status === 'waiting_approval' ? '실행 중인 작업을 멈추고 ' : ''}이 대화를 닫아요
             </>
           ) : (
             <>
-              <Keys keys={km.clear} /> 을 한 번 더 누르면 컨텍스트를 비우고 새 세션으로 시작해요
+              한 번 더 누르면 컨텍스트를 비우고 새 세션으로 시작해요
             </>
           )}
         </div>
@@ -753,14 +748,13 @@ function StatusPanel({ task, status, background, agents, artifacts, items, subs,
   // 작업이 끝났는데 패널이 남아 있는 건 백그라운드·아티팩트 때문이니 그것만 보인다
   const showTask = !!task && (live || (background.length === 0 && artifacts.length === 0))
   const isSel = (t: DetailTarget): boolean => !!selected && sameTarget(selected, t)
-  const km = useKeymap()
   return (
     <aside className={`status-panel ${waiting ? 'waiting' : ''} ${live ? 'live' : ''}`} aria-label="작업 상태">
       {showTask && task && <TaskStatus task={task} status={status} now={now} />}
       {agents.length > 0 && (
         <section className="sp-sec" aria-label="하위 에이전트">
           <div className="sp-sec-h">
-            <span className="sp-k">AGENTS <Keys keys={km.panelNext} /></span>
+            <span className="sp-k">AGENTS</span>
             <span className="sp-n">{agents.length}</span>
           </div>
           <ul className="sp-bg">
@@ -788,7 +782,7 @@ function StatusPanel({ task, status, background, agents, artifacts, items, subs,
       {background.length > 0 && (
         <section className="sp-sec" aria-label="백그라운드 작업">
           <div className="sp-sec-h">
-            <span className="sp-k">BACKGROUND {agents.length === 0 && <Keys keys={km.panelNext} />}</span>
+            <span className="sp-k">BACKGROUND</span>
             <span className="sp-n">{background.length}</span>
           </div>
           <ul className="sp-bg">
@@ -886,7 +880,6 @@ function Working({ status, activity, startedAt, leaving }: { status: string; act
       <span className="working-sq" aria-hidden="true" />
       <span className="working-act">{activity ?? 'WORKING'}</span>
       {startedAt !== undefined && <span className="working-t">{clock(now - startedAt)}</span>}
-      <span className="working-k"><Keys keys="esc" /> STOP</span>
       <span className="working-bar" aria-hidden="true"><i /></span>
     </div>
   )
@@ -993,7 +986,6 @@ function ToolInput({ name, input }: { name: string; input: unknown }): React.JSX
 }
 
 function PermissionBox({ req, leaving, onRespond }: { req: PermissionRequest; leaving: boolean; onRespond: (d: PermissionDecision) => void }): React.JSX.Element {
-  const km = useKeymap()
   return (
     <div className={`permission ${leaving ? 'leaving' : ''}`} role="alert">
       <div className="permission-head">
@@ -1005,9 +997,9 @@ function PermissionBox({ req, leaving, onRespond }: { req: PermissionRequest; le
       </div>
       <pre>{JSON.stringify(req.input, null, 2)}</pre>
       <div className="permission-actions">
-        <button type="button" onClick={() => onRespond('allow')}>ALLOW {!req.defaultToNo && <Keys keys={km.allow} />}</button>
-        {!req.suppressAlwaysAllow && <button type="button" onClick={() => onRespond('always')}>ALWAYS ALLOW {!req.defaultToNo && <Keys keys={km.always} />}</button>}
-        <button type="button" onClick={() => onRespond('deny')}>DENY <Keys keys={km.deny} /></button>
+        <button type="button" onClick={() => onRespond('allow')}>ALLOW</button>
+        {!req.suppressAlwaysAllow && <button type="button" onClick={() => onRespond('always')}>ALWAYS ALLOW</button>}
+        <button type="button" onClick={() => onRespond('deny')}>DENY</button>
       </div>
       {req.defaultToNo && <div className="muted">이 요청은 단축키로 허락할 수 없어요. 버튼을 직접 눌러 주세요.</div>}
     </div>

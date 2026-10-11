@@ -83,6 +83,10 @@
 ::-webkit-scrollbar-button { display: none; }
 ::-webkit-scrollbar-thumb { background: var(--gray-3); border: 3px solid transparent; background-clip: padding-box; border-radius: 0; }
 ::-webkit-scrollbar-thumb:hover, ::-webkit-scrollbar-thumb:active { background-color: var(--ink); border-width: 2px; }
+/* 좁은 목록(메뉴·펼치는 목록·터미널)은 가는 막대. scrollbar-width/scrollbar-color를 쓰면 위 디자인이 무시되고 OS 기본 막대가 나오므로 쓰지 말 것 (숨길 때 none만) */
+.slash::-webkit-scrollbar, .model-list::-webkit-scrollbar, .sp-files::-webkit-scrollbar, .composer textarea::-webkit-scrollbar, pre::-webkit-scrollbar, .md-table::-webkit-scrollbar { width: 8px; height: 8px; }
+.slash::-webkit-scrollbar-thumb, .model-list::-webkit-scrollbar-thumb, .sp-files::-webkit-scrollbar-thumb, .composer textarea::-webkit-scrollbar-thumb, pre::-webkit-scrollbar-thumb, .md-table::-webkit-scrollbar-thumb { border-width: 2px; }
+.slash::-webkit-scrollbar-thumb:hover, .model-list::-webkit-scrollbar-thumb:hover, .sp-files::-webkit-scrollbar-thumb:hover, .composer textarea::-webkit-scrollbar-thumb:hover, pre::-webkit-scrollbar-thumb:hover, .md-table::-webkit-scrollbar-thumb:hover { border-width: 1px; }
 html, body, #root { height: 100%; margin: 0; }
 body { background: var(--paper); color: var(--ink); font: 14px/1.5 var(--font); -webkit-font-smoothing: antialiased; }
 button { font: inherit; color: inherit; cursor: pointer; }
@@ -117,7 +121,6 @@ kbd { display: inline-block; font: 500 11px/1 var(--mono); padding: 3px 5px; col
 .ticker-run > span { white-space: pre; padding-right: 48px; min-width: var(--ticker-w, 0); }
 .ticker-run span span, .ticker-run b { white-space: pre; }
 .ticker b { color: var(--signal); font-weight: 600; }
-.ticker .keys { margin: 0 2px; padding: 1px 4px; vertical-align: -2px; font-family: var(--mono); }
 
 /* ── 껍데기: 포스터 레일 + 본문 ── */
 .shell { display: flex; height: 100%; }
@@ -134,7 +137,6 @@ kbd { display: inline-block; font: 500 11px/1 var(--mono); padding: 3px 5px; col
 .nav:hover { background: var(--wash); }
 .nav.on { background: var(--sel-bg); color: var(--sel-fg); }
 .nav.nav-home .nav-name { font: 22px/1.1 var(--kr); }
-.nav kbd { border-color: transparent; opacity: 0.6; padding: 2px 0; }
 .nav-key { width: 28px; flex: none; font: 900 26px/0.9 var(--disp); letter-spacing: -0.04em; }
 .nav-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
 .side-label { display: flex; align-items: center; padding: 12px 18px 8px; border-bottom: var(--rule); font: 600 11px/1 var(--disp); letter-spacing: 0.12em; }
@@ -235,9 +237,6 @@ kbd { display: inline-block; font: 500 11px/1 var(--mono); padding: 3px 5px; col
 .proj kbd { background: var(--sel-bg); color: var(--sel-fg); border-color: var(--sel-bg); }
 .proj:hover kbd { background: var(--paper); color: var(--ink); }
 .proj-name { width: 120px; height: 19px; }
-.ask-mode button { font: 700 12px/1 var(--font); padding: 6px 10px; }
-.ask-mode button:disabled { color: var(--gray-3); cursor: default; }
-.ask-target { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 46ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .roll { position: relative; display: block; overflow: hidden; }
 .roll > span { position: absolute; left: 0; right: 0; top: 0; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -324,11 +323,9 @@ kbd { display: inline-block; font: 500 11px/1 var(--mono); padding: 3px 5px; col
 
 
 /* 슬래시 명령 후보 */
-.slash { position: absolute; z-index: 4; left: 0; right: 0; bottom: 100%; max-height: min(340px, 50vh); overflow-y: auto; background: var(--paper); border-top: var(--rule-thick); box-shadow: 0 -16px 32px var(--shadow); animation: slash-in 0.22s var(--ease-out) both; scrollbar-width: thin; }
+.slash { position: absolute; z-index: 4; left: 0; right: 0; bottom: 100%; max-height: min(340px, 50vh); overflow-y: auto; background: var(--paper); border-top: var(--rule-thick); box-shadow: 0 -16px 32px var(--shadow); animation: slash-in 0.22s var(--ease-out) both; }
 @keyframes slash-in { from { opacity: 0; transform: translateY(8px); } }
 .slash-head { position: sticky; top: 0; z-index: 1; display: flex; justify-content: space-between; gap: 16px; padding: 8px 28px; background: var(--paper); border-bottom: var(--rule); font: 600 11px/1 var(--disp); letter-spacing: 0.12em; }
-.slash-keys { display: inline-flex; align-items: center; gap: 6px; letter-spacing: 0; font: 600 11.5px var(--font); color: var(--gray); }
-.slash-keys .keys { border-color: transparent; padding: 0; color: var(--ink); }
 .slash-empty { padding: 14px 28px; color: var(--gray); font-weight: 600; }
 .slash-row { display: grid; grid-template-columns: fit-content(52%) minmax(0, 1fr) auto; align-items: baseline; gap: 16px; width: 100%; padding: 8px 28px; border: 0; border-bottom: 1px solid var(--wash-2); background: transparent; color: var(--ink); text-align: left; transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out); }
 .slash-row.on { background: var(--sel-bg); color: var(--sel-fg); }
@@ -462,7 +459,7 @@ kbd { display: inline-block; font: 500 11px/1 var(--mono); padding: 3px 5px; col
 .model-caret { font-size: 10px; opacity: 0.6; transition: transform var(--t-med) var(--ease-out); }
 .meta.open .model-caret { transform: rotate(180deg); }
 /* 펼친 목록: 누른 칸 아래에 붙어서 내려온다. 슬래시 메뉴와 같은 머리줄·한 줄 행 */
-.model-list { position: absolute; z-index: 8; top: 100%; right: 0; width: 440px; max-width: calc(100vw - 48px); max-height: min(420px, 60vh); overflow-y: auto; background: var(--paper); color: var(--ink); border: var(--rule); border-top: 0; box-shadow: 0 16px 32px var(--shadow); animation: drop-in 0.22s var(--ease-out) both; outline: none; scrollbar-width: thin; }
+.model-list { position: absolute; z-index: 8; top: 100%; right: 0; width: 440px; max-width: calc(100vw - 48px); max-height: min(420px, 60vh); overflow-y: auto; background: var(--paper); color: var(--ink); border: var(--rule); border-top: 0; box-shadow: 0 16px 32px var(--shadow); animation: drop-in 0.22s var(--ease-out) both; outline: none; }
 @keyframes drop-in { from { opacity: 0; transform: translateY(-6px); } }
 /* 들어갈 때는 나온 길을 거꾸로, 같은 시간으로 (전역 .leaving이 !important라 여기도).
    등장 키프레임을 reverse로 다시 쓰면 안 된다: 이름이 같으면 끝난 애니메이션의 방향만 바뀌어 바로 사라진다 */
@@ -471,7 +468,6 @@ kbd { display: inline-block; font: 500 11px/1 var(--mono); padding: 3px 5px; col
 .model-list.leaving { animation: drop-out 0.22s var(--ease-io) both !important; }
 .model-list.term-shells.leaving, .slash.leaving, .limit-warn.leaving, .term-find.leaving { animation: slash-out 0.22s var(--ease-io) both !important; }
 .model-head { position: sticky; top: 0; z-index: 1; display: flex; justify-content: space-between; gap: 16px; padding: 8px 16px; background: var(--paper); border-bottom: var(--rule); font: 600 11px/1 var(--disp); letter-spacing: 0.12em; white-space: nowrap; }
-.model-head .slash-keys { white-space: nowrap; }
 .model-row { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: baseline; gap: 14px; width: 100%; padding: 9px 16px; border: 0; border-bottom: 1px solid var(--wash-2); background: transparent; color: var(--ink); text-align: left; transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out); }
 .model-row:last-child { border-bottom: 0; }
 .model-row.hi { background: var(--sel-bg); color: var(--sel-fg); }
@@ -482,7 +478,6 @@ kbd { display: inline-block; font: 500 11px/1 var(--mono); padding: 3px 5px; col
 .model-limit.full { background: var(--signal); color: var(--on-signal); }
 .meta-mode { transition: background var(--t-med) var(--ease-io), color var(--t-med) var(--ease-io), box-shadow var(--t-med) var(--ease-io); }
 .meta-mode:hover { background: var(--wash); }
-.meta-mode .keys { border-color: currentColor; opacity: 0.8; }
 .tb-proj { flex: 1; min-width: 0; display: flex; align-items: flex-end; gap: 12px; padding: 12px 24px 10px; }
 .tb-name { min-width: 0; }
 .tb-name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -507,7 +502,6 @@ kbd { display: inline-block; font: 500 11px/1 var(--mono); padding: 3px 5px; col
 .tab.add { font: 900 24px/1 var(--disp); padding: 0 16px; }
 .tb-right { display: flex; align-items: stretch; flex-wrap: wrap; }
 .badge { display: inline-flex; align-items: center; gap: 8px; padding: 0 16px; border-left: var(--rule); font: 15px/1 var(--kr); white-space: nowrap; }
-.badge kbd { font-family: var(--mono); }
 .badge-running { background: var(--paper); }
 .badge-waiting_approval { background: var(--signal); color: var(--on-signal); }
 .badge-error { background: var(--ink); color: var(--signal); }
@@ -526,7 +520,6 @@ kbd { display: inline-block; font: 500 11px/1 var(--mono); padding: 3px 5px; col
 .tb-btn:hover:not(:disabled) { background: var(--sel-bg); color: var(--sel-fg); }
 .tb-btn:disabled { color: var(--gray-3); cursor: default; }
 .tb-btn.armed { background: var(--signal); color: var(--on-signal); }
-.tb-btn kbd { font-family: var(--mono); }
 .ctx-pct { flex: none; font: 600 11px var(--mono); color: var(--gray); }
 .ctx-pct.hot { color: var(--signal); }
 .divider { margin: 6px 0; padding: 8px 28px; border-top: var(--rule); border-bottom: var(--rule); font: 600 12.5px/1.2 var(--disp); letter-spacing: 0.06em; text-transform: uppercase; }
@@ -536,14 +529,11 @@ kbd { display: inline-block; font: 500 11px/1 var(--mono); padding: 3px 5px; col
 .working.queued .working-sq { background: transparent; box-shadow: inset 0 0 0 2px var(--ink); }
 .working-act { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .working-t { flex: none; font: 900 14px/1 var(--disp); font-variant-numeric: tabular-nums; }
-.working-k { flex: none; color: var(--gray); }
 .working-bar { position: absolute; left: 28px; right: 28px; bottom: 6px; height: 4px; overflow: hidden; }
 .working-bar i { position: absolute; inset: 0 0 0 -20px; background-image: repeating-linear-gradient(-45deg, var(--ink) 0 7px, transparent 7px 14px); animation: stripes 1.1s linear infinite; }
 .working.queued .working-bar i { opacity: 0.3; animation: none; }
 .confirm { flex: none; padding: 10px 28px; background: var(--signal); color: var(--on-signal); font-size: 13.5px; font-weight: 700; animation: wipe 0.45s var(--ease-out) both; }
-.confirm .keys { border-color: currentColor; margin-right: 2px; }
 .badge.other { font: 700 12.5px/1 var(--font); background: var(--signal); color: var(--on-signal); cursor: default; }
-.badge.other kbd { border-color: currentColor; }
 
 /* 대화 + 오른쪽 상태 패널. 실행이 시작되면 펼쳐지고, 끝나면 마지막 모습을 잠깐 보인 뒤 접힌다 */
 .chat-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 0px; transition: grid-template-columns 0.5s var(--ease-io) 1.6s; }
@@ -726,7 +716,6 @@ pre { font: 12.5px/1.65 var(--mono); background: transparent; padding: 0; overfl
 .permission-actions button { display: inline-flex; align-items: center; gap: 10px; padding: 9px 16px; border: 3px solid var(--on-signal); background: transparent; color: var(--on-signal); font: 900 15px/1 var(--disp); transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out), transform 0.1s; }
 .permission-actions button:hover { background: var(--on-signal); color: var(--signal); }
 .permission-actions button:active { transform: scale(0.96); }
-.permission-actions kbd { border-color: currentColor; font-size: 12px; }
 .permission .muted { color: var(--on-signal); opacity: 0.85; font-size: 12.5px; font-weight: 600; }
 
 .composer { position: relative; flex: none; display: flex; align-items: flex-start; gap: 14px; padding: 8px 28px; border-top: var(--rule-thick); transition: background var(--t-fast) var(--ease-out); }
@@ -810,8 +799,6 @@ pre { font: 12.5px/1.65 var(--mono); background: transparent; padding: 0; overfl
 .search-snippet { font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
 .search-snippet mark { background: var(--sel-bg); color: var(--sel-fg); padding: 0 1px; }
 .search-hit.on .search-snippet mark { background: var(--sel-fg); color: var(--sel-bg); }
-.search-foot { display: flex; gap: 18px; padding: 8px 20px; border-top: var(--rule); font: 700 11.5px/1 var(--disp); letter-spacing: 0.06em; color: var(--gray); }
-.search-foot span { display: inline-flex; align-items: center; gap: 6px; }
 @media (prefers-reduced-motion: reduce) { .overlay, .overlay-sheet { animation: none; } }
 
 /* 마우스를 올리면 나오는 설명 (tooltip.tsx가 title을 옮겨 보여준다) */
@@ -850,12 +837,13 @@ pre { font: 12.5px/1.65 var(--mono); background: transparent; padding: 0; overfl
 .term-btn:hover:not(:disabled) { background: var(--code-fg); color: var(--code-bg); }
 .term.folded .term-btn:hover:not(:disabled) { background: var(--sel-bg); color: var(--sel-fg); }
 .term-btn:disabled { opacity: 0.35; cursor: default; }
-.term-btn kbd { border-color: currentColor; font-size: 10px; }
 .term-x { width: 26px; justify-content: center; font: 900 16px/1 var(--disp); padding: 2px 0; }
 .term-host { flex: 1; min-height: 0; padding: 6px 4px 4px 16px; }
 .term-xterm { width: 100%; height: 100%; }
 .term-xterm .xterm { height: 100%; }
-.term-xterm .xterm-viewport { scrollbar-width: thin; }
+.term-xterm .xterm-viewport::-webkit-scrollbar { width: 8px; }
+.term-xterm .xterm-viewport::-webkit-scrollbar-thumb { border-width: 2px; }
+.term-xterm .xterm-viewport::-webkit-scrollbar-thumb:hover, .term-xterm .xterm-viewport::-webkit-scrollbar-thumb:active { border-width: 1px; }
 .tool-run { margin-top: 10px; padding: 5px 10px; border: 1.5px solid currentColor; background: transparent; color: inherit; font: 700 10.5px/1 var(--disp); letter-spacing: 0.08em; }
 .tool-run:hover { background: var(--code-fg); color: var(--code-bg); }
 

@@ -111,7 +111,7 @@ export function SettingsScreen({ settings, activeHotkey, update, onClose, onSave
         </div>
         <div className="tb-right">
           <button type="button" className="tb-btn" onClick={onClose}>
-            CLOSE <Keys keys="esc" />
+            CLOSE
           </button>
         </div>
       </header>
