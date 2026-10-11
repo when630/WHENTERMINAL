@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { MODE_CYCLE, MODE_LABEL, openConversations, STATUS_LABEL, type UsageInfo, type SlashCommandInfo, type AgentMode, type PermissionDecision, type PermissionRequest, type Project, type BackgroundTask, type AgentProgress, type SubItem } from '@shared/types'
+import { MODE_CYCLE, MODE_LABEL, openConversations, STATUS_LABEL, type EffortInfo, type EffortLevel, type GitBranch, type UsageInfo, type SlashCommandInfo, type AgentMode, type PermissionDecision, type PermissionRequest, type Project, type BackgroundTask, type AgentProgress, type SubItem } from '@shared/types'
 import { agentInfo, artifactsOf, describeBackground, emptyConversation, isAgentTool, relPath, runningAgents, STAGES, subActivity, summarizeInput, type ArtifactLink, type ConversationMap, type TaskInfo, type ToolItem, type TranscriptItem } from './state'
 import { HOME_ROW } from './keys'
 import { matchesTerms, searchableText, searchTerms } from '@shared/search'
@@ -8,11 +8,13 @@ import { useKeymap } from './settings'
 import { Roll, usePresence } from './motion'
 import { clock, useNow } from './time'
 import { SubLog, TaskDetail, type DetailTarget } from './TaskDetail'
-import { runInTerminal, TerminalDrawer, toggleTerminal } from './terminal'
+import { pathForComposer, runInTerminal, TerminalDrawer, toggleTerminal } from './terminal'
 import { Markdown } from './Markdown'
 import { AttachButton, useAttach } from './attach'
 import { WorktreePanel } from './WorktreePanel'
-import { ModelPicker } from './ModelPicker'
+import { EffortPicker, ModelPicker } from './ModelPicker'
+import { useDraft } from './drafts'
+import { formatReset, worstLimit } from '@shared/usage'
 import { FileMenu, rankCommands, SlashMenu, useSlashCommands } from './SlashMenu'
 
 interface Props {
@@ -51,13 +53,23 @@ export interface PanelControl {
   rename: () => void
   /** 아래 터미널: 펼치고 터미널로 / 터미널 ↔ 입력창 / 터미널에서 누르면 접기 */
   terminal: () => void
+  /** effort를 다음 단계로 (기본값 → LOW → … → 기본값) */
+  cycleEffort: () => void
 }
 
 export function Chat({ project, projects, conversationId, convs, mode, usage, clearArmed, closeArmedId, projectArmed, onClearRequest, onCloseRequest, onClose, onSelectConversation, onRespond, panelRef, jump }: Props): React.JSX.Element {
   const km = useKeymap()
   const state = convs[conversationId] ?? emptyConversation()
-  const [draft, setDraft] = useState('')
+  // 쓰던 글은 대화마다 남는다 (탭을 옮기거나 앱을 껐다 켜도)
+  const [draft, setDraft] = useDraft(conversationId)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  // 입력창은 한 줄로 시작해 글이 늘면 따라 커진다 (최대 높이는 CSS max-height)
+  useLayoutEffect(() => {
+    const el = inputRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${el.scrollHeight}px`
+  }, [draft])
   const scrollRef = useRef<HTMLElement>(null)
   const pending = state.permissions[0]
   const permission = usePresence(pending)
@@ -156,6 +168,26 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
   const conv = project.conversations.find((c) => c.id === conversationId)
   // 모델은 세션마다 다를 수 있다: 이번 실행에서 받은 값, 없으면 저장된 값
   const model = state.model ?? (conv?.model ? { id: conv.model, label: conv.modelLabel ?? conv.model } : undefined)
+  const root = conv?.worktree?.path ?? project.path
+
+  // effort: 모델이 받는 단계와 기본값. 모델이 바뀌면 다시 읽는다
+  const [effortInfo, setEffortInfo] = useState<EffortInfo | null>(null)
+  useEffect(() => {
+    let alive = true
+    void window.api.getEffort(project.id, conversationId).then((i) => alive && setEffortInfo(i))
+    return () => {
+      alive = false
+    }
+  }, [project.id, conversationId, model?.id, conv?.modelChoice])
+  const setEffort = (e: EffortLevel | null): void => void window.api.setEffort(project.id, conversationId, e)
+
+  // 브랜치: 대화를 열 때·작업이 끝날 때·창으로 돌아올 때·30초마다
+  const branch = useBranch(project.id, conversationId, state.status)
+
+  // 구독 한도: 이 모델로 보낼 때 걸리는 창 중 가장 위험한 것. 다 썼으면 Enter를 한 번 더 눌러야 보낸다
+  const limit = worstLimit(usage, model?.id ?? model?.label)
+  const [limitArmed, setLimitArmed] = useState(false)
+  useEffect(() => setLimitArmed(false), [draft, conversationId])
   const cycleMode = (): void => {
     void window.api.setMode(project.id, conversationId, MODE_CYCLE[(MODE_CYCLE.indexOf(mode) + 1) % MODE_CYCLE.length])
   }
@@ -302,6 +334,11 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
     },
     rename: () => setEditingId(conversationId),
     terminal: () => toggleTerminal(project.id, conversationId, () => inputRef.current?.focus()),
+    cycleEffort: () => {
+      if (!effortInfo?.levels.length) return
+      const rows: (EffortLevel | null)[] = [null, ...effortInfo.levels]
+      setEffort(rows[(rows.indexOf(conv?.effort ?? null) + 1) % rows.length])
+    },
   }
   const attach = useAttach({ inputRef, value: draft, setValue: setDraft, root: conv?.worktree?.path ?? project.path, onCaret: setCaret })
 
@@ -322,6 +359,10 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
       else void window.api.clear(project.id, conversationId)
       return
     }
+    if (limit?.level === 100 && !limitArmed) {
+      setLimitArmed(true)
+      return
+    }
     setDraft('')
     void window.api.send(project.id, conversationId, text)
   }
@@ -338,7 +379,11 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
             <b>{project.name}</b>
             {conv?.worktree ? (
               <span className="tb-wt" title={conv.worktree.path}>
-                <span className="wt-tag">WORKTREE</span> {conv.worktree.branch} · {conv.worktree.path}
+                <span className="wt-tag">WORKTREE</span> <BranchName branch={branch} fallback={conv.worktree.branch} /> <span className="tb-path">· {conv.worktree.path}</span>
+              </span>
+            ) : branch ? (
+              <span className="tb-wt" title={project.path}>
+                <span className="wt-tag">BRANCH</span> <BranchName branch={branch} /> <span className="tb-path">· {project.path}</span>
               </span>
             ) : (
               <span>{project.path}</span>
@@ -447,6 +492,7 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
           </nav>
           <div className="tb-meta">
             <ModelPicker projectId={project.id} conversationId={conversationId} current={model} choice={conv?.modelChoice} usage={usage} />
+            <EffortPicker choice={conv?.effort} info={effortInfo} onPick={setEffort} />
             <button type="button" className={`meta meta-mode mode-${mode}`} onClick={cycleMode} title="권한 모드 바꾸기">
               <span className="meta-k">MODE</span>
               <span className="meta-v">{MODE_LABEL[mode]}</span>
@@ -546,6 +592,16 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
           <SlashMenu items={menuItems} index={menuIndex} loading={slash.loading} onHover={setMenuIndex} onPick={(c) => pickCommand(c, true)} />
         )}
         {fileOpen && <FileMenu items={fileItems} index={menuIndex} loading={!files || files.q !== fileQuery} onHover={setMenuIndex} onPick={pickFile} />}
+        {limit && (
+          <div className={`limit-warn ${limit.level === 100 ? 'full' : ''} ${limitArmed ? 'armed' : ''}`} role="status">
+            <b>LIMIT</b>
+            <span>
+              {limit.window.label} {limit.level === 100 ? '한도를 다 썼어요' : `${limit.window.percent ?? limit.level}%`}
+              {limit.window.resetsAt ? ` · ${formatReset(limit.window.resetsAt)}` : ''}
+            </span>
+            {limit.level === 100 && <em>{limitArmed ? '지금 보내면 거절될 수 있어요 · Enter를 한 번 더 누르면 보내요' : '보내면 거절될 수 있어요'}</em>}
+          </div>
+        )}
         <span className="composer-prompt" aria-hidden="true">&gt;</span>
         <AttachButton onClick={attach.pick} />
         <div className="composer-body">
@@ -558,7 +614,7 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
             data-menu-open={menuOpen ? 'true' : undefined}
             aria-autocomplete="list"
             aria-expanded={menuOpen}
-            rows={2}
+            rows={1}
             placeholder={busy ? '작업 중이에요 · 지금 입력하면 다음 차례로 보내요' : '메시지 입력 · / 명령 · @ 파일'}
             onChange={(e) => {
               setDraft(e.target.value)
@@ -593,8 +649,53 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
             el.setSelectionRange(el.value.length, el.value.length)
           })
         }}
+        onPath={(raw) => {
+          // Ctrl+클릭한 경로를 커서 자리에 넣는다
+          const text = pathForComposer(raw, root)
+          const el = inputRef.current
+          const at = el && document.activeElement === el ? el.selectionStart : draft.length
+          const before = draft.slice(0, at)
+          const insert = `${before && !/\s$/.test(before) ? ' ' : ''}${text}`
+          setDraft(before + insert + draft.slice(at))
+          const pos = at + insert.length
+          setCaret(pos)
+          requestAnimationFrame(() => {
+            inputRef.current?.focus()
+            inputRef.current?.setSelectionRange(pos, pos)
+          })
+        }}
       />
     </div>
+  )
+}
+
+/** 대화 폴더의 브랜치. 대화를 열 때·작업 상태가 바뀔 때·창으로 돌아올 때·30초마다 다시 읽는다 */
+function useBranch(projectId: string, conversationId: string, status: string): GitBranch | null {
+  const [branch, setBranch] = useState<{ id: string; value: GitBranch | null } | null>(null)
+  useEffect(() => {
+    let alive = true
+    const read = (): void => {
+      void window.api.gitBranch(projectId, conversationId).then((value) => alive && setBranch({ id: conversationId, value }), () => {})
+    }
+    read()
+    const timer = setInterval(() => document.visibilityState === 'visible' && read(), 30_000)
+    window.addEventListener('focus', read)
+    return () => {
+      alive = false
+      clearInterval(timer)
+      window.removeEventListener('focus', read)
+    }
+  }, [projectId, conversationId, status])
+  return branch?.id === conversationId ? branch.value : null
+}
+
+function BranchName({ branch, fallback }: { branch: GitBranch | null; fallback?: string }): React.JSX.Element {
+  if (!branch) return <span className="tb-branch">{fallback}</span>
+  return (
+    <span className={`tb-branch ${branch.dirty ? 'dirty' : ''}`} title={`${branch.detached ? '분리된 HEAD' : '브랜치'} ${branch.name}${branch.dirty ? ' · 커밋하지 않은 변경이 있어요' : ''}`}>
+      {branch.detached ? `DETACHED ${branch.name}` : branch.name}
+      {branch.dirty && <i aria-label="커밋하지 않은 변경">*</i>}
+    </span>
   )
 }
 

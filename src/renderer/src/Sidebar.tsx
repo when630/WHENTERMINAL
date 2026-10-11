@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { openConversations, type Project, type UpdateState, type UsageInfo, type UsageWindow } from '@shared/types'
 import { STATUS_LABEL } from '@shared/types'
+import { formatReset, limitLevel } from '@shared/usage'
 import { ALT_LABEL, HOME_ROW } from './keys'
 import { Keys } from './KeyHint'
 import { useKeymap } from './settings'
@@ -177,7 +178,7 @@ function Usage({ usage, onRefresh }: { usage: UsageInfo | null; onRefresh: () =>
 }
 
 function UsageRow({ w, big }: { w: UsageWindow; big: boolean }): React.JSX.Element {
-  const hot = (w.percent ?? 0) >= 80 || w.status === 'allowed_warning' || w.status === 'rejected'
+  const hot = limitLevel(w) > 0
   return (
     <div className={`uw ${big ? 'uw-big' : ''} ${hot ? 'hot' : ''}`} title={w.status === 'rejected' ? '한도에 도달했어요' : undefined}>
       <div className="uw-top">
@@ -190,17 +191,4 @@ function UsageRow({ w, big }: { w: UsageWindow; big: boolean }): React.JSX.Eleme
       {w.resetsAt && <div className="uw-reset">{formatReset(w.resetsAt)}</div>}
     </div>
   )
-}
-
-/** 하루 안이면 '17:40 초기화 · 2시간 뒤', 그 뒤면 '10/14(화) 09:00 초기화' */
-function formatReset(ms: number): string {
-  const d = new Date(ms)
-  const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-  const left = ms - Date.now()
-  if (left < 24 * 3600_000) {
-    const h = Math.floor(left / 3600_000)
-    const m = Math.max(0, Math.round((left % 3600_000) / 60_000))
-    return `${hm} 초기화 · ${h > 0 ? `${h}시간 ` : ''}${m}분 뒤`
-  }
-  return `${d.getMonth() + 1}/${d.getDate()}(${'일월화수목금토'[d.getDay()]}) ${hm} 초기화`
 }

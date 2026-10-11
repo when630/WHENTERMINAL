@@ -715,7 +715,7 @@ pre { font: 12.5px/1.65 var(--mono); background: transparent; padding: 0; overfl
 .permission-actions kbd { border-color: currentColor; font-size: 12px; }
 .permission .muted { color: var(--on-signal); opacity: 0.85; font-size: 12.5px; font-weight: 600; }
 
-.composer { position: relative; flex: none; display: flex; align-items: flex-start; gap: 14px; padding: 12px 28px 10px; border-top: var(--rule-thick); transition: background 0.15s; }
+.composer { position: relative; flex: none; display: flex; align-items: flex-start; gap: 14px; padding: 8px 28px; border-top: var(--rule-thick); transition: background 0.15s; }
 .composer:focus-within { background: var(--wash); }
 .composer.dropping, .ask.dropping { background: var(--wash); box-shadow: inset 0 0 0 3px var(--signal); }
 .ask { position: relative; }
@@ -724,9 +724,9 @@ pre { font: 12.5px/1.65 var(--mono); background: transparent; padding: 0; overfl
 .attach { flex: none; width: 34px; height: 34px; margin-top: 2px; padding: 6px; border: var(--rule); background: var(--paper); color: var(--ink); transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out); }
 .attach:hover { background: var(--sel-bg); color: var(--sel-fg); }
 .attach svg { width: 100%; height: 100%; }
-.composer-prompt { font: 900 30px/1.1 var(--disp); padding-top: 2px; }
+.composer-prompt { font: 900 26px/1.1 var(--disp); padding-top: 2px; }
 .composer-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
-.composer textarea { display: block; width: 100%; resize: none; font: 700 17px/1.55 var(--font); color: var(--ink); background: transparent; border: 0; padding: 6px 0; outline: none; }
+.composer textarea { display: block; width: 100%; resize: none; font: 700 16px/1.5 var(--font); color: var(--ink); background: transparent; border: 0; padding: 5px 0; outline: none; max-height: 40vh; overflow-y: auto; }
 .composer textarea::placeholder { color: var(--gray-2); }
 .mode-acceptEdits, .mode-acceptEdits:hover { background: var(--sel-bg); color: var(--sel-fg); }
 .mode-auto, .mode-auto:hover { background: var(--sel-bg); color: var(--sel-fg); box-shadow: inset 6px 0 0 var(--signal); }
@@ -806,11 +806,18 @@ pre { font: 12.5px/1.65 var(--mono); background: transparent; padding: 0; overfl
 .term-grip { position: absolute; top: -6px; left: 0; right: 0; height: 10px; cursor: ns-resize; z-index: 2; }
 .term-head { flex: none; display: flex; align-items: center; gap: 8px; padding: 0 12px 0 0; border-bottom: 1px solid color-mix(in srgb, currentColor 22%, transparent); }
 .term.folded .term-head { border-bottom: 0; }
-.term-title { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; padding: 8px 20px; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; white-space: nowrap; }
+.term-title { flex: none; display: flex; align-items: center; gap: 10px; padding: 8px 20px; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; white-space: nowrap; }
 .term-title b { font: 900 12.5px/1 var(--disp); letter-spacing: 0.08em; }
 .term-sq { flex: none; width: 9px; height: 9px; background: currentColor; animation: q-pulse 1.6s var(--ease-io) infinite; }
 .term-sq.off { animation: none; opacity: 0.35; }
-.term-shell { font: 700 11.5px/1 var(--disp); letter-spacing: 0.06em; opacity: 0.7; }
+.term-pick { position: relative; flex: none; display: flex; margin-left: -10px; }
+.term-shell { display: inline-flex; align-items: center; gap: 5px; padding: 4px 6px; border: 0; background: transparent; color: inherit; font: 700 11.5px/1 var(--disp); letter-spacing: 0.06em; opacity: 0.7; transition: opacity var(--t-fast) var(--ease-out), background var(--t-fast) var(--ease-out); }
+.term-shell:hover, .term-shell.open { opacity: 1; background: color-mix(in srgb, currentColor 14%, transparent); }
+.term-shell.open .model-caret { transform: rotate(180deg); }
+/* 서랍은 화면 아래에 있으니 위로 펼친다 */
+.term-shells { position: absolute; z-index: 8; bottom: calc(100% + 6px); left: 0; width: 340px; max-height: 50vh; overflow-y: auto; background: var(--paper); border: var(--rule-thick); box-shadow: 10px 10px 0 var(--line); animation: slash-in 0.22s var(--ease-out) both; outline: none; }
+.term-shells .model-desc { font-size: 11.5px; word-break: break-all; }
+.term-fill { flex: 1; min-width: 0; align-self: stretch; display: flex; align-items: center; gap: 10px; padding-left: 4px; cursor: pointer; white-space: nowrap; }
 .term-cwd { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 11.5px; opacity: 0.6; }
 .term-exit { font: 900 11px/1 var(--disp); letter-spacing: 0.06em; }
 .term-actions { flex: none; display: flex; align-items: center; gap: 6px; }
@@ -826,3 +833,44 @@ pre { font: 12.5px/1.65 var(--mono); background: transparent; padding: 0; overfl
 .term-xterm .xterm-viewport { scrollbar-width: thin; }
 .tool-run { margin-top: 10px; padding: 5px 10px; border: 1.5px solid currentColor; background: transparent; color: inherit; font: 700 10.5px/1 var(--disp); letter-spacing: 0.08em; }
 .tool-run:hover { background: var(--code-fg); color: var(--code-bg); }
+
+/* 대화창 상단: 브랜치·effort */
+.tb-wt .tb-branch { flex: none; overflow: visible; color: var(--ink); font-weight: 600; }
+.tb-wt .tb-path { min-width: 0; }
+.tb-branch i { margin-left: 1px; color: var(--ink); font-style: normal; font-weight: 900; }
+.model-pick + .model-pick > .meta, .model-pick + .meta { border-left: var(--rule); }
+.effort-v { font: 900 15px/1 var(--disp); letter-spacing: 0.02em; }
+.meta-default .effort-v { opacity: 0.55; }
+.meta:disabled { cursor: default; }
+.model-pick > .meta:disabled:hover { background: var(--paper); }
+.effort-list { width: 320px; }
+
+/* 입력창 위 한도 경고 줄. 다 쓴 경우만 신호색 */
+.limit-warn { position: absolute; left: 0; right: 0; bottom: 100%; display: flex; align-items: center; gap: 10px; padding: 6px 28px; border-top: var(--rule); background: var(--wash); color: var(--ink); font-size: 12.5px; font-weight: 600; animation: slash-in 0.22s var(--ease-out) both; pointer-events: none; }
+.limit-warn b { font: 900 11px/1 var(--disp); letter-spacing: 0.1em; }
+.limit-warn em { margin-left: auto; font-style: normal; opacity: 0.85; }
+.limit-warn.full { background: var(--signal); color: var(--on-signal); border-top-color: var(--signal); }
+.limit-warn.armed em { opacity: 1; font-weight: 800; }
+
+/* 터미널 탭·찾기 */
+.term-tabs { flex: none; display: flex; align-items: stretch; align-self: stretch; }
+.term-tab { position: relative; display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; border: 0; border-left: 1px solid color-mix(in srgb, currentColor 22%, transparent); background: transparent; color: inherit; font: 900 11px/1 var(--disp); letter-spacing: 0.04em; opacity: 0.6; transition: opacity var(--t-fast) var(--ease-out), background var(--t-fast) var(--ease-out); }
+.term-tab span { font-weight: 600; letter-spacing: 0.02em; }
+.term-tab:hover { opacity: 1; }
+.term-tab.on { opacity: 1; box-shadow: inset 0 -3px 0 currentColor; }
+.term-tab.off span { text-decoration: line-through; }
+.term-tab-done, .term-done { flex: none; }
+.term-tab-done { width: 7px; height: 7px; background: currentColor; animation: q-pulse 1.6s var(--ease-io) infinite; }
+.term-done { padding: 2px 5px; border: 1.5px solid currentColor; font: 900 10px/1 var(--disp); letter-spacing: 0.08em; }
+.term-add { flex: none; align-self: stretch; width: 28px; padding: 0; border: 0; border-left: 1px solid color-mix(in srgb, currentColor 22%, transparent); border-right: 1px solid color-mix(in srgb, currentColor 22%, transparent); background: transparent; color: inherit; font: 900 15px/1 var(--disp); opacity: 0.7; }
+.term-add:hover { opacity: 1; background: color-mix(in srgb, currentColor 14%, transparent); }
+.term-head > .term-title { padding-right: 8px; }
+.term-pick { margin-left: 0; }
+.term-btn.armed { background: var(--code-fg); color: var(--code-bg); }
+.term-body { flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; }
+.term-body[hidden] { display: none; }
+.term-find { position: absolute; z-index: 3; top: 6px; right: 14px; display: flex; align-items: center; gap: 6px; padding: 5px 6px 5px 10px; border: 1.5px solid var(--code-fg); background: var(--code-bg); color: var(--code-fg); animation: slash-in 0.18s var(--ease-out) both; }
+.term-find-q { width: 220px; border: 0; background: transparent; color: inherit; font-size: 12.5px; outline: none; }
+.term-find-q::placeholder { color: inherit; opacity: 0.45; letter-spacing: 0.08em; }
+.term-find-n { min-width: 42px; font: 700 10.5px/1 var(--disp); letter-spacing: 0.06em; text-align: right; opacity: 0.75; }
+.term-find .term-btn:hover:not(:disabled) { background: var(--code-fg); color: var(--code-bg); }

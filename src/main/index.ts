@@ -2,17 +2,17 @@ import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage,
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { cwdOf, IPC, type Conversation, type ModelOption, type StoredTask, type UsageInfo, type AgentEventEnvelope, type AgentMode, type PermissionDecision, type RateLimitInfo } from '@shared/types'
+import { cwdOf, IPC, type Conversation, type ModelOption, type StoredTask, type UsageInfo, type AgentEventEnvelope, type AgentMode, type PermissionDecision, type RateLimitInfo, type TerminalShell, type EffortLevel } from '@shared/types'
 import { newConversationId, ProjectStore } from './store'
-import { createWorktree, discardWorktree, isGitRepo, mergeWorktree, worktreeChanges } from './worktree'
+import { branchOf, createWorktree, discardWorktree, isGitRepo, mergeWorktree, worktreeChanges } from './worktree'
 import { searchFiles } from './files'
 import { SettingsStore } from './settings'
 import { applyBadge, Notifier } from './notify'
 import { effectiveKeymap, THEMES, toAccelerator, type Settings } from '@shared/keymap'
 import { AgentManager } from './agent/manager'
 import { searchConversations } from './agent/search'
-import { TerminalManager } from './terminal'
-import { fetchUsage, mergeRateLimit } from './agent/usage'
+import { availableShells, TerminalManager } from './terminal'
+import { fetchUsage, mergeRateLimit, UsageAlerts } from './agent/usage'
 import { Updater } from './updater'
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
@@ -126,6 +126,10 @@ function bootstrap(): void {
   let usageInflight: Promise<UsageInfo | null> | null = null
   let usageTimer: ReturnType<typeof setTimeout> | null = null
   const USAGE_STALE_MS = 5 * 60_000
+  const usageAlerts = new UsageAlerts()
+  const alertUsage = (u: UsageInfo | null): void => {
+    if (u) for (const a of usageAlerts.check(u)) notifier.usage(a.id, a.title, a.body)
+  }
   const refreshUsage = (): Promise<UsageInfo | null> => {
     usageInflight ??= fetchUsage(manager.liveQuery())
       .then((u) => (usage = u))
@@ -137,6 +141,7 @@ function bootstrap(): void {
       .finally(() => {
         usageInflight = null
         if (usage) send(IPC.usage, usage)
+        alertUsage(usage)
       })
     return usageInflight
   }
@@ -145,27 +150,31 @@ function bootstrap(): void {
     usageTimer = setTimeout(() => void refreshUsage(), 2500)
   }
 
-  const notifier = new Notifier(store, () => win, () => settingsStore.get(), (projectId, conversationId) => {
+  const notifier = new Notifier(store, () => win, () => settingsStore.get(), (projectId, conversationId, terminal) => {
     showWindow()
-    send(IPC.navigate, { projectId, conversationId })
+    if (projectId) send(IPC.navigate, { projectId, conversationId, terminal })
   })
+  ipcMain.on(IPC.terminalNotify, (_e, projectId: string, conversationId: string, termId: string, title: string, body: string) => notifier.terminalDone(projectId, conversationId, termId, title, body))
   ipcMain.on(IPC.setBadge, (_e, waiting: number, unread: number) => applyBadge(tray, waiting, unread))
   ipcMain.handle(IPC.searchConversations, (_e, query: string) => searchConversations(store.list(), query))
   // 대화창 아래 터미널 (대화마다 하나, 폴더는 cwdOf: 작업 공간이면 그 폴더)
   const terminals = new TerminalManager(
-    (conversationId, data) => send(IPC.terminalData, { conversationId, data }),
-    (conversationId, code) => send(IPC.terminalExit, { conversationId, code }),
+    (termId, data) => send(IPC.terminalData, { termId, data }),
+    (termId, code) => send(IPC.terminalExit, { termId, code }),
     () => settingsStore.get().terminalShell,
   )
-  ipcMain.handle(IPC.terminalOpen, (_e, projectId: string, conversationId: string, cols: number, rows: number) => {
+  ipcMain.handle(IPC.terminalOpen, (_e, projectId: string, conversationId: string, termId: string, cols: number, rows: number, shell?: TerminalShell) => {
     const project = store.get(projectId)
     const conv = store.getConversation(projectId, conversationId)
     if (!project || !conv) throw new Error(`대화 없음: ${projectId}/${conversationId}`)
-    return terminals.open(conversationId, cwdOf(project, conv), cols, rows)
+    // 터미널에서 고른 셸은 다음 터미널의 기본값으로도 남긴다
+    if (shell && shell !== settingsStore.get().terminalShell) send(IPC.settingsChanged, settingsStore.set({ ...settingsStore.get(), terminalShell: shell }))
+    return terminals.open(termId, conversationId, cwdOf(project, conv), cols, rows, shell)
   })
-  ipcMain.on(IPC.terminalWrite, (_e, conversationId: string, data: string) => terminals.write(conversationId, data))
-  ipcMain.on(IPC.terminalResize, (_e, conversationId: string, cols: number, rows: number) => terminals.resize(conversationId, cols, rows))
-  ipcMain.handle(IPC.terminalClose, (_e, conversationId: string) => terminals.close(conversationId))
+  ipcMain.handle(IPC.terminalShells, () => availableShells())
+  ipcMain.on(IPC.terminalWrite, (_e, termId: string, data: string) => terminals.write(termId, data))
+  ipcMain.on(IPC.terminalResize, (_e, termId: string, cols: number, rows: number) => terminals.resize(termId, cols, rows))
+  ipcMain.handle(IPC.terminalClose, (_e, termId: string) => terminals.close(termId))
   const updater = new Updater(
     (state) => send(IPC.updateChanged, state),
     () => (quitting = true),
@@ -185,6 +194,7 @@ function bootstrap(): void {
       send(IPC.rateLimit, info)
       usage = mergeRateLimit(usage, info)
       if (usage) send(IPC.usage, usage)
+      alertUsage(usage)
     },
     () => settingsStore.get().maxConcurrent,
     // 제목이 바뀌면 (임시 제목·자동 제목) 탭·사이드바를 다시 그린다
@@ -206,7 +216,7 @@ function bootstrap(): void {
     return project
   })
   ipcMain.handle(IPC.removeProject, (_e, projectId: string) => {
-    for (const c of store.get(projectId)?.conversations ?? []) terminals.close(c.id)
+    for (const c of store.get(projectId)?.conversations ?? []) terminals.closeConversation(c.id)
     manager.disposeProject(projectId)
     store.removeProject(projectId)
     projectsChanged()
@@ -234,7 +244,7 @@ function bootstrap(): void {
   })
   ipcMain.handle(IPC.closeConversation, (_e, projectId: string, conversationId: string) => {
     // 셸이 작업 공간 폴더를 잡고 있으면 정리하지 못하므로 먼저 끝낸다
-    terminals.close(conversationId)
+    terminals.closeConversation(conversationId)
     const next = manager.closeConversation(projectId, conversationId)
     projectsChanged()
     return next
@@ -278,6 +288,16 @@ function bootstrap(): void {
   ipcMain.handle(IPC.loadHistory, (_e, projectId: string, conversationId: string) => manager.loadHistory(projectId, conversationId))
   ipcMain.handle(IPC.listModels, (_e, projectId: string) => manager.listModels(projectId))
   ipcMain.handle(IPC.setModel, (_e, projectId: string, conversationId: string, option: ModelOption) => manager.setModel(projectId, conversationId, option))
+  ipcMain.handle(IPC.getEffort, (_e, projectId: string, conversationId: string) => manager.getEffort(projectId, conversationId))
+  ipcMain.handle(IPC.setEffort, async (_e, projectId: string, conversationId: string, effort: EffortLevel | null) => {
+    await manager.setEffort(projectId, conversationId, effort)
+    projectsChanged()
+  })
+  ipcMain.handle(IPC.gitBranch, (_e, projectId: string, conversationId: string) => {
+    const project = store.get(projectId)
+    const conv = store.getConversation(projectId, conversationId)
+    return project && conv ? branchOf(cwdOf(project, conv)) : null
+  })
   // 스크린샷 붙여넣기: 붙여넣은 이미지를 userData/attachments에 저장하고 그 경로를 입력창에 넣는다 (에이전트가 Read로 본다)
   ipcMain.handle(IPC.saveImage, (_e, data: Uint8Array, ext: string) => {
     const dir = join(app.getPath('userData'), 'attachments')
@@ -314,7 +334,7 @@ function bootstrap(): void {
   ipcMain.handle(IPC.worktreeDiscard, async (_e, projectId: string, conversationId: string) => {
     const t = worktreeOf(projectId, conversationId)
     // 대화를 먼저 닫아 세션·셸을 끝낸 뒤 작업 공간을 지운다 (보고서 때문에 남는 대화도 작업 공간은 없앤다)
-    terminals.close(conversationId)
+    terminals.closeConversation(conversationId)
     const next = manager.closeConversation(projectId, conversationId)
     if (t) {
       await discardWorktree(t.project.path, t.wt)

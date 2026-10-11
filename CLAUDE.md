@@ -20,7 +20,10 @@
 - `src/main/agent/manager.ts` — 대화별 세션 보관. 동시 실행 제한(OPEN-003)은 여기에
 - 세션 관리: 대화 하나 = SDK 세션 하나이고, 같은 대화의 메시지는 같은 세션에 이어진다. 홈 작업 지시창은 작업마다 새 대화를 만든다
   - 모델은 세션마다 다를 수 있다. 매 턴 시작 메시지(`system/init`)의 `model`을 받아 `Conversation.model/modelLabel`에 저장. 표시 이름은 `supportedModels()`에서 ID가 정확히 같은 행만 쓰고(별칭 행은 '기본값' 같은 이름이라 제외), 없으면 `modelLabel()`이 ID를 풀어 쓴다
-  - 대화창 상단 둘째 줄: 왼쪽 하위 대화 탭, 오른쪽 모델·모드(누르면 다음 모드)
+  - 대화창 상단 둘째 줄: 왼쪽 하위 대화 탭, 오른쪽 모델·effort·모드(누르면 다음 모드)
+  - effort(`EffortPicker`, 키맵 `cycleEffort`): 고른 값은 `Conversation.effort`. 세션 시작 옵션 `effort`, 살아 있으면 `applyFlagSettings({ effortLevel })`(null이면 모델 기본값). SDK의 `system/init`에는 effort가 오지 않으므로, 고르지 않았을 때는 `resolveSettings`의 `modelSettings[모델].effortLevel`·`effortLevel`을 흐리게 보인다. 단계는 `supportedModels()`의 `supportedEffortLevels`
+  - 브랜치: 대화창 위 경로 줄에 `BRANCH 이름`(*는 커밋 안 한 변경). `branchOf(cwdOf)`(worktree.ts)를 대화를 열 때·상태가 바뀔 때·창 focus·30초마다 읽는다
+  - 입력 초안(`drafts.ts` `useDraft`): 대화마다(`대화 ID`)·홈 작업 지시창은 프로젝트마다(`home:프로젝트 ID`) localStorage에. 보내면 지운다. 없어진 대화의 초안은 앱을 켤 때 `pruneDrafts`
   - 대화창을 열면 메시지 없이 `peek`으로 컨텍스트 사용률·모델을 읽는다 (저장된 세션을 이어 연 CLI 또는 빈 CLI에서 `getContextUsage` 후 바로 닫음, 0.3~0.7초)
   - 컨텍스트 사용률은 응답이 끝날 때마다 `getContextUsage({ detail: 'summary' })`로 받아 `Conversation.contextPercent`에 저장
   - 컴팩트는 같은 세션에 `/compact`를 보낸다. 이때 오는 result는 작업 완료가 아니므로 상태·보고서를 바꾸지 않는다 (`manualCompact`)
@@ -47,11 +50,17 @@
   - Alt 니모닉과 겹치지 않도록 Windows에서는 기본 메뉴를 없앴다 (`Menu.setApplicationMenu(null)`). 개발 중 `Ctrl+Shift+I` 개발자 도구, `Ctrl+Shift+R` 새로고침
 - Windows 창은 테두리 없는 창(`frame: false`): 제목 표시줄·창 버튼이 없다. 사이드바 로고(`.side .brand`, `-webkit-app-region: drag`)를 잡고 옮기고 더블클릭하면 최대화, 크기 조절은 가장자리, 닫기는 `Alt+F4`(트레이로 숨김). macOS는 기본 제목 표시줄 그대로
 - 트레이 아이콘: Windows는 설정에서 고른 앱 아이콘을 16px(+1.25~2배)로 줄여 쓰고 아이콘을 바꾸면 같이 바뀐다(`makeTrayIcon`). macOS는 메뉴 막대 관례대로 흑백 템플릿 이미지
-- 터미널(대화창 아래 서랍): 메인 `terminal.ts`(node-pty, 대화마다 셸 하나, 폴더는 `cwdOf`) ↔ 렌더러 `terminal.tsx`(xterm, 대화마다 화면 하나를 만들어 두고 탭을 옮기면 다시 붙인다)
+- 터미널(대화창 아래 서랍): 메인 `terminal.ts`(node-pty, 터미널마다 셸 하나, 폴더는 `cwdOf`) ↔ 렌더러 `terminal.tsx`(xterm, 터미널마다 화면 하나를 만들어 두고 탭을 옮기면 다시 붙인다)
+  - 대화마다 터미널 탭 여러 개. 셸은 `termId`(`대화 ID#번호`)로 구분하고, 대화를 닫으면 `closeConversation`으로 그 대화의 셸을 모두 끝낸다. 탭 줄은 둘 이상일 때만. `terminalNew`(Ctrl+Alt+T)·`terminalNext/Prev`(Ctrl+Alt+J/K), 서랍 오른쪽 ×는 지금 탭만 닫는다
+  - 찾기: 터미널에서 `terminalFind`(Ctrl+F, xterm 키 처리라 터미널 포커스일 때만) → `FindBar`(@xterm/addon-search, 결과 강조 때문에 `allowProposedApi: true`)
+  - 링크: URL(@xterm/addon-web-links)과 파일 경로(`PATH_RE` 링크 제공자)는 Ctrl/Cmd+클릭만. 경로는 `pathForComposer`로 입력창 커서 자리에 `@상대경로 (L줄)`
+  - 명령 끝남: 셸 통합 없이 Enter로 시작(`onInput`) → 출력이 0.8초 잠잠하고 커서 줄이 프롬프트(`PROMPT_END`)면 끝. 10초 넘게 돌았고 그 탭을 보고 있지 않으면 탭에 표시(`done`)하고 `notifyTerminal` → 알림을 누르면 그 탭(`navigate`의 `terminal`)
   - 키맵 `terminal`(기본 `Ctrl+T`): 닫힘·접힘이면 펼치고 터미널로, 펼쳐져 있으면 입력창 → 터미널, 터미널에서 누르면 접고 입력창으로. 접어도 셸은 돈다. 높이는 끌어서(localStorage)
   - 터미널에 포커스가 있으면(`[data-terminal]`) App은 앱을 오가는 키(terminal·goHome·help·search·탭 이동·새 탭·설정·⌥A~L)만 받고 나머지(Esc·Ctrl+C·Ctrl+L …)는 셸로. 선택이 있을 때 Ctrl+C·Ctrl+Shift+C 복사, Ctrl+Shift+V 붙여넣기
   - Bash·PowerShell 도구 줄의 RUN IN TERMINAL: 명령을 입력줄에 넣기만 한다(실행은 사용자 Enter). SEND TO CLAUDE: 선택한 출력을 입력창에 코드 블록으로
   - 대화·프로젝트 닫기, 작업 공간 버리기 전에 셸을 끝낸다 (셸이 작업 공간 폴더를 잡고 있으면 지울 수 없다). 셸은 설정 `terminalShell`(AUTO는 pwsh → PowerShell, macOS는 $SHELL), 환경 변수는 사용자 것 그대로
+  - 셸 고르기: 서랍 머리의 셸 이름(`ShellPicker`)을 누르면 이 컴퓨터에 있는 셸(`availableShells`: pwsh·PowerShell·Git Bash·cmd·WSL / zsh·bash·fish, WSL은 레지스트리 `Lxss`로 확인)이 펼쳐진다. 고르면 지금 셸을 끝내고 새로 띄우며, 다음 터미널의 기본값(`terminalShell`)으로도 저장한다
+  - Windows에서 셸을 끝낼 때는 `taskkill /T /F`로 프로세스 트리를 먼저 끝낸다. node-pty `kill()`만 하면 앱 종료 중에 셸·conhost가 남아 앱이 끝나지 않는다
   - 패키징: node-pty는 N-API 미리 빌드 바이너리를 쓰므로 `asarUnpack`에 넣고 `npmRebuild: false` (켜 두면 Visual Studio로 소스 빌드를 시도하다 실패한다)
 - 전체화면: `F11` 고정 (메인 `before-input-event`). 키맵 동작은 없다
 - 새 탭: 키맵 `newConversation`(기본 `Ctrl+Shift+T`). 탭 줄의 +와 같다
@@ -62,6 +71,7 @@
   - 전역 호출 키 후보에서 `Control+Space`를 뺀다. macOS 입력 소스 전환 키라 등록이 성공해도 한/영 전환을 가로챈다
   - 트레이 아이콘은 템플릿 이미지(검정+투명), Dock 아이콘 클릭(`activate`)으로 창 다시 열기
 - 구독 한도(사이드바): `src/main/agent/usage.ts`가 SDK `usage_EXPERIMENTAL…`(실험적 API, 이름이 바뀔 수 있음)로 5시간·주간·모델별 주간 창을 받는다. 살아 있는 세션이 없으면 `withProbe`로 CLI만 띄움. 앱 시작·작업 완료 2.5초 뒤·5분마다 갱신, `rate_limit_event`는 해당 창에 바로 반영
+  - 경고 기준은 `@shared/usage`(`limitLevel` 80·95·100, `worstLimit`은 5시간·주간 + 지금 모델 계열의 주간만). 입력창 위 `limit-warn` 줄, 100%면 Enter를 한 번 더 눌러야 보낸다(앱 명령은 제외). OS 알림은 `UsageAlerts`가 창마다 단계를 처음 넘을 때 한 번(앱을 켤 때 이미 넘었으면 95 이상만)
 - 대화창 오른쪽 상태 패널(`StatusPanel`, Chat.tsx): 실행 중이거나, 백그라운드 작업(SDK `background_tasks_changed`, `ambient` 제외 → `background` 이벤트)이 있거나, 이 대화에서 Artifact 도구로 올린 페이지(`artifactsOf`, 화면 기록에서 추출)가 있으면 펼친다. CLI 프로세스가 끝나면 백그라운드 목록을 비운다
   - SDK로 띄운 CLI는 Artifact 도구가 기본으로 꺼져 있어(`sdk_default_off`) `subscriptionEnv`가 `CLAUDE_CODE_ARTIFACT=1`을 넣는다
   - 패널의 줄(백그라운드 작업·AGENTS)을 누르면 대화 기록 자리에 세부 내용(`TaskDetail.tsx`)을 펼친다. 셸·모니터는 CLI가 쓰는 출력 파일(`<임시 폴더>/claude…/<프로젝트>/<세션 ID>/tasks/<작업 ID>.output`, `agent/task-output.ts`)을 도는 동안 1초마다 읽는다
@@ -69,7 +79,7 @@
 - 기록·보고서: 대화창을 열 때 화면 기록이 비어 있으면 `getSessionMessages`로 되살린다(`agent/history.ts`). 끝난 작업의 보고서는 `Conversation.lastTask`에 저장하고, 보관 전 보고서가 있는 대화를 닫으면 `closedAt`으로 숨기기만 한다. 탭·목록은 `openConversations()` 기준
 - 첨부는 경로로: 입력창에 파일을 끌어다 놓기·첨부 버튼(`pickFiles`)·이미지 붙여넣기(`saveImage`로 userData/attachments에 저장)를 하면 경로를 넣는다. 작업 폴더 안은 `@상대경로`. 끌어다 놓은 파일 경로는 sandbox라 preload의 `webUtils.getPathForFile`로
 - 답변은 `Markdown.tsx`(react-markdown, 원시 HTML 비허용). 링크는 메인이 외부 브라우저로만 연다 (`setWindowOpenHandler`, `will-navigate` 차단)
-- 알림(`main/notify.ts`): 확인 요청·작업 끝남. 누르면 `IPC.navigate`로 그 대화로. 배지는 렌더러가 `setBadge`로 보낸다
+- 알림(`main/notify.ts`): 확인 요청·작업 끝남·터미널 명령 끝남·한도 경고(설정 `notify`의 approval·done·terminal·usage). 누르면 `IPC.navigate`로 그 대화로. 배지는 렌더러가 `setBadge`로 보낸다
 - 대기열(OPEN-003): `AgentManager.send`가 `maxConcurrent`를 넘으면 `queued`로 두고, 상태가 끝나면 `drain()`. 확인 대기도 자리를 차지한다
 - 작업 공간(OPEN-002, `main/worktree.ts`): 탭 +로 만든 대화만 `userData/worktrees`에 git worktree(`wt/<id>`). 세션·기록·peek의 폴더는 `cwdOf()`. 닫을 때 깨끗하면 정리
 - 앱 아이콘: 원본 `build/icons/*.svg` → `npm run icons`(Electron 오프스크린 렌더, Archivo 글꼴)로 `resources/icons/*.png`와 `build/icons/preview.png`. 기본·설치 파일 아이콘은 `prompt`. 설정에서 고르면 메인이 Dock(macOS)·창 아이콘을 바로 바꾼다. 패키징한 앱은 `extraResources`의 `Resources/icons`

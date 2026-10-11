@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ACTIONS, APP_ICONS, conflictsOf, DEFAULT_KEYMAP, effectiveKeymap, SCOPE_LABEL, THEMES, type ActionDef, type ActionId, type ActionScope, type Settings, type ThemeId } from '@shared/keymap'
-import type { UpdateState } from '@shared/types'
+import type { TerminalShellOption, UpdateState } from '@shared/types'
 import { Keys } from './KeyHint'
 import { ALT_LABEL, eventToBinding } from './keys'
 
@@ -32,6 +32,8 @@ const iconSrc = (id: string): string => ICON_SRC[`../../../resources/icons/${id}
 const NOTIFY: { id: keyof Settings['notify']; label: string; note: string }[] = [
   { id: 'approval', label: 'Approval requests', note: '알림을 누르면 그 대화로 가요. macOS는 Dock 아이콘도 한 번 튀어요' },
   { id: 'done', label: 'Task finished', note: '완료와 오류 모두 알려요' },
+  { id: 'terminal', label: 'Terminal command finished', note: '아래 터미널에서 10초 넘게 돈 명령이 끝나 프롬프트로 돌아오면 알려요 (그 터미널을 보고 있지 않을 때)' },
+  { id: 'usage', label: 'Usage limit warning', note: '구독 한도가 80%·95%를 넘거나 다 쓰면 한 번씩 알려요' },
   { id: 'whenFocused', label: 'Even when focused', note: '끄면 다른 창에 있을 때만 알려요' },
 ]
 
@@ -55,6 +57,11 @@ export function SettingsScreen({ settings, activeHotkey, update, onClose, onSave
   const changed = Object.keys(settings.keymap).length > 0
 
   const [saveError, setSaveError] = useState<string | null>(null)
+  // 이 컴퓨터에 설치된 셸만 보여 준다
+  const [shells, setShells] = useState<TerminalShellOption[]>([])
+  useEffect(() => {
+    void window.api.terminalShells().then(setShells)
+  }, [])
   const save = async (next: Settings, forId?: ActionId): Promise<void> => {
     try {
       const res = await window.api.setSettings(next)
@@ -217,23 +224,20 @@ export function SettingsScreen({ settings, activeHotkey, update, onClose, onSave
           <div className="krow">
             <span className="krow-label">
               Terminal shell
-              <span className="krow-note">대화창 아래 터미널(Ctrl+T)에서 띄울 셸이에요. 새로 여는 터미널부터 적용돼요. Claude의 Bash 명령을 그대로 실행하려면 Git Bash가 맞아요</span>
+              <span className="krow-note">대화창 아래 터미널(Ctrl+T)에서 띄울 셸이에요. 새로 여는 터미널부터 적용되고, 터미널 머리의 셸 이름을 눌러 그 자리에서 바꿀 수도 있어요. Claude의 Bash 명령을 그대로 실행하려면 Git Bash가 맞아요</span>
             </span>
             <span className="seg" role="radiogroup" aria-label="터미널 셸">
-              {(window.api.appInfo.platform === 'win32'
-                ? ([['auto', 'AUTO'], ['powershell', 'POWERSHELL'], ['gitbash', 'GIT BASH'], ['cmd', 'CMD']] as const)
-                : ([['auto', 'AUTO'], ['zsh', 'ZSH'], ['bash', 'BASH']] as const)
-              ).map(([id, name]) => (
+              {shells.map(({ id, label, note }) => (
                 <button
                   key={id}
                   type="button"
                   role="radio"
                   aria-checked={settings.terminalShell === id}
                   className={settings.terminalShell === id ? 'on' : ''}
-                  title={id === 'auto' ? (window.api.appInfo.platform === 'win32' ? 'pwsh가 있으면 pwsh, 없으면 Windows PowerShell' : '로그인 셸($SHELL)') : undefined}
+                  title={note}
                   onClick={() => void save({ ...settings, terminalShell: id })}
                 >
-                  {name}
+                  {label}
                 </button>
               ))}
             </span>

@@ -8,6 +8,7 @@ import { STAGES, type TaskRef } from './state'
 import { elapsed, useNow } from './time'
 import { Markdown } from './Markdown'
 import { AttachButton, useAttach } from './attach'
+import { useDraft } from './drafts'
 
 export interface DispatchOrigin {
   box: { x: number; y: number; w: number; h: number }
@@ -119,9 +120,10 @@ export function Home(props: Props): React.JSX.Element {
 
 function Dispatch(props: Props & { scrollRef: RefObject<HTMLDivElement | null> }): React.JSX.Element {
   const km = useKeymap()
-  const [text, setText] = useState('')
-  const [cont, setCont] = useState(false)
   const p = props.projects[props.dispatchIndex]
+  // 쓰던 작업 지시는 프로젝트마다 남는다
+  const [text, setText] = useDraft(`home:${p?.id ?? ''}`)
+  const [cont, setCont] = useState(false)
   const target = props.continueTarget
   const altEnter = useRef(false)
   const attach = useAttach({ inputRef: props.inputRef, value: text, setValue: setText, root: p?.path ?? '' })
