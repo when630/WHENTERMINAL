@@ -542,18 +542,6 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
         </div>
       </div>
 
-      <footer className="hints">
-        <span><Keys keys={km.goHome} /> HOME</span>
-        <span><Keys keys={km.nextConversation} /> TABS</span>
-        <span><Keys keys="alt A S D…" /> PROJECTS</span>
-        <span><Keys keys="esc" /> STOP</span>
-        <span><Keys keys={km.clear} /> CLEAR</span>
-        <span><Keys keys={km.closeConversation} /> CLOSE</span>
-        <span><Keys keys={km.compact} /> COMPACT</span>
-        {(targets.length > 0 || detail) && <span><Keys keys={km.panelNext} /> DETAILS</span>}
-        {detail && <span><Keys keys={km.panelBack} /> BACK</span>}
-        {pending && <span><Keys keys={`${km.allow} ${km.always} ${km.deny}`} /> APPROVE</span>}
-      </footer>
     </div>
   )
 }

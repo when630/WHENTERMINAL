@@ -21,7 +21,6 @@ interface Props {
   selectedId: string | null
   openReportId: string | null
   dispatchIndex: number
-  hotkey: string | null
   inputRef: RefObject<HTMLInputElement | null>
   dispatchOrigin: RefObject<DispatchOrigin | null>
   sheetCloseRef: RefObject<(() => void) | null>
@@ -99,15 +98,6 @@ export function Home(props: Props): React.JSX.Element {
           </section>
         </div>
 
-        <footer className="hints">
-          <span><Keys keys={km.dispatch} />/<Keys keys={km.focusAsk} /> NEW TASK</span>
-          <span><Keys keys={`${km.down} ${km.up}`} /> UP · DOWN</span>
-          <span><Keys keys={`${km.toRunning} ${km.toReports}`} /> RUNNING · REPORTS</span>
-          <span><Keys keys={km.open} /> OPEN</span>
-          <span><Keys keys={km.archive} /> ARCHIVE</span>
-          <span><Keys keys={`${km.allow} ${km.always} ${km.deny}`} /> APPROVE</span>
-          {props.hotkey && <span className="hints-r"><Keys keys={props.hotkey} /> SUMMON</span>}
-        </footer>
       </div>
 
       {openReport && (

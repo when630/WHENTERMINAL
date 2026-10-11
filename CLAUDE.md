@@ -77,6 +77,7 @@
   - 단축키: 동작 목록·기본값은 `src/shared/keymap.ts`(`ACTIONS`), 판정은 `matches()`(keys.ts). App의 키 처리와 화면의 키 표시는 모두 `useKeymap()`을 거친다. 새 단축키는 ACTIONS에 추가하고 하드코딩하지 말 것
   - 고정 키(바꿀 수 없음): Esc, ⌥A~L·Ctrl+1~9 프로젝트 이동, 선택 없을 때 Ctrl+C, 방향키. 대화창·전역 범위 키는 Ctrl/Alt/Meta가 있어야 한다 (입력 중 오작동 방지)
   - 전역 호출 키(`summon`)는 메인이 다시 등록한다. 실패하면 이전 키를 되살리고 저장하지 않는다
+- 단축키 안내는 화면 하단 줄 대신 도움말(`HelpOverlay.tsx`, `help` 기본 `Ctrl+/`, 사이드바 HELP 줄)에 모은다. 범위별 묶음(지금 화면이 맨 앞)·고정 키·입력창 명령. 새 동작을 ACTIONS에 넣으면 `GROUPS`에도 넣을 것. 열려 있는 동안 App은 Esc(닫기) 말고 키를 받지 않는다
 - 단축키 표시는 `<Keys keys="ctrl shift L" />`(`KeyHint.tsx`)를 쓴다. macOS는 수정·특수 키를 아이콘으로, Windows는 글자와 +로(`Ctrl+Shift+L`) 표시한다. 파일 이름이 `keys.ts`와 대소문자만 다르면 macOS에서 충돌하므로 `KeyHint`
 - 슬래시 명령 후보: 입력창에 `/`를 치면 `SlashMenu`. 목록은 살아 있는 세션의 `supportedCommands()`, 없으면 메시지 없이 CLI만 띄워 받아 프로젝트 폴더별로 5분 캐시 (`src/main/agent/commands.ts`). `/compact` `/clear`는 앱이 직접 처리
   - 메뉴가 열린 입력창에는 `data-menu-open`을 달아 App의 전역 키 처리(Esc 중단, Ctrl+K 등)를 건너뛴다

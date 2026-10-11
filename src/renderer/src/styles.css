@@ -319,10 +319,6 @@ kbd { display: inline-block; font: 500 11px/1 var(--mono); padding: 3px 5px; col
 .kv b { font-weight: 800; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nexts { display: flex; flex-wrap: wrap; gap: 8px; }
 
-.hints { flex: none; display: flex; flex-wrap: wrap; gap: 0; border-top: var(--rule-thick); font-size: 12.5px; font-weight: 700; }
-.hints > span { display: flex; align-items: center; gap: 8px; padding: 10px 18px; border-right: var(--rule); }
-.hints kbd { border-color: transparent; padding: 0; font: 900 15px/1 var(--disp); letter-spacing: -0.02em; }
-.hints-r { margin-left: auto; border-right: 0 !important; border-left: var(--rule); }
 
 /* 슬래시 명령 후보 */
 .slash { position: absolute; z-index: 4; left: 0; right: 0; bottom: 100%; max-height: min(340px, 50vh); overflow-y: auto; background: var(--paper); border-top: var(--rule-thick); box-shadow: 0 -16px 32px var(--shadow); animation: slash-in 0.24s var(--ease-out) both; scrollbar-width: thin; }
@@ -340,8 +336,8 @@ kbd { display: inline-block; font: 500 11px/1 var(--mono); padding: 3px 5px; col
 .slash-tag { font: 600 10px/1 var(--disp); letter-spacing: 0.1em; padding: 3px 6px; border: 1.5px solid currentColor; }
 
 /* ── 설정 ── */
-.nav-settings { border-top: var(--rule); }
-.nav-settings .nav-name { font: 18px/1.1 var(--kr); }
+.nav-settings, .nav-help { border-top: var(--rule); }
+.nav-settings .nav-name, .nav-help .nav-name { font: 18px/1.1 var(--kr); }
 /* 새 버전 알림 줄 (SETTINGS 위). 받아 뒀으면 진하게 */
 .nav-update { border-top: var(--rule); background: var(--wash); }
 .nav-update .nav-name { font: 900 14px/1.1 var(--disp); letter-spacing: 0.02em; }
@@ -735,7 +731,6 @@ pre { font: 12.5px/1.65 var(--mono); background: transparent; padding: 0; overfl
 .mode-acceptEdits, .mode-acceptEdits:hover { background: var(--sel-bg); color: var(--sel-fg); }
 .mode-auto, .mode-auto:hover { background: var(--sel-bg); color: var(--sel-fg); box-shadow: inset 6px 0 0 var(--signal); }
 .mode-plan, .mode-plan:hover { background: var(--signal); color: var(--on-signal); }
-.screen > .hints { border-top: var(--rule); }
 
 .crash { padding: 24px; display: flex; flex-direction: column; gap: 12px; align-items: flex-start; }
 .crash-title { color: var(--signal); font: 28px/1.2 var(--kr); }
@@ -753,3 +748,25 @@ pre { font: 12.5px/1.65 var(--mono); background: transparent; padding: 0; overfl
 /* 탭 이름 고치기 (더블클릭·/rename·Ctrl+Shift+E) */
 .tab.tab-editing { cursor: text; }
 .tab-edit { width: 180px; min-width: 0; padding: 4px 6px; border: 0; outline: 2px solid currentColor; outline-offset: 0; background: transparent; color: inherit; font: inherit; }
+
+/* 단축키 도움말 (Ctrl+/). 하단 안내 줄 대신 모아서 보여 준다 */
+.help { position: fixed; inset: 0; z-index: 50; display: flex; justify-content: center; align-items: flex-start; padding: 48px 24px; overflow-y: auto; background: color-mix(in srgb, var(--paper) 72%, transparent); animation: help-fade var(--t-med) var(--ease-out) both; }
+.help.leaving { animation: help-fade var(--t-fast) var(--ease-io) reverse both; }
+@keyframes help-fade { from { opacity: 0; } }
+.help-sheet { width: min(1080px, 100%); background: var(--paper); color: var(--ink); border: var(--rule-thick); box-shadow: 0 24px 48px var(--shadow); animation: up 0.36s var(--ease-out) both; }
+.help.leaving .help-sheet { animation: none; }
+.help-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 20px; padding: 18px 24px; border-bottom: var(--rule-thick); }
+.help-head h1 { margin: 0; font-size: 44px; line-height: 1; }
+.help-head p { flex: 1; margin: 0; min-width: 0; color: var(--gray); font-size: 13.5px; font-weight: 600; }
+.help-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+.help-group { display: flex; flex-direction: column; gap: 6px; padding: 16px 24px 20px; border-right: var(--rule); border-bottom: var(--rule); min-width: 0; }
+.help-group h2 { display: flex; align-items: center; gap: 10px; margin: 0; font: 900 15px/1 var(--disp); letter-spacing: 0.1em; }
+.help-here { padding: 3px 6px; background: var(--sel-bg); color: var(--sel-fg); font: 900 10.5px/1 var(--disp); letter-spacing: 0.08em; }
+.help-note { margin: 0 0 6px; color: var(--gray); font-size: 12.5px; }
+.help-group dl { margin: 0; display: flex; flex-direction: column; }
+.help-group dl > div { display: grid; grid-template-columns: minmax(118px, auto) minmax(0, 1fr); align-items: baseline; gap: 12px; padding: 5px 0; border-top: 1px solid color-mix(in srgb, var(--line) 18%, transparent); }
+.help-group dt { font-weight: 700; white-space: nowrap; }
+.help-group dd { margin: 0; font-size: 13px; min-width: 0; }
+.help-group .fixed dd { color: var(--gray); }
+.help-group kbd.mono { font-size: 12.5px; }
+@media (prefers-reduced-motion: reduce) { .help, .help-sheet { animation: none; } }

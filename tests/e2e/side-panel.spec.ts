@@ -145,7 +145,8 @@ test('단축키로 패널 항목의 세부 내용을 차례로 열고, 돌아오
   await input.click()
   await input.fill('메모')
   const title = win.locator('.td .wt-title .kr')
-  await expect(win.locator('.hints')).toContainText('DETAILS')
+  // 패널 섹션 제목에 단축키가 보인다
+  await expect(win.locator('.status-panel section[aria-label="하위 에이전트"] .sp-k')).toContainText('Ctrl+J')
 
   // 패널 순서대로 AGENTS → BACKGROUND, 마지막 다음은 대화 기록
   await win.keyboard.press('Control+j')

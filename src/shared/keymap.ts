@@ -3,7 +3,7 @@
 // 글자·숫자·기호 키는 물리 키(e.code) 기준이라 한글 입력 상태에서도 같은 키로 동작한다.
 
 export type ActionId =
-  | 'summon' | 'goHome' | 'dispatch' | 'openSettings' | 'fullscreen'
+  | 'summon' | 'goHome' | 'dispatch' | 'openSettings' | 'fullscreen' | 'help'
   | 'addProject' | 'focusAsk' | 'down' | 'up' | 'toRunning' | 'toReports' | 'open' | 'archive' | 'newTask'
   | 'allow' | 'always' | 'deny'
   | 'nextConversation' | 'prevConversation' | 'closeConversation' | 'closeProject' | 'clear' | 'compact' | 'cycleMode' | 'interrupt'
@@ -32,6 +32,7 @@ export const ACTIONS: ActionDef[] = [
   { id: 'dispatch', label: 'New task', scope: 'anywhere', default: 'Ctrl+K' },
   { id: 'openSettings', label: 'Settings', scope: 'anywhere', default: 'Ctrl+,' },
   { id: 'fullscreen', label: 'Full screen (alt. to F11)', scope: 'anywhere', default: 'Ctrl+Shift+F' },
+  { id: 'help', label: 'Keyboard shortcuts', scope: 'anywhere', default: 'Ctrl+/' },
   { id: 'addProject', label: 'Add project', scope: 'home', default: 'Ctrl+N' },
   { id: 'focusAsk', label: 'Focus task input', scope: 'home', default: 'I' },
   { id: 'down', label: 'Next item', scope: 'home', default: 'J' },
