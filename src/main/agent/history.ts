@@ -10,6 +10,19 @@ type Block = { type: string; text?: string; id?: string; name?: string; input?: 
 /** CLI가 넣는 내부 메시지(로컬 명령 출력, 시스템 알림 등)는 사람이 쓴 글이 아니라 뺀다 */
 const INTERNAL = /^\s*<(local-command|command-name|command-message|command-args|system-reminder|local-command-stdout|local-command-caveat)/
 
+const TASK_STATUS: Record<string, string> = { completed: 'TASK DONE', killed: 'TASK STOPPED', stopped: 'TASK STOPPED', failed: 'TASK FAILED' }
+
+/**
+ * 백그라운드 작업 알림(<task-notification>…)을 한 줄로. CLI가 모델에게 알리려고 사용자 메시지 자리에 넣는 것이라
+ * 사람이 쓴 글처럼 보이면 안 된다. 알림이 아니면 null
+ */
+export function taskNote(text: string): string | null {
+  if (!/^\s*<task-notification>/.test(text)) return null
+  const tag = (name: string): string | undefined => new RegExp(`<${name}>([\\s\\S]*?)</${name}>`).exec(text)?.[1]?.trim()
+  const status = tag('status')
+  return [(status && TASK_STATUS[status]) || 'TASK', tag('summary'), tag('event')].filter(Boolean).join(' · ')
+}
+
 function textOf(content: unknown): string {
   if (typeof content === 'string') return content
   if (!Array.isArray(content)) return ''
@@ -36,7 +49,9 @@ export async function readHistory(sessionId: string, dir: string): Promise<Histo
     const content = msg.content
     if (m.type === 'user') {
       if (typeof content === 'string') {
-        if (content.trim() && !INTERNAL.test(content)) items.push({ type: 'user', text: content })
+        const note = taskNote(content)
+        if (note) items.push({ type: 'divider', text: note })
+        else if (content.trim() && !INTERNAL.test(content)) items.push({ type: 'user', text: content })
         continue
       }
       for (const b of (Array.isArray(content) ? content : []) as Block[]) {
@@ -47,7 +62,8 @@ export async function readHistory(sessionId: string, dir: string): Promise<Histo
             t.isError = b.is_error ?? false
           }
         } else if (b.type === 'text' && b.text?.trim() && !INTERNAL.test(b.text)) {
-          items.push({ type: 'user', text: b.text })
+          const note = taskNote(b.text)
+          items.push(note ? { type: 'divider', text: note } : { type: 'user', text: b.text })
         }
       }
       continue

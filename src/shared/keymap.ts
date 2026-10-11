@@ -7,7 +7,7 @@ export type ActionId =
   | 'addProject' | 'focusAsk' | 'down' | 'up' | 'toRunning' | 'toReports' | 'open' | 'archive' | 'newTask'
   | 'allow' | 'always' | 'deny'
   | 'nextConversation' | 'prevConversation' | 'closeConversation' | 'closeProject' | 'clear' | 'compact' | 'cycleMode' | 'interrupt'
-  | 'panelNext' | 'panelPrev' | 'panelBack' | 'stopTask'
+  | 'panelNext' | 'panelPrev' | 'panelBack' | 'stopTask' | 'renameConversation'
 
 export type ActionScope = 'system' | 'anywhere' | 'home' | 'chat' | 'approval'
 
@@ -57,6 +57,7 @@ export const ACTIONS: ActionDef[] = [
   { id: 'panelPrev', label: 'Previous agent / task details', scope: 'chat', default: 'Ctrl+Shift+J' },
   { id: 'panelBack', label: 'Back to chat', scope: 'chat', default: 'Ctrl+B' },
   { id: 'stopTask', label: 'Stop shown task', scope: 'chat', default: 'Ctrl+Shift+X' },
+  { id: 'renameConversation', label: 'Rename tab', scope: 'chat', default: 'Ctrl+Shift+E' },
 ]
 
 export type Keymap = Record<ActionId, string>

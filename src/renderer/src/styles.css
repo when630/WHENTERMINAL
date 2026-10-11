@@ -749,3 +749,7 @@ pre { font: 12.5px/1.65 var(--mono); background: transparent; padding: 0; overfl
 .tb-wt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .icon-pick .theme-name { flex-wrap: wrap; row-gap: 6px; }
 .nowrap { white-space: nowrap; }
+
+/* 탭 이름 고치기 (더블클릭·/rename·Ctrl+Shift+E) */
+.tab.tab-editing { cursor: text; }
+.tab-edit { width: 180px; min-width: 0; padding: 4px 6px; border: 0; outline: 2px solid currentColor; outline-offset: 0; background: transparent; color: inherit; font: inherit; }

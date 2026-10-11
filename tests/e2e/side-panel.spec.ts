@@ -177,6 +177,13 @@ test('단축키로 패널 항목의 세부 내용을 차례로 열고, 돌아오
   expect(await app.evaluate(() => (globalThis as { stopped?: string[] }).stopped)).toEqual(['b2'])
 })
 
+test('백그라운드 작업 알림은 사람이 쓴 글이 아니라 한 줄 구분선으로 보인다', async ({ app, win }) => {
+  await win.keyboard.press('Alt+a')
+  await emit(app, { kind: 'task_note', text: 'TASK DONE · Monitor "test monitor" stream ended · monitor test event 5/5' })
+  await expect(win.locator('.transcript .divider')).toHaveText('■ TASK DONE · Monitor "test monitor" stream ended · monitor test event 5/5')
+  await expect(win.locator('.transcript .msg.user')).toHaveCount(0)
+})
+
 test('대화 기록은 가로로 스크롤되지 않는다', async ({ win }) => {
   await win.keyboard.press('Alt+a')
   await expect(win.locator('.transcript')).toHaveCSS('overflow-x', 'hidden')

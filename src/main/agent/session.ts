@@ -4,6 +4,7 @@ import { isAgentMode, type AgentEvent, type AgentMode, type AgentStatus, type Ba
 import { MessageQueue } from './message-queue'
 import { claudeExecutable } from '../executable'
 import { outputPathIn, rememberTaskOutput } from './task-output'
+import { taskNote } from './history'
 
 interface PendingPermission {
   resolve: (r: PermissionResult) => void
@@ -346,6 +347,14 @@ export class AgentSession {
         }
         break
       case 'user': {
+        // 백그라운드 작업 알림은 CLI가 사용자 메시지 자리에 넣는다. 한 줄 구분선으로 보인다 (되살린 기록과 같게)
+        if (msg.parent_tool_use_id === null && !('isReplay' in msg && msg.isReplay)) {
+          const texts = typeof msg.message.content === 'string' ? [msg.message.content] : msg.message.content.flatMap((b) => (b.type === 'text' ? [b.text] : []))
+          for (const t of texts) {
+            const note = taskNote(t)
+            if (note) this.opts.emit({ kind: 'task_note', text: note })
+          }
+        }
         if (typeof msg.message.content === 'string') break
         if (msg.parent_tool_use_id !== null) {
           const parent = msg.parent_tool_use_id

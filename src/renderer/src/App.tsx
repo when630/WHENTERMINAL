@@ -360,6 +360,7 @@ export function App(): React.JSX.Element {
     if (is('panelNext') || is('panelPrev')) return take(() => chatPanelRef.current?.step(is('panelPrev') ? -1 : 1))
     if (is('panelBack')) return take(() => chatPanelRef.current?.back())
     if (is('stopTask')) return take(() => chatPanelRef.current?.stop())
+    if (is('renameConversation')) return take(() => chatPanelRef.current?.rename())
     if (is('clear')) return take(() => requestClear(projectId, conversationId))
     if (is('cycleMode')) {
       return take(() => {

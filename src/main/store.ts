@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { basename, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { openConversations, type Conversation, type Project, type StoredTask } from '@shared/types'
+import { draftTitle } from './agent/title'
 
 /** 프로젝트·대화 목록을 userData/projects.json에 저장. 카드 순서 = 배열 순서 (숫자키 고정). */
 export class ProjectStore {
@@ -105,11 +106,11 @@ export class ProjectStore {
   conversationForTask(projectId: string, text: string, isFresh: (conv: Conversation) => boolean): Conversation {
     const project = this.get(projectId)
     if (!project) throw new Error(`프로젝트 없음: ${projectId}`)
-    const title = text.length > 40 ? `${text.slice(0, 40)}…` : text
     const reusable = openConversations(project).find((c) => !c.sessionId && !c.lastTask && isFresh(c))
     const conv = reusable ?? newConversation(project.conversations.length + 1)
     if (!reusable) project.conversations.push(conv)
-    conv.title = title
+    conv.title = draftTitle(text)
+    conv.titleSource = 'draft'
     this.save()
     return conv
   }
