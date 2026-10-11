@@ -353,9 +353,10 @@ function ReportSheet({ r, wrapRef, scrollRef, closeRef, onClosed, onOpenChat, on
     return { dx: c.x - s.x, dy: c.y - s.y, sx: c.w / s.w, sy: c.h / s.h }
   }
   useLayoutEffect(() => {
-    scrimRef.current?.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 300, easing: 'ease-out' })
+    const reduced = reducedMotion()
+    if (!reduced) scrimRef.current?.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 300, easing: 'ease-out' })
     const f = fromBox()
-    if (!f || reducedMotion()) return
+    if (!f || reduced) return
     bgRef.current?.animate(
       [{ transform: `translate(${f.dx}px, ${f.dy}px) scale(${f.sx}, ${f.sy})` }, { transform: 'none' }],
       { duration: 560, easing: EASE },
@@ -365,7 +366,11 @@ function ReportSheet({ r, wrapRef, scrollRef, closeRef, onClosed, onOpenChat, on
     })
   }, [])
 
+  const closing = useRef(false)
   const close = (): void => {
+    // Esc와 클릭이 겹쳐도 한 번만 닫는다
+    if (closing.current) return
+    closing.current = true
     const f = fromBox()
     if (!f || reducedMotion()) return onClosed()
     scrimRef.current?.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 300, fill: 'forwards' })

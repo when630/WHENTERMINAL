@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 're
 // 화면 움직임 도구 모음. 효과(빛·입자)는 쓰지 않고, 요소가 자리를 옮기고 모양을 바꾸는 움직임만 다룬다.
 
 export const EASE = 'cubic-bezier(.22, 1, .36, 1)'
+export const EASE_IO = 'cubic-bezier(.65, 0, .35, 1)'
 export const reducedMotion = (): boolean => window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
 interface Box {
@@ -63,9 +64,11 @@ export function useLayoutMotion(container: RefObject<HTMLElement | null>, dispat
       const sizeChanged = Math.abs(from.w - now.w) > 2 || Math.abs(from.h - now.h) > 2
       if (Math.abs(dx) < 1 && Math.abs(dy) < 1 && !(morph && sizeChanged)) return
       if (morph) {
+        const sx = now.w > 0 ? from.w / now.w : 1
+        const sy = now.h > 0 ? from.h / now.h : 1
         el.animate(
           [
-            { transformOrigin: 'left top', transform: `translate(${dx}px, ${dy}px) scale(${from.w / now.w}, ${from.h / now.h})` },
+            { transformOrigin: 'left top', transform: `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})` },
             { transformOrigin: 'left top', transform: 'none' },
           ],
           { duration: 640, easing: EASE },
@@ -88,32 +91,26 @@ export function useLayoutMotion(container: RefObject<HTMLElement | null>, dispat
 
 /**
  * 값이 사라져도 잠시(ms) 마지막 값을 붙잡아 두어 나가는 애니메이션을 보여줄 수 있게 한다.
- * leaving이 true인 동안 요소에 'leaving' 클래스를 붙이면 된다
+ * leaving이 true인 동안 요소에 'leaving' 클래스를 붙이면 된다.
+ * 값이 사라진 바로 그 렌더부터 leaving이어야 한다: 효과에서 뒤늦게 세우면 요소가 한 번 내려갔다 다시 올라와 깜빡인다
  */
 export function usePresence<T>(value: T | null | undefined, ms = 240): { item: T | null; leaving: boolean } {
-  const [kept, setKept] = useState<T | null>(value ?? null)
-  const [leaving, setLeaving] = useState(false)
-  useEffect(() => {
-    if (value !== null && value !== undefined) {
-      setKept(value)
-      setLeaving(false)
-      return
-    }
-    if (kept === null) return
-    if (reducedMotion()) {
-      setKept(null)
-      return
-    }
-    setLeaving(true)
-    const t = setTimeout(() => {
-      setKept(null)
-      setLeaving(false)
-    }, ms)
-    return () => clearTimeout(t)
-    // kept는 일부러 의존성에서 뺀다: 값이 사라지는 순간에만 반응
-  }, [value, ms]) // eslint-disable-line react-hooks/exhaustive-deps
   const current = value ?? null
-  return { item: current ?? (leaving ? kept : null), leaving: current === null && leaving }
+  const kept = useRef<T | null>(current)
+  if (current !== null) kept.current = current
+  // 값이 사라지고 ms가 지나면 true: 붙잡아 둔 값을 놓는다. 값이 다시 생기면 false로
+  const [released, setReleased] = useState(false)
+  useEffect(() => {
+    if (current !== null) {
+      setReleased(false)
+      return
+    }
+    if (kept.current === null) return
+    const t = setTimeout(() => setReleased(true), reducedMotion() ? 0 : ms)
+    return () => clearTimeout(t)
+  }, [current, ms])
+  const leaving = current === null && !released && kept.current !== null && !reducedMotion()
+  return { item: current ?? (leaving ? kept.current : null), leaving }
 }
 
 /** 바뀔 때 위로 굴러가며 교체되는 글자 */
@@ -127,6 +124,9 @@ export function Roll({ text, className }: { text: string; className?: string }):
     prev.current = text
     if (reducedMotion()) return
     const cur = el.querySelector<HTMLSpanElement>('.roll-cur')
+    // 아직 굴러가는 중에 또 바뀌면 글자만 바꾸고 움직임은 이어 간다 (매번 다시 시작하면 더듬는다)
+    if (cur?.getAnimations().length) return
+    el.querySelectorAll('.roll-old').forEach((o) => o.remove())
     const old = document.createElement('span')
     old.className = 'roll-old'
     old.textContent = oldText
@@ -138,6 +138,77 @@ export function Roll({ text, className }: { text: string; className?: string }):
     <span ref={ref} className={`roll ${className ?? ''}`}>
       <span className="roll-cur">{text}</span>
     </span>
+  )
+}
+
+/**
+ * 도는 중 표시. active가 false가 돼도 돌던 바퀴를 마저 채운 뒤에 멈춘다 (중간에 끊으면 원래 각도로 튄다).
+ * 돌아가는 요소(animation: spin … infinite)가 ref 안에 있어야 한다
+ */
+export function useSpin(active: boolean, ref: RefObject<HTMLElement | null>): boolean {
+  const [spinning, setSpinning] = useState(active)
+  useEffect(() => {
+    const el = ref.current
+    if (active) {
+      setSpinning(true)
+      return
+    }
+    if (!el || reducedMotion()) {
+      setSpinning(false)
+      return
+    }
+    const stop = (): void => setSpinning(false)
+    el.addEventListener('animationiteration', stop, { once: true })
+    // 돌고 있지 않았거나 이벤트가 오지 않으면 그냥 멈춘다
+    const t = setTimeout(stop, 1200)
+    return () => {
+      el.removeEventListener('animationiteration', stop)
+      clearTimeout(t)
+    }
+  }, [active, ref])
+  return spinning
+}
+
+/** 활동 막대 높이: 살아 있음 / 사람이 봐야 함 / 멈춤 */
+export type EqMode = 'live' | 'waiting' | 'idle'
+const EQ_LEAD = 'scaleY(0.12)'
+const EQ_REST: Record<EqMode, string> = { live: 'scaleY(0.5)', waiting: 'scaleY(0.3)', idle: 'scaleY(0.08)' }
+const EQ_LOOP = [{ transform: 'scaleY(0.12)' }, { transform: 'scaleY(0.85)', offset: 0.4 }, { transform: 'scaleY(0.35)', offset: 0.7 }, { transform: 'scaleY(1)' }]
+
+/**
+ * 이퀄라이저 막대. CSS 애니메이션은 켜고 끌 때 기준 높이로 튀므로 WAAPI로 지금 높이에서 다음 모습으로 이어 간다.
+ * 실행 중에는 막대마다 조금씩 늦게 시작해 물결처럼 움직인다
+ */
+export function Equalizer({ mode, bars = 12 }: { mode: EqMode; bars?: number }): React.JSX.Element {
+  const ref = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const reduced = reducedMotion()
+    el.querySelectorAll<HTMLElement>('i').forEach((bar, i) => {
+      const from = getComputedStyle(bar).transform
+      bar.getAnimations().forEach((a) => a.cancel())
+      if (reduced) {
+        bar.style.transform = EQ_REST[mode]
+        return
+      }
+      bar.style.transform = ''
+      if (mode !== 'live') {
+        bar.animate([{ transform: from }, { transform: EQ_REST[mode] }], { duration: 600, delay: i * 18, easing: EASE_IO, fill: 'forwards' })
+        return
+      }
+      const lead = bar.animate([{ transform: from }, { transform: EQ_LEAD }], { duration: 320, easing: EASE_IO, fill: 'forwards' })
+      lead.onfinish = () => {
+        if (!bar.isConnected || lead.playState === 'idle') return
+        lead.cancel()
+        bar.animate(EQ_LOOP, { duration: 900, delay: i * 70, iterations: Infinity, direction: 'alternate', easing: EASE_IO, fill: 'backwards' })
+      }
+    })
+  }, [mode])
+  return (
+    <div className={`sp-eq ${mode}`} ref={ref} aria-hidden="true">
+      {Array.from({ length: bars }, (_, i) => <i key={i} />)}
+    </div>
   )
 }
 

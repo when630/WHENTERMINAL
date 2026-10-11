@@ -7,7 +7,8 @@ import '@xterm/xterm/css/xterm.css'
 import { DEFAULT_KEYMAP, type Keymap } from '@shared/keymap'
 import type { TerminalInfo, TerminalShell, TerminalShellOption } from '@shared/types'
 import { matches } from './keys'
-import { EASE, reducedMotion } from './motion'
+import { EASE, reducedMotion, usePresence } from './motion'
+import { ListHead } from './ModelPicker'
 import { useKeymap } from './settings'
 
 // 대화창 아래 터미널 서랍. 대화마다 터미널 탭 여러 개, 탭마다 셸 하나(메인의 node-pty, termId로 구분)와 xterm 화면 하나.
@@ -384,6 +385,7 @@ const shells = (): Promise<TerminalShellOption[]> => (shellList ??= window.api.t
 /** 셸 칸: 누르면 이 컴퓨터에 있는 셸이 펼쳐진다. 위아래·Ctrl+N/P(J/K)로 이동, Enter로 고르기, Esc로 닫기 */
 function ShellPicker({ info, onPick }: { info?: TerminalInfo; onPick: (shell: TerminalShell | null) => void }): React.JSX.Element {
   const [open, setOpen] = useState(false)
+  const shown = usePresence(open ? true : null, 220)
   const [list, setList] = useState<TerminalShellOption[] | null>(null)
   const [index, setIndex] = useState(0)
   const boxRef = useRef<HTMLDivElement>(null)
@@ -425,8 +427,9 @@ function ShellPicker({ info, onPick }: { info?: TerminalInfo; onPick: (shell: Te
         {info?.shell ?? '…'}
         <span className="model-caret" aria-hidden="true">▾</span>
       </button>
-      {open && (
-        <div className="term-shells" role="listbox" aria-label="셸 고르기" tabIndex={-1} data-keys-own="true" onKeyDown={onKey} ref={(el) => { el?.focus() }}>
+      {shown.item && (
+        <div className={`model-list term-shells ${shown.leaving ? 'leaving' : ''}`} role="listbox" aria-label="셸 고르기" tabIndex={-1} data-keys-own="true" onKeyDown={onKey} ref={(el) => { if (el && !shown.leaving) el.focus() }}>
+          <ListHead label="SHELL" count={list?.length} />
           {!list && <div className="slash-empty">셸을 찾는 중…</div>}
           {list?.map((o, i) => {
             const on = o.id !== 'auto' && o.id === info?.kind
@@ -444,7 +447,7 @@ function ShellPicker({ info, onPick }: { info?: TerminalInfo; onPick: (shell: Te
                   {o.label}
                   {on && <span className="model-now">IN USE</span>}
                 </span>
-                <span className="model-desc mono">{o.note}</span>
+                <span className="model-desc mono" title={o.note}>{o.note}</span>
               </button>
             )
           })}
@@ -455,7 +458,7 @@ function ShellPicker({ info, onPick }: { info?: TerminalInfo; onPick: (shell: Te
 }
 
 /** 찾기 줄: Enter 다음, Shift+Enter 이전, Esc 닫고 터미널로 */
-function FindBar({ entry, focusKey, onClose }: { entry: Entry; focusKey: number; onClose: () => void }): React.JSX.Element {
+function FindBar({ entry, focusKey, leaving, onClose }: { entry: Entry; focusKey: number; leaving: boolean; onClose: () => void }): React.JSX.Element {
   const [q, setQ] = useState('')
   const [result, setResult] = useState<{ index: number; count: number } | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -491,7 +494,7 @@ function FindBar({ entry, focusKey, onClose }: { entry: Entry; focusKey: number;
   }
 
   return (
-    <div className="term-find" role="search">
+    <div className={`term-find ${leaving ? 'leaving' : ''}`} role="search">
       <input
         ref={inputRef}
         className="term-find-q mono"
@@ -591,6 +594,7 @@ interface DrawerProps {
 export function TerminalDrawer({ projectId, conversationId, onSend, onPath }: DrawerProps): React.JSX.Element | null {
   const km = useKeymap()
   const ui = useTerminalUi(conversationId)
+  const finding = usePresence(ui.finding ? true : null, 220)
   const hostRef = useRef<HTMLDivElement>(null)
   const sectionRef = useRef<HTMLElement>(null)
   const [height, setHeight] = useState(savedHeight)
@@ -770,7 +774,7 @@ export function TerminalDrawer({ projectId, conversationId, onSend, onPath }: Dr
         </div>
       </header>
       <div className="term-body" hidden={!look}>
-        {ui.finding && entry && <FindBar key={active} entry={entry} focusKey={ui.find} onClose={() => setUi(conversationId, { finding: false })} />}
+        {finding.item && entry && <FindBar key={active} entry={entry} focusKey={ui.find} leaving={finding.leaving} onClose={() => setUi(conversationId, { finding: false })} />}
         {/* data-terminal: 여기에 포커스가 있으면 App이 Esc·Ctrl+C 등을 가로채지 않고 셸로 보낸다 */}
         <div className="term-host" ref={hostRef} data-terminal="true" />
       </div>

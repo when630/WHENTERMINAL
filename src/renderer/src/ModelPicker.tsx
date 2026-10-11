@@ -1,6 +1,20 @@
 import { useEffect, useRef, useState } from 'react'
 import { EFFORT_LABEL, type EffortInfo, type EffortLevel, type ModelOption, type UsageInfo } from '@shared/types'
 import { modelFamily as family } from '@shared/usage'
+import { Keys } from './KeyHint'
+import { usePresence } from './motion'
+
+/** 펼친 목록의 머리줄: 이름·개수와 키 안내 */
+export function ListHead({ label, count }: { label: string; count?: number }): React.JSX.Element {
+  return (
+    <div className="model-head">
+      <span>{label}{count !== undefined ? ` ${count}` : ''}</span>
+      <span className="slash-keys">
+        <Keys keys="ctrl N" />/<Keys keys="ctrl P" /> MOVE · <Keys keys="enter" /> PICK · <Keys keys="esc" /> CLOSE
+      </span>
+    </div>
+  )
+}
 
 interface Props {
   projectId: string
@@ -17,6 +31,7 @@ interface Props {
  */
 export function ModelPicker({ projectId, conversationId, current, choice, usage }: Props): React.JSX.Element {
   const [open, setOpen] = useState(false)
+  const panel = usePresence(open ? true : null, 220)
   const [list, setList] = useState<ModelOption[] | null>(null)
   const [index, setIndex] = useState(0)
   const boxRef = useRef<HTMLDivElement>(null)
@@ -65,8 +80,9 @@ export function ModelPicker({ projectId, conversationId, current, choice, usage 
         <span className="meta-v model-v">{current?.label ?? '–'}</span>
         <span className="model-caret" aria-hidden="true">▾</span>
       </button>
-      {open && (
-        <div className="model-list" role="listbox" aria-label="모델 고르기" tabIndex={-1} data-keys-own="true" onKeyDown={onKey} ref={(el) => { el?.focus() }}>
+      {panel.item && (
+        <div className={`model-list ${panel.leaving ? 'leaving' : ''}`} role="listbox" aria-label="모델 고르기" tabIndex={-1} data-keys-own="true" onKeyDown={onKey} ref={(el) => { if (el && !panel.leaving) el.focus() }}>
+          <ListHead label="MODEL" count={list?.length} />
           {!list && <div className="slash-empty">모델 목록을 불러오는 중…</div>}
           {list?.map((m, i) => {
             const pct = limitOf(m)
@@ -113,6 +129,7 @@ const effortDefault = (info: EffortInfo | null): string => (info?.saved ? `설�
  */
 export function EffortPicker({ choice, info, onPick }: EffortProps): React.JSX.Element {
   const [open, setOpen] = useState(false)
+  const panel = usePresence(open ? true : null, 220)
   const [index, setIndex] = useState(0)
   const boxRef = useRef<HTMLDivElement>(null)
   const rows: (EffortLevel | null)[] = [null, ...(info?.levels ?? [])]
@@ -159,8 +176,9 @@ export function EffortPicker({ choice, info, onPick }: EffortProps): React.JSX.E
         <span className="meta-v effort-v">{none ? '–' : shown}</span>
         <span className="model-caret" aria-hidden="true">▾</span>
       </button>
-      {open && (
-        <div className="model-list effort-list" role="listbox" aria-label="effort 고르기" tabIndex={-1} data-keys-own="true" onKeyDown={onKey} ref={(el) => { el?.focus() }}>
+      {panel.item && (
+        <div className={`model-list effort-list ${panel.leaving ? 'leaving' : ''}`} role="listbox" aria-label="effort 고르기" tabIndex={-1} data-keys-own="true" onKeyDown={onKey} ref={(el) => { if (el && !panel.leaving) el.focus() }}>
+          <ListHead label="EFFORT" count={rows.length} />
           {rows.map((r, i) => {
             const on = (choice ?? null) === r
             return (
