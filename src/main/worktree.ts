@@ -1,10 +1,38 @@
 import { execFile } from 'node:child_process'
-import { mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync } from 'node:fs'
+import { rm } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { promisify } from 'node:util'
 
 const run = promisify(execFile)
 const git = async (cwd: string, ...args: string[]): Promise<string> => (await run('git', ['-C', cwd, ...args], { timeout: 20_000 })).stdout.trim()
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
+
+/**
+ * 작업 공간 폴더를 지운다. Windows에서는 그 폴더를 작업 폴더로 쓰는 프로세스(탭을 열 때 띄운 CLI 등)가
+ * 막 끝나는 중이면 'Permission denied'로 실패하므로 잠깐씩 기다리며 다시 해 본다.
+ * git이 파일만 일부 지우고 실패해 더는 작업 공간으로 안 보이면 폴더를 직접 지우고 git 기록을 정리한다
+ */
+async function removeWorktreeDir(projectPath: string, path: string, force: boolean): Promise<boolean> {
+  for (const wait of [0, 300, 700, 1500, 3000]) {
+    if (wait) await sleep(wait)
+    try {
+      await git(projectPath, 'worktree', 'remove', ...(force ? ['--force'] : []), path)
+      return true
+    } catch {
+      if (!existsSync(path)) return true
+      if (existsSync(join(path, '.git'))) continue
+      try {
+        await rm(path, { recursive: true, force: true })
+        await git(projectPath, 'worktree', 'prune')
+        return true
+      } catch {
+        // 아직 잡혀 있다. 다음에 다시
+      }
+    }
+  }
+  return false
+}
 
 export async function isGitRepo(path: string): Promise<boolean> {
   try {
@@ -31,8 +59,7 @@ export async function createWorktree(projectPath: string, root: string, conversa
 export async function removeWorktreeIfClean(projectPath: string, path: string): Promise<boolean> {
   try {
     if ((await git(path, 'status', '--porcelain')) !== '') return false
-    await git(projectPath, 'worktree', 'remove', path)
-    return true
+    return await removeWorktreeDir(projectPath, path, false)
   } catch {
     return false
   }
@@ -111,11 +138,7 @@ export async function mergeWorktree(projectPath: string, wt: { path: string; bra
 
 /** 버리기: 작업 공간과 브랜치를 지운다 (변경도 함께 사라진다) */
 export async function discardWorktree(projectPath: string, wt: { path: string; branch: string }): Promise<void> {
-  try {
-    await git(projectPath, 'worktree', 'remove', '--force', wt.path)
-  } catch {
-    // 이미 지워졌을 수 있다
-  }
+  await removeWorktreeDir(projectPath, wt.path, true)
   try {
     await git(projectPath, 'branch', '-D', wt.branch)
   } catch {

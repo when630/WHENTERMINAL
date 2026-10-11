@@ -1,5 +1,5 @@
 import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, shell, Tray } from 'electron'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { cwdOf, IPC, type Conversation, type ModelOption, type StoredTask, type UsageInfo, type AgentEventEnvelope, type AgentMode, type PermissionDecision, type RateLimitInfo } from '@shared/types'
@@ -278,7 +278,14 @@ function bootstrap(): void {
   }
   ipcMain.handle(IPC.worktreeChanges, async (_e, projectId: string, conversationId: string) => {
     const t = worktreeOf(projectId, conversationId)
-    return t ? worktreeChanges(t.project.path, t.wt) : null
+    if (!t) return null
+    try {
+      return await worktreeChanges(t.project.path, t.wt)
+    } catch (err) {
+      // 버리는 중이라 폴더가 없어졌으면 작업 공간이 없는 것으로 (그 밖의 오류는 그대로 알린다)
+      if (!existsSync(t.wt.path) || !existsSync(join(t.wt.path, '.git'))) return null
+      throw err
+    }
   })
   ipcMain.handle(IPC.worktreeMerge, async (_e, projectId: string, conversationId: string) => {
     const t = worktreeOf(projectId, conversationId)
