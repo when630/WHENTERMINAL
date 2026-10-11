@@ -240,6 +240,7 @@ function bootstrap(): void {
   )
   ipcMain.handle(IPC.interrupt, (_e, projectId: string, conversationId: string) => manager.interrupt(projectId, conversationId))
   ipcMain.handle(IPC.stopTask, (_e, projectId: string, conversationId: string, taskId: string) => manager.stopTask(projectId, conversationId, taskId))
+  ipcMain.handle(IPC.taskOutput, (_e, projectId: string, conversationId: string, taskId: string) => manager.taskOutput(projectId, conversationId, taskId))
   ipcMain.handle(IPC.setMode, async (_e, projectId: string, conversationId: string, mode: AgentMode) => {
     await manager.setMode(projectId, conversationId, mode)
     projectsChanged()

@@ -211,6 +211,29 @@ export interface BackgroundTask {
   startedAt: number
 }
 
+/** 하위 에이전트(Agent 도구) 안에서 일어난 일 하나 */
+export type SubItem =
+  | { type: 'text'; text: string }
+  | { type: 'tool'; toolUseId: string; name: string; input: unknown; result?: string; isError?: boolean }
+
+/** 하위 에이전트의 진행 수치 (SDK task_progress) */
+export interface AgentProgress {
+  tools: number
+  tokens: number
+  durationMs: number
+  lastTool?: string
+  summary?: string
+}
+
+/** 백그라운드 셸·모니터의 출력 파일 끝부분 */
+export interface TaskOutput {
+  path: string
+  text: string
+  /** 앞부분을 잘라 냈는지 */
+  truncated: boolean
+  size: number
+}
+
 /** 메인 → 렌더러 이벤트 (대화 단위) */
 export type AgentEvent =
   | { kind: 'status'; status: AgentStatus }
@@ -234,6 +257,11 @@ export type AgentEvent =
   | { kind: 'queue'; position: number }
   /** 살아 있는 백그라운드 작업 전체 (바꿔치기) */
   | { kind: 'background'; tasks: BackgroundTask[] }
+  /** 하위 에이전트의 글·도구 호출. parent는 그 에이전트를 띄운 Agent 도구 호출 */
+  | { kind: 'sub'; parent: string; item: SubItem }
+  | { kind: 'sub_result'; parent: string; toolUseId: string; content: string; isError: boolean }
+  /** toolUseId는 이 작업을 띄운 도구 호출 */
+  | { kind: 'task_progress'; toolUseId: string; progress: AgentProgress }
 
 export interface AgentEventEnvelope {
   projectId: string
@@ -254,6 +282,7 @@ export const IPC = {
   send: 'agent:send',
   interrupt: 'agent:interrupt',
   stopTask: 'agent:stop-task',
+  taskOutput: 'agent:task-output',
   setMode: 'agent:set-mode',
   respondPermission: 'agent:respond-permission',
   compact: 'agent:compact',
@@ -311,6 +340,8 @@ export interface WhenTerminalApi {
   interrupt(projectId: string, conversationId: string): Promise<void>
   /** 백그라운드 작업(셸·모니터 등) 하나만 멈춘다. 대화의 실행은 그대로 */
   stopTask(projectId: string, conversationId: string, taskId: string): Promise<void>
+  /** 백그라운드 셸·모니터가 쓴 출력의 끝부분. 파일을 찾지 못하면 null */
+  taskOutput(projectId: string, conversationId: string, taskId: string): Promise<TaskOutput | null>
   setMode(projectId: string, conversationId: string, mode: AgentMode): Promise<void>
   respondPermission(projectId: string, conversationId: string, requestId: string, decision: PermissionDecision): Promise<void>
   /** 대화 내용을 요약해 컨텍스트를 줄인다. instructions는 요약할 때 중점을 둘 내용 */

@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { isAgentMode, type AgentEvent, type AgentMode, type AgentStatus, type BackgroundTask, type ContextInfo, type PermissionDecision, type RateLimitInfo } from '@shared/types'
 import { MessageQueue } from './message-queue'
 import { claudeExecutable } from '../executable'
+import { outputPathIn, rememberTaskOutput } from './task-output'
 
 interface PendingPermission {
   resolve: (r: PermissionResult) => void
@@ -27,10 +28,18 @@ export function subscriptionEnv(): Record<string, string | undefined> {
   const env = { ...process.env }
   delete env.ANTHROPIC_API_KEY
   delete env.ANTHROPIC_AUTH_TOKEN
+  // SDK로 띄운 CLI는 Artifact 도구가 기본으로 꺼져 있다(sdk_default_off). CLI처럼 켜 둔다. 사용자 설정 enableArtifact: false는 여전히 우선
+  env.CLAUDE_CODE_ARTIFACT ??= '1'
   return env
 }
 
 const TOOL_RESULT_PREVIEW_LIMIT = 4000
+/** 하위 에이전트의 도구 결과는 수가 많아 더 짧게 */
+const SUB_RESULT_PREVIEW_LIMIT = 1500
+
+type ToolResultBlock = { content?: string | { type: string; text?: string }[] }
+const resultText = (block: ToolResultBlock): string =>
+  typeof block.content === 'string' ? block.content : (block.content ?? []).map((c) => (c.type === 'text' ? c.text : `[${c.type}]`)).join('\n')
 
 type ContextUsage = Awaited<ReturnType<Query['getContextUsage']>>
 
@@ -192,6 +201,8 @@ export class AgentSession {
         permissionMode: this.mode,
         canUseTool: this.canUseTool,
         includePartialMessages: true,
+        // 하위 에이전트의 글도 받아 대화창에서 무엇을 하는지 보여 준다 (기본은 도구 호출만)
+        forwardSubagentText: true,
         // CLI와 동일하게 사용자/프로젝트/로컬 설정과 CLAUDE.md를 읽는다
         settingSources: ['user', 'project', 'local'],
         systemPrompt: { type: 'preset', preset: 'claude_code' },
@@ -288,6 +299,17 @@ export class AgentSession {
           }
         } else if (msg.subtype === 'task_notification') {
           this.taskTools.delete(msg.task_id)
+          if (msg.output_file && this.sessionId) rememberTaskOutput(this.sessionId, msg.output_file)
+        } else if (msg.subtype === 'task_progress') {
+          const toolUseId = msg.tool_use_id ?? this.taskTools.get(msg.task_id)
+          if (toolUseId) {
+            const u = msg.usage
+            this.opts.emit({
+              kind: 'task_progress',
+              toolUseId,
+              progress: { tools: u.tool_uses, tokens: u.total_tokens, durationMs: u.duration_ms, lastTool: msg.last_tool_name, summary: msg.summary },
+            })
+          }
         } else if (msg.subtype === 'background_tasks_changed') {
           // 전체 목록이 온다 (바꿔치기). 활동이 아닌 감시자(ambient)는 뺀다
           const now = Date.now()
@@ -310,20 +332,36 @@ export class AgentSession {
         }
         break
       case 'assistant':
-        if (msg.parent_tool_use_id !== null) break
+        if (msg.parent_tool_use_id !== null) {
+          const parent = msg.parent_tool_use_id
+          for (const block of msg.message.content) {
+            if (block.type === 'text' && block.text.trim()) this.opts.emit({ kind: 'sub', parent, item: { type: 'text', text: block.text } })
+            else if (block.type === 'tool_use') this.opts.emit({ kind: 'sub', parent, item: { type: 'tool', toolUseId: block.id, name: block.name, input: block.input } })
+          }
+          break
+        }
         for (const block of msg.message.content) {
           if (block.type === 'text') this.opts.emit({ kind: 'assistant_text', text: block.text })
           else if (block.type === 'tool_use') this.opts.emit({ kind: 'tool_use', toolUseId: block.id, name: block.name, input: block.input })
         }
         break
       case 'user': {
-        if (msg.parent_tool_use_id !== null || typeof msg.message.content === 'string') break
+        if (typeof msg.message.content === 'string') break
+        if (msg.parent_tool_use_id !== null) {
+          const parent = msg.parent_tool_use_id
+          for (const block of msg.message.content) {
+            if (block.type !== 'tool_result') continue
+            const content = resultText(block)
+            this.opts.emit({ kind: 'sub_result', parent, toolUseId: block.tool_use_id, content: content.slice(0, SUB_RESULT_PREVIEW_LIMIT), isError: block.is_error ?? false })
+          }
+          break
+        }
         for (const block of msg.message.content) {
           if (block.type !== 'tool_result') continue
-          const content =
-            typeof block.content === 'string'
-              ? block.content
-              : (block.content ?? []).map((c) => (c.type === 'text' ? c.text : `[${c.type}]`)).join('\n')
+          const content = resultText(block)
+          // 백그라운드 셸의 출력 파일 위치를 알아 두면 같은 세션의 모니터 출력도 바로 찾는다
+          const out = outputPathIn(content)
+          if (out && this.sessionId) rememberTaskOutput(this.sessionId, out)
           this.opts.emit({
             kind: 'tool_result',
             toolUseId: block.tool_use_id,

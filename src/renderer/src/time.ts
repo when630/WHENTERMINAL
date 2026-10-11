@@ -19,3 +19,11 @@ export function elapsed(from: number, now: number): string {
   if (hr < 24) return `${hr}시간 전`
   return `${Math.floor(hr / 24)}일 전`
 }
+
+/** 경과 시간 '03:07', 한 시간이 넘으면 '1:03:07' */
+export function clock(ms: number): string {
+  const sec = Math.max(0, Math.floor(ms / 1000))
+  const mm = String(Math.floor(sec / 60) % 60).padStart(2, '0')
+  const ss = String(sec % 60).padStart(2, '0')
+  return sec >= 3600 ? `${Math.floor(sec / 3600)}:${mm}:${ss}` : `${mm}:${ss}`
+}
