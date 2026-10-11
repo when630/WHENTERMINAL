@@ -1,5 +1,5 @@
 import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, shell, Tray } from 'electron'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { cwdOf, IPC, type Conversation, type ModelOption, type StoredTask, type UsageInfo, type AgentEventEnvelope, type AgentMode, type PermissionDecision, type RateLimitInfo } from '@shared/types'
@@ -10,6 +10,8 @@ import { SettingsStore } from './settings'
 import { applyBadge, Notifier } from './notify'
 import { effectiveKeymap, THEMES, toAccelerator, type Settings } from '@shared/keymap'
 import { AgentManager } from './agent/manager'
+import { searchConversations } from './agent/search'
+import { TerminalManager } from './terminal'
 import { fetchUsage, mergeRateLimit } from './agent/usage'
 import { Updater } from './updater'
 
@@ -148,7 +150,22 @@ function bootstrap(): void {
     send(IPC.navigate, { projectId, conversationId })
   })
   ipcMain.on(IPC.setBadge, (_e, waiting: number, unread: number) => applyBadge(tray, waiting, unread))
-  ipcMain.on(IPC.toggleFullscreen, () => toggleFullscreen())
+  ipcMain.handle(IPC.searchConversations, (_e, query: string) => searchConversations(store.list(), query))
+  // 대화창 아래 터미널 (대화마다 하나, 폴더는 cwdOf: 작업 공간이면 그 폴더)
+  const terminals = new TerminalManager(
+    (conversationId, data) => send(IPC.terminalData, { conversationId, data }),
+    (conversationId, code) => send(IPC.terminalExit, { conversationId, code }),
+    () => settingsStore.get().terminalShell,
+  )
+  ipcMain.handle(IPC.terminalOpen, (_e, projectId: string, conversationId: string, cols: number, rows: number) => {
+    const project = store.get(projectId)
+    const conv = store.getConversation(projectId, conversationId)
+    if (!project || !conv) throw new Error(`대화 없음: ${projectId}/${conversationId}`)
+    return terminals.open(conversationId, cwdOf(project, conv), cols, rows)
+  })
+  ipcMain.on(IPC.terminalWrite, (_e, conversationId: string, data: string) => terminals.write(conversationId, data))
+  ipcMain.on(IPC.terminalResize, (_e, conversationId: string, cols: number, rows: number) => terminals.resize(conversationId, cols, rows))
+  ipcMain.handle(IPC.terminalClose, (_e, conversationId: string) => terminals.close(conversationId))
   const updater = new Updater(
     (state) => send(IPC.updateChanged, state),
     () => (quitting = true),
@@ -189,6 +206,7 @@ function bootstrap(): void {
     return project
   })
   ipcMain.handle(IPC.removeProject, (_e, projectId: string) => {
+    for (const c of store.get(projectId)?.conversations ?? []) terminals.close(c.id)
     manager.disposeProject(projectId)
     store.removeProject(projectId)
     projectsChanged()
@@ -215,6 +233,8 @@ function bootstrap(): void {
     return conv
   })
   ipcMain.handle(IPC.closeConversation, (_e, projectId: string, conversationId: string) => {
+    // 셸이 작업 공간 폴더를 잡고 있으면 정리하지 못하므로 먼저 끝낸다
+    terminals.close(conversationId)
     const next = manager.closeConversation(projectId, conversationId)
     projectsChanged()
     return next
@@ -277,7 +297,14 @@ function bootstrap(): void {
   }
   ipcMain.handle(IPC.worktreeChanges, async (_e, projectId: string, conversationId: string) => {
     const t = worktreeOf(projectId, conversationId)
-    return t ? worktreeChanges(t.project.path, t.wt) : null
+    if (!t) return null
+    try {
+      return await worktreeChanges(t.project.path, t.wt)
+    } catch (err) {
+      // 버리는 중이라 폴더가 없어졌으면 작업 공간이 없는 것으로 (그 밖의 오류는 그대로 알린다)
+      if (!existsSync(t.wt.path) || !existsSync(join(t.wt.path, '.git'))) return null
+      throw err
+    }
   })
   ipcMain.handle(IPC.worktreeMerge, async (_e, projectId: string, conversationId: string) => {
     const t = worktreeOf(projectId, conversationId)
@@ -286,7 +313,8 @@ function bootstrap(): void {
   })
   ipcMain.handle(IPC.worktreeDiscard, async (_e, projectId: string, conversationId: string) => {
     const t = worktreeOf(projectId, conversationId)
-    // 대화를 먼저 닫아 세션을 끝낸 뒤 작업 공간을 지운다 (보고서 때문에 남는 대화도 작업 공간은 없앤다)
+    // 대화를 먼저 닫아 세션·셸을 끝낸 뒤 작업 공간을 지운다 (보고서 때문에 남는 대화도 작업 공간은 없앤다)
+    terminals.close(conversationId)
     const next = manager.closeConversation(projectId, conversationId)
     if (t) {
       await discardWorktree(t.project.path, t.wt)
@@ -331,6 +359,7 @@ function bootstrap(): void {
     quitting = true
     updater.stop()
     manager.disposeAll()
+    terminals.closeAll()
   })
   app.on('will-quit', () => globalShortcut.unregisterAll())
   // 상주형: 창을 닫아도 트레이에 남는다
@@ -403,7 +432,7 @@ function createWindow(): void {
   win.webContents.on('will-navigate', (e, url) => {
     if (url !== win?.webContents.getURL() && !url.startsWith(process.env.ELECTRON_RENDERER_URL ?? '\0')) e.preventDefault()
   })
-  // 전체화면: F11은 고정 키라 여기서, 키맵의 대체 키(fullscreen)는 렌더러가 IPC로 보낸다
+  // 전체화면은 F11 고정 (Ctrl+Shift+F는 대화 검색)
   win.webContents.on('before-input-event', (e, input) => {
     if (input.type === 'keyDown' && input.key === 'F11' && !input.control && !input.alt && !input.shift && !input.meta) {
       toggleFullscreen()

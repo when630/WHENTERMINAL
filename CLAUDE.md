@@ -27,7 +27,7 @@
   - 대화 닫기는 세션을 끝내고(실행 중이면 중단) 대화를 목록에서 뺀다. 마지막 대화면 빈 대화를 새로 만든다. `Ctrl+W` 두 번·탭 × 두 번, `/close`는 바로 닫음. 확인 로직은 클리어와 같은 `confirmTwice`(App.tsx)
   - 프로젝트 닫기: 사이드바 ×를 두 번 또는 대화창에서 `Ctrl+Shift+W` 두 번(`confirmTwice`의 `project`). 세션을 모두 끝내고 대기열에서 빼고, 변경 없는 작업 공간만 정리한 뒤 목록에서 뺀다(`disposeProject` → `store.removeProject`). 프로젝트 폴더는 건드리지 않는다
   - 탭 제목(`agent/title.ts`, `Conversation.titleSource`): 새 세션의 첫 메시지(처음·클리어 뒤)를 보내면 규칙으로 다듬은 임시 제목(`draft`), 응답이 끝날 때마다 CLI가 세션마다 만드는 제목(`getSessionInfo().summary`, 첫 메시지와 같으면 아직 없음)으로 바꾼다(`auto`, 5초 뒤 한 번 더). 직접 붙인 이름(`custom`: 탭 더블클릭·`/rename 이름`·`Ctrl+Shift+E`)은 자동으로 바꾸지 않고 `renameSession`으로 세션 기록에도 남긴다. 모델을 따로 부르지 않는다
-  - 백그라운드 작업 알림(`<task-notification>`)은 CLI가 사용자 메시지 자리에 넣는다. 실시간·되살린 기록 모두 `taskNote()`로 한 줄 구분선(`TASK DONE · …`)
+  - 백그라운드 작업 알림(`<task-notification>`)은 CLI가 세션 기록의 사용자 메시지 자리에 넣지만 SDK로는 `system/task_notification`만 온다. 실시간은 그 이벤트, 되살린 기록은 `taskNote()`로 같은 한 줄 구분선(`TASK DONE · …`, `taskLine`)
   - 클리어는 세션을 닫고 `sessionId`를 지운다. 다음 메시지가 새 세션을 만든다. 실수 방지로 `Ctrl+L`을 3초 안에 두 번 눌러야 한다
 - `src/main/store.ts` — `userData/projects.json`에 프로젝트·대화·SDK 세션 ID 저장 (재시작 시 resume)
 - `src/renderer/src/App.tsx` — 전역 키 처리 (기획서 7장 단축키 맵)
@@ -47,7 +47,15 @@
   - Alt 니모닉과 겹치지 않도록 Windows에서는 기본 메뉴를 없앴다 (`Menu.setApplicationMenu(null)`). 개발 중 `Ctrl+Shift+I` 개발자 도구, `Ctrl+Shift+R` 새로고침
 - Windows 창은 테두리 없는 창(`frame: false`): 제목 표시줄·창 버튼이 없다. 사이드바 로고(`.side .brand`, `-webkit-app-region: drag`)를 잡고 옮기고 더블클릭하면 최대화, 크기 조절은 가장자리, 닫기는 `Alt+F4`(트레이로 숨김). macOS는 기본 제목 표시줄 그대로
 - 트레이 아이콘: Windows는 설정에서 고른 앱 아이콘을 16px(+1.25~2배)로 줄여 쓰고 아이콘을 바꾸면 같이 바뀐다(`makeTrayIcon`). macOS는 메뉴 막대 관례대로 흑백 템플릿 이미지
-- 전체화면: `F11`(고정 키, 메인 `before-input-event`) 또는 키맵 `fullscreen`(기본 `Ctrl+Shift+F`, 렌더러 → `IPC.toggleFullscreen`)
+- 터미널(대화창 아래 서랍): 메인 `terminal.ts`(node-pty, 대화마다 셸 하나, 폴더는 `cwdOf`) ↔ 렌더러 `terminal.tsx`(xterm, 대화마다 화면 하나를 만들어 두고 탭을 옮기면 다시 붙인다)
+  - 키맵 `terminal`(기본 `Ctrl+T`): 닫힘·접힘이면 펼치고 터미널로, 펼쳐져 있으면 입력창 → 터미널, 터미널에서 누르면 접고 입력창으로. 접어도 셸은 돈다. 높이는 끌어서(localStorage)
+  - 터미널에 포커스가 있으면(`[data-terminal]`) App은 앱을 오가는 키(terminal·goHome·help·search·탭 이동·새 탭·설정·⌥A~L)만 받고 나머지(Esc·Ctrl+C·Ctrl+L …)는 셸로. 선택이 있을 때 Ctrl+C·Ctrl+Shift+C 복사, Ctrl+Shift+V 붙여넣기
+  - Bash·PowerShell 도구 줄의 RUN IN TERMINAL: 명령을 입력줄에 넣기만 한다(실행은 사용자 Enter). SEND TO CLAUDE: 선택한 출력을 입력창에 코드 블록으로
+  - 대화·프로젝트 닫기, 작업 공간 버리기 전에 셸을 끝낸다 (셸이 작업 공간 폴더를 잡고 있으면 지울 수 없다). 셸은 설정 `terminalShell`(AUTO는 pwsh → PowerShell, macOS는 $SHELL), 환경 변수는 사용자 것 그대로
+  - 패키징: node-pty는 N-API 미리 빌드 바이너리를 쓰므로 `asarUnpack`에 넣고 `npmRebuild: false` (켜 두면 Visual Studio로 소스 빌드를 시도하다 실패한다)
+- 전체화면: `F11` 고정 (메인 `before-input-event`). 키맵 동작은 없다
+- 새 탭: 키맵 `newConversation`(기본 `Ctrl+Shift+T`). 탭 줄의 +와 같다
+- 대화 검색(`SearchOverlay.tsx`, 키맵 `search` 기본 `Ctrl+Shift+F`): 모든 프로젝트의 열린 대화를 세션 기록(`readHistory`, 끝 400개)에서 찾는다(`agent/search.ts`, 기록 파일 `lastModified`가 같으면 캐시). 띄어 쓴 말이 모두 들어간 내 메시지·답변·도구 호출. 고르면 그 대화를 열고 `jump`로 그 메시지까지 스크롤·강조. 무엇을 찾을지와 몇 번째로 맞았는지(`ordinal`)는 메인·렌더러가 `@shared/search`의 같은 함수로 센다
 - macOS도 지원한다 (`isMac` 분기, `src/main/index.ts`)
   - 단축키는 macOS에서도 Ctrl 기반 그대로. Cmd로 바꾸지 말 것. 화면의 Alt 표기만 `⌥`로 바꾼다 (`ALT_LABEL`)
   - 메뉴는 없애지 않고 앱·편집·윈도우 메뉴만 둔다. Edit 메뉴가 없으면 Cmd+C/V가 죽는다

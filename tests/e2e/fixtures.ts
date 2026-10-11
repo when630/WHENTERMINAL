@@ -40,7 +40,8 @@ export function makeEnv(seed: Seed): Env {
       writeFileSync(join(dir, f), body)
     }
     if (p.git) {
-      execSync('git init -q && git add -A && git -c user.email=e2e@test -c user.name=e2e commit -qm init', { cwd: dir })
+      // 시스템 git의 core.autocrlf=true(Windows 기본)면 병합한 파일이 CRLF로 풀린다
+      execSync('git init -q && git config core.autocrlf false && git add -A && git -c user.email=e2e@test -c user.name=e2e commit -qm init', { cwd: dir })
       execSync('git config user.email e2e@test && git config user.name e2e', { cwd: dir })
     }
     return { id: `p${i + 1}`, name: p.name, path: dir, conversations: p.conversations ?? [{ id: `c${i + 1}`, title: '대화 1', mode: 'default' }] }

@@ -213,6 +213,34 @@ export function SettingsScreen({ settings, activeHotkey, update, onClose, onSave
           </div>
         </section>
 
+        <section className="set-sec set-sec-cont" aria-label="터미널 셸">
+          <div className="krow">
+            <span className="krow-label">
+              Terminal shell
+              <span className="krow-note">대화창 아래 터미널(Ctrl+T)에서 띄울 셸이에요. 새로 여는 터미널부터 적용돼요. Claude의 Bash 명령을 그대로 실행하려면 Git Bash가 맞아요</span>
+            </span>
+            <span className="seg" role="radiogroup" aria-label="터미널 셸">
+              {(window.api.appInfo.platform === 'win32'
+                ? ([['auto', 'AUTO'], ['powershell', 'POWERSHELL'], ['gitbash', 'GIT BASH'], ['cmd', 'CMD']] as const)
+                : ([['auto', 'AUTO'], ['zsh', 'ZSH'], ['bash', 'BASH']] as const)
+              ).map(([id, name]) => (
+                <button
+                  key={id}
+                  type="button"
+                  role="radio"
+                  aria-checked={settings.terminalShell === id}
+                  className={settings.terminalShell === id ? 'on' : ''}
+                  title={id === 'auto' ? (window.api.appInfo.platform === 'win32' ? 'pwsh가 있으면 pwsh, 없으면 Windows PowerShell' : '로그인 셸($SHELL)') : undefined}
+                  onClick={() => void save({ ...settings, terminalShell: id })}
+                >
+                  {name}
+                </button>
+              ))}
+            </span>
+            <span className="krow-side" />
+          </div>
+        </section>
+
         <section className="set-sec set-sec-cont" aria-label="자동 실행">
           <div className="krow">
             <span className="krow-label">

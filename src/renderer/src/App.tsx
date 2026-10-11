@@ -10,6 +10,8 @@ import { effectiveKeymap, type ActionId, type Settings } from '@shared/keymap'
 import { applyTheme, KeymapContext } from './settings'
 import { SettingsScreen } from './SettingsScreen'
 import { HelpOverlay } from './HelpOverlay'
+import { SearchOverlay } from './SearchOverlay'
+import type { SearchHit } from '@shared/types'
 import { usePresence } from './motion'
 
 export type View = { screen: 'home' } | { screen: 'chat'; projectId: string; conversationId: string } | { screen: 'settings'; back: View }
@@ -37,6 +39,15 @@ export function App(): React.JSX.Element {
   // 단축키 도움말 (하단 안내 줄 대신)
   const [helpOpen, setHelpOpen] = useState(false)
   const help = usePresence(helpOpen ? true : null)
+  // 대화 검색 (Ctrl+Shift+F). 결과를 고르면 그 대화를 열고 jump로 그 메시지까지 스크롤한다
+  const [searchOpen, setSearchOpen] = useState(false)
+  const search = usePresence(searchOpen ? true : null)
+  const [jump, setJump] = useState<{ conversationId: string; query: string; ordinal: number; nonce: number } | null>(null)
+  const openHit = (hit: SearchHit, query: string): void => {
+    setSearchOpen(false)
+    openChat(hit.projectId, hit.conversationId)
+    setJump({ conversationId: hit.conversationId, query, ordinal: hit.ordinal, nonce: Date.now() })
+  }
 
   // 테마: 처음에는 바로, 이후 바뀔 때는 부드럽게
   const themeApplied = useRef(false)
@@ -255,7 +266,7 @@ export function App(): React.JSX.Element {
   const modeOf = (projectId: string, conversationId: string): AgentMode => {
     const fromEvents = convs[conversationId]?.mode
     const conv = projects.find((p) => p.id === projectId)?.conversations.find((c) => c.id === conversationId)
-    return fromEvents ?? conv?.mode ?? 'default'
+    return fromEvents ?? conv?.mode ?? 'auto'
   }
 
   // 전역 키 처리 (기획서 7장, 40% 배열 기준은 keys.ts). 최신 상태를 쓰기 위해 ref로 핸들러를 갱신한다.
@@ -264,6 +275,13 @@ export function App(): React.JSX.Element {
     // 입력창의 명령 후보 메뉴나 설정의 키 입력칸이 열려 있으면 그쪽이 키를 처리한다
     const owner = (e.target as HTMLElement | null)?.dataset
     if (owner?.menuOpen === 'true' || owner?.keysOwn === 'true') return
+    // 터미널에 포커스가 있으면 키는 셸 몫이다 (Esc·Ctrl+C·Ctrl+L·Ctrl+K …). 앱을 오가는 키 몇 개만 앱이 받는다
+    if ((e.target as HTMLElement | null)?.closest?.('[data-terminal]')) {
+      const app = (['terminal', 'goHome', 'help', 'search', 'nextConversation', 'prevConversation', 'newConversation', 'openSettings'] as ActionId[]).some((id) => matches(e, km[id]))
+      if (!app && projectIndexFromKey(e, physicalCode(e)) === null) return
+      // 셸에는 가지 않게
+      e.stopPropagation()
+    }
     const code = physicalCode(e)
     const tag = (e.target as HTMLElement | null)?.tagName
     const typing = tag === 'TEXTAREA' || tag === 'INPUT'
@@ -274,9 +292,25 @@ export function App(): React.JSX.Element {
     }
 
     // 도움말: 어디서든 열고 닫는다. 열려 있는 동안은 Esc로 닫는 것 말고는 키를 받지 않는다
-    if (is('help')) return take(() => setHelpOpen((v) => !v))
-    if (helpOpen) {
-      if (isEscape(e, code)) take(() => setHelpOpen(false))
+    if (is('help')) {
+      return take(() => {
+        setSearchOpen(false)
+        setHelpOpen((v) => !v)
+      })
+    }
+    if (is('search')) {
+      return take(() => {
+        setHelpOpen(false)
+        setSearchOpen((v) => !v)
+      })
+    }
+    if (helpOpen || searchOpen) {
+      if (isEscape(e, code)) {
+        take(() => {
+          setHelpOpen(false)
+          setSearchOpen(false)
+        })
+      }
       return
     }
 
@@ -291,7 +325,6 @@ export function App(): React.JSX.Element {
       })
     }
     if (is('openSettings')) return take(() => openSettings())
-    if (is('fullscreen')) return take(() => window.api.toggleFullscreen())
 
     if (view.screen === 'settings') {
       if (e.key === 'Escape' && !typing) take(() => closeSettings())
@@ -373,6 +406,11 @@ export function App(): React.JSX.Element {
     if (is('panelBack')) return take(() => chatPanelRef.current?.back())
     if (is('stopTask')) return take(() => chatPanelRef.current?.stop())
     if (is('renameConversation')) return take(() => chatPanelRef.current?.rename())
+    if (is('terminal')) return take(() => chatPanelRef.current?.terminal())
+    // 새 탭: 탭 줄의 +와 같다 (설정에 따라 작업 공간을 만든다)
+    if (is('newConversation')) {
+      return take(() => void window.api.addConversation(projectId).then((c) => setView({ screen: 'chat', projectId, conversationId: c.id })))
+    }
     if (is('clear')) return take(() => requestClear(projectId, conversationId))
     if (is('cycleMode')) {
       return take(() => {
@@ -445,6 +483,7 @@ export function App(): React.JSX.Element {
               onSelectConversation={(conversationId) => setView({ screen: 'chat', projectId: chatProject.id, conversationId })}
               onRespond={respond}
               panelRef={chatPanelRef}
+              jump={jump?.conversationId === view.conversationId ? jump : null}
             />
           ) : (
             <Home
@@ -472,6 +511,7 @@ export function App(): React.JSX.Element {
           )}
         </div>
       </div>
+      {search.item && <SearchOverlay leaving={search.leaving} onOpen={openHit} onClose={() => setSearchOpen(false)} />}
       {help.item && <HelpOverlay context={view.screen} hotkey={hotkey} leaving={help.leaving} onClose={() => setHelpOpen(false)} />}
     </div>
     </KeymapContext.Provider>

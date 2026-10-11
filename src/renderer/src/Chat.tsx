@@ -2,11 +2,13 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { MODE_CYCLE, MODE_LABEL, openConversations, STATUS_LABEL, type UsageInfo, type SlashCommandInfo, type AgentMode, type PermissionDecision, type PermissionRequest, type Project, type BackgroundTask, type AgentProgress, type SubItem } from '@shared/types'
 import { agentInfo, artifactsOf, describeBackground, emptyConversation, isAgentTool, relPath, runningAgents, STAGES, subActivity, summarizeInput, type ArtifactLink, type ConversationMap, type TaskInfo, type ToolItem, type TranscriptItem } from './state'
 import { HOME_ROW } from './keys'
+import { matchesTerms, searchableText, searchTerms } from '@shared/search'
 import { Keys } from './KeyHint'
 import { useKeymap } from './settings'
 import { Roll, usePresence } from './motion'
 import { clock, useNow } from './time'
 import { SubLog, TaskDetail, type DetailTarget } from './TaskDetail'
+import { runInTerminal, TerminalDrawer, toggleTerminal } from './terminal'
 import { Markdown } from './Markdown'
 import { AttachButton, useAttach } from './attach'
 import { WorktreePanel } from './WorktreePanel'
@@ -34,6 +36,8 @@ interface Props {
   onRespond: (projectId: string, conversationId: string, requestId: string, decision: PermissionDecision) => void
   /** App의 전역 키 처리가 오른쪽 패널 세부 내용을 다루는 손잡이 (Chat이 그릴 때마다 갱신) */
   panelRef: React.MutableRefObject<PanelControl | null>
+  /** 대화 검색에서 고른 메시지: 이 대화에서 검색어가 맞은 ordinal번째 항목으로 스크롤한다 */
+  jump?: { query: string; ordinal: number; nonce: number } | null
 }
 
 /** App의 전역 키 처리가 대화창을 다루는 손잡이: 오른쪽 패널 세부 내용(panelNext·panelPrev·panelBack·stopTask)과 이름 바꾸기 */
@@ -45,9 +49,11 @@ export interface PanelControl {
   stop: () => void
   /** 지금 탭의 이름을 고치는 칸을 연다 */
   rename: () => void
+  /** 아래 터미널: 펼치고 터미널로 / 터미널 ↔ 입력창 / 터미널에서 누르면 접기 */
+  terminal: () => void
 }
 
-export function Chat({ project, projects, conversationId, convs, mode, usage, clearArmed, closeArmedId, projectArmed, onClearRequest, onCloseRequest, onClose, onSelectConversation, onRespond, panelRef }: Props): React.JSX.Element {
+export function Chat({ project, projects, conversationId, convs, mode, usage, clearArmed, closeArmedId, projectArmed, onClearRequest, onCloseRequest, onClose, onSelectConversation, onRespond, panelRef, jump }: Props): React.JSX.Element {
   const km = useKeymap()
   const state = convs[conversationId] ?? emptyConversation()
   const [draft, setDraft] = useState('')
@@ -110,6 +116,37 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
     const streaming = lastItem?.type === 'assistant' && lastItem.streaming
     el.scrollTo({ top: el.scrollHeight, behavior: streaming ? 'instant' : 'smooth' })
   }, [state.items.length, lastItem, !!permission.item, compacting.item, working.item])
+  // 검색 결과로 열었으면 그 메시지로 스크롤하고 잠깐 강조한다. 기록을 되살리는 중이면 다 들어올 때까지 기다린다
+  const jumped = useRef(0)
+  useEffect(() => {
+    if (!jump || jumped.current === jump.nonce || state.items.length === 0) return
+    const terms = searchTerms(jump.query)
+    const hits: number[] = []
+    state.items.forEach((item, i) => {
+      const t = searchableText(item)
+      if (t && matchesTerms(t.text, terms)) hits.push(i)
+    })
+    if (hits.length === 0) {
+      // 기록이 아직 덜 들어왔을 수 있다 (되살린 기록은 한꺼번에 오므로 restored가 있으면 끝)
+      if (state.restored === undefined && needsHistory) return
+      jumped.current = jump.nonce
+      return
+    }
+    jumped.current = jump.nonce
+    const idx = hits[Math.min(jump.ordinal, hits.length - 1)]
+    setDetail(null)
+    setShowChanges(false)
+    stick.current = false
+    // 맨 아래로 따라가는 스크롤이 끝난 뒤에 옮긴다
+    setTimeout(() => {
+      const el = scrollRef.current?.children[idx] as HTMLElement | undefined
+      if (!el) return
+      el.scrollIntoView({ block: 'center' })
+      el.classList.add('hit')
+      setTimeout(() => el.classList.remove('hit'), 2400)
+    }, 120)
+  }, [jump?.nonce, state.items.length, state.restored]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // 권한 요청이 오면 입력창에서 포커스를 빼서 Y/A/N이 바로 먹게 한다
   useEffect(() => {
     if (pending) inputRef.current?.blur()
@@ -264,6 +301,7 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
       if (shownTask) void window.api.stopTask(project.id, conversationId, shownTask.id)
     },
     rename: () => setEditingId(conversationId),
+    terminal: () => toggleTerminal(project.id, conversationId, () => inputRef.current?.focus()),
   }
   const attach = useAttach({ inputRef, value: draft, setValue: setDraft, root: conv?.worktree?.path ?? project.path, onCaret: setCaret })
 
@@ -451,7 +489,7 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
             </div>
           )}
           {state.items.map((item, idx) => (
-            <Item key={idx} item={item} n={item.type === 'tool' ? ++toolCount : 0} root={project.path} enter={idx >= seen.current.count} subs={state.subs} progress={state.progress} />
+            <Item key={idx} item={item} n={item.type === 'tool' ? ++toolCount : 0} root={project.path} enter={idx >= seen.current.count} subs={state.subs} progress={state.progress} onRun={(cmd) => void runInTerminal(project.id, conversationId, cmd)} />
           ))}
           {working.item && <Working status={state.status} activity={state.task?.activity} startedAt={state.task?.startedAt} leaving={working.leaving} />}
           {compacting.item && <div className={`msg compacting ${compacting.leaving ? 'leaving' : ''}`}>COMPACTING · 지금까지의 대화를 요약하고 있어요</div>}
@@ -542,6 +580,20 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
         </div>
       </div>
 
+      <TerminalDrawer
+        projectId={project.id}
+        conversationId={conversationId}
+        onSend={(text) => {
+          // 선택한 터미널 출력을 코드 블록으로 입력창 끝에 붙인다 (보내기 전에 질문을 덧붙일 수 있게)
+          setDraft((d) => `${d.trimEnd() ? `${d.trimEnd()}\n\n` : ''}\`\`\`\n${text}\n\`\`\`\n`)
+          requestAnimationFrame(() => {
+            const el = inputRef.current
+            if (!el) return
+            el.focus()
+            el.setSelectionRange(el.value.length, el.value.length)
+          })
+        }}
+      />
     </div>
   )
 }
@@ -724,7 +776,7 @@ function Working({ status, activity, startedAt, leaving }: { status: string; act
   )
 }
 
-function Item({ item, n, root, enter, subs, progress }: { item: TranscriptItem; n: number; root: string; enter: boolean; subs?: Record<string, SubItem[]>; progress?: Record<string, AgentProgress> }): React.JSX.Element {
+function Item({ item, n, root, enter, subs, progress, onRun }: { item: TranscriptItem; n: number; root: string; enter: boolean; subs?: Record<string, SubItem[]>; progress?: Record<string, AgentProgress>; onRun?: (command: string) => void }): React.JSX.Element {
   const e = enter ? ' enter' : ''
   switch (item.type) {
     case 'user':
@@ -757,6 +809,16 @@ function Item({ item, n, root, enter, subs, progress }: { item: TranscriptItem; 
           </summary>
           <div className="tool-body">
             <ToolInput name={item.name} input={item.input} />
+            {(item.name === 'Bash' || item.name === 'PowerShell') && typeof (item.input as { command?: unknown } | null)?.command === 'string' && onRun && (
+              <button
+                type="button"
+                className="tool-run"
+                onClick={() => onRun((item.input as { command: string }).command)}
+                title="이 명령을 아래 터미널 입력줄에 넣어요. 실행은 Enter로 직접 해요"
+              >
+                RUN IN TERMINAL
+              </button>
+            )}
             {sub && sub.length > 0 && (
               <>
                 <h5>AGENT LOG · {sub.length}</h5>

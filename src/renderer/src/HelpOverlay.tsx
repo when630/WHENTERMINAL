@@ -22,7 +22,7 @@ const GROUPS: Group[] = [
     id: 'anywhere',
     title: 'ANYWHERE',
     note: '어느 화면에서든',
-    actions: ['help', 'goHome', 'dispatch', 'openSettings', 'fullscreen'],
+    actions: ['help', 'search', 'goHome', 'dispatch', 'openSettings'],
     fixed: [
       ['alt A S D F G H J K L', 'Go to project 1–9'],
       ['ctrl 1…9', 'Go to project (alt.)'],
@@ -44,12 +44,14 @@ const GROUPS: Group[] = [
     id: 'chat',
     title: 'CHAT',
     note: '대화창. 입력 중에도 Ctrl 조합은 동작해요',
-    actions: ['nextConversation', 'prevConversation', 'renameConversation', 'closeConversation', 'closeProject', 'clear', 'compact', 'cycleMode', 'interrupt', 'panelNext', 'panelPrev', 'panelBack', 'stopTask'],
+    actions: ['terminal', 'newConversation', 'nextConversation', 'prevConversation', 'renameConversation', 'closeConversation', 'closeProject', 'clear', 'compact', 'cycleMode', 'interrupt', 'panelNext', 'panelPrev', 'panelBack', 'stopTask'],
     fixed: [
       ['esc', 'Interrupt'],
       ['ctrl C', 'Interrupt (no text selected)'],
       ['enter', 'Send'],
       ['shift enter', 'New line'],
+      ['ctrl shift C', 'Terminal: copy (or Ctrl+C with a selection)'],
+      ['ctrl shift V', 'Terminal: paste'],
     ],
   },
   {

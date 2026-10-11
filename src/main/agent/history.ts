@@ -19,9 +19,12 @@ const TASK_STATUS: Record<string, string> = { completed: 'TASK DONE', killed: 'T
 export function taskNote(text: string): string | null {
   if (!/^\s*<task-notification>/.test(text)) return null
   const tag = (name: string): string | undefined => new RegExp(`<${name}>([\\s\\S]*?)</${name}>`).exec(text)?.[1]?.trim()
-  const status = tag('status')
-  return [(status && TASK_STATUS[status]) || 'TASK', tag('summary'), tag('event')].filter(Boolean).join(' · ')
+  return taskLine(tag('status'), tag('summary'), tag('event'))
 }
+
+/** 작업 알림 한 줄: 'TASK DONE · 요약 · 이벤트' */
+export const taskLine = (status?: string, summary?: string, event?: string): string =>
+  [(status && TASK_STATUS[status]) || 'TASK', summary, event].filter(Boolean).join(' · ')
 
 function textOf(content: unknown): string {
   if (typeof content === 'string') return content

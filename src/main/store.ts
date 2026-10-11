@@ -135,5 +135,5 @@ export function newConversationId(): string {
 }
 
 function newConversation(n: number): Conversation {
-  return { id: randomUUID(), title: `대화 ${n}`, mode: 'default' }
+  return { id: randomUUID(), title: `대화 ${n}`, mode: 'auto' }
 }
