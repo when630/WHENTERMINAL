@@ -5,7 +5,7 @@ import { HOME_ROW } from './keys'
 import { matchesTerms, searchableText, searchTerms } from '@shared/search'
 import { Keys } from './KeyHint'
 import { useKeymap } from './settings'
-import { Roll, usePresence } from './motion'
+import { Equalizer, Roll, usePresence } from './motion'
 import { clock, useNow } from './time'
 import { SubLog, TaskDetail, type DetailTarget } from './TaskDetail'
 import { closeTerminal, pathForComposer, runInTerminal, TerminalDrawer, toggleTerminal } from './terminal'
@@ -230,6 +230,9 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
   const fileItems = fileOpen && files ? files.list : []
 
   const menuOpen = slashOpen || fileOpen
+  const slashShown = usePresence(slashOpen ? true : null, 220)
+  const fileShown = usePresence(fileOpen ? true : null, 220)
+  const limitShown = usePresence(limit, 220)
   const menuCount = slashOpen ? menuItems.length : fileItems.length
   useEffect(() => setMenuIndex(0), [slashQuery, fileQuery])
 
@@ -602,18 +605,18 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
         </div>
       )}
       <div className={`composer ${attach.dropping ? 'dropping' : ''}`} {...attach.dropProps}>
-        {slashOpen && (
-          <SlashMenu items={menuItems} index={menuIndex} loading={slash.loading} onHover={setMenuIndex} onPick={(c) => pickCommand(c, true)} />
+        {slashShown.item && (
+          <SlashMenu items={menuItems} index={menuIndex} loading={slash.loading} leaving={slashShown.leaving} onHover={setMenuIndex} onPick={(c) => pickCommand(c, true)} />
         )}
-        {fileOpen && <FileMenu items={fileItems} index={menuIndex} loading={!files || files.q !== fileQuery} onHover={setMenuIndex} onPick={pickFile} />}
-        {limit && (
-          <div className={`limit-warn ${limit.level === 100 ? 'full' : ''} ${limitArmed ? 'armed' : ''}`} role="status">
+        {fileShown.item && <FileMenu items={fileItems} index={menuIndex} loading={!files || files.q !== fileQuery} leaving={fileShown.leaving} onHover={setMenuIndex} onPick={pickFile} />}
+        {limitShown.item && (
+          <div className={`limit-warn ${limitShown.item.level === 100 ? 'full' : ''} ${limitArmed ? 'armed' : ''} ${limitShown.leaving ? 'leaving' : ''}`} role="status">
             <b>LIMIT</b>
             <span>
-              {limit.window.label} {limit.level === 100 ? '한도를 다 썼어요' : `${limit.window.percent ?? limit.level}%`}
-              {limit.window.resetsAt ? ` · ${formatReset(limit.window.resetsAt)}` : ''}
+              {limitShown.item.window.label} {limitShown.item.level === 100 ? '한도를 다 썼어요' : `${limitShown.item.window.percent ?? limitShown.item.level}%`}
+              {limitShown.item.window.resetsAt ? ` · ${formatReset(limitShown.item.window.resetsAt)}` : ''}
             </span>
-            {limit.level === 100 && <em>{limitArmed ? '지금 보내면 거절될 수 있어요 · Enter를 한 번 더 누르면 보내요' : '보내면 거절될 수 있어요'}</em>}
+            {limitShown.item.level === 100 && <em>{limitArmed ? '지금 보내면 거절될 수 있어요 · Enter를 한 번 더 누르면 보내요' : '보내면 거절될 수 있어요'}</em>}
           </div>
         )}
         <span className="composer-prompt" aria-hidden="true">&gt;</span>
@@ -864,9 +867,7 @@ function TaskStatus({ task, status, now }: { task: TaskInfo; status: string; now
         <div><dt>TIME</dt><dd>{clock(ms)}</dd></div>
         <div><dt>FILES</dt><dd>{task.files.length}</dd></div>
       </dl>
-      <div className="sp-eq" aria-hidden="true">
-        {Array.from({ length: 12 }, (_, i) => <i key={i} style={{ animationDelay: `${-((i * 7) % 11) * 0.13}s` }} />)}
-      </div>
+      <Equalizer mode={waiting ? 'waiting' : status === 'running' ? 'live' : 'idle'} />
       <p className="sp-act">{waiting ? 'WAITING FOR YOU' : task.activity}</p>
       {task.files.length > 0 && (
         <ul className="sp-files">

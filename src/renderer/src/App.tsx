@@ -15,6 +15,7 @@ import type { SearchHit } from '@shared/types'
 import { usePresence } from './motion'
 import { newTerminal, showTerminal, stepTerminal } from './terminal'
 import { pruneDrafts } from './drafts'
+import { useTooltips } from './tooltip'
 
 export type View = { screen: 'home' } | { screen: 'chat'; projectId: string; conversationId: string } | { screen: 'settings'; back: View }
 
@@ -40,10 +41,10 @@ export function App(): React.JSX.Element {
   const chatPanelRef = useRef<PanelControl | null>(null)
   // 단축키 도움말 (하단 안내 줄 대신)
   const [helpOpen, setHelpOpen] = useState(false)
-  const help = usePresence(helpOpen ? true : null)
+  const help = usePresence(helpOpen ? true : null, 300)
   // 대화 검색 (Ctrl+Shift+F). 결과를 고르면 그 대화를 열고 jump로 그 메시지까지 스크롤한다
   const [searchOpen, setSearchOpen] = useState(false)
-  const search = usePresence(searchOpen ? true : null)
+  const search = usePresence(searchOpen ? true : null, 300)
   const [jump, setJump] = useState<{ conversationId: string; query: string; ordinal: number; nonce: number } | null>(null)
   const openHit = (hit: SearchHit, query: string): void => {
     setSearchOpen(false)
@@ -51,6 +52,7 @@ export function App(): React.JSX.Element {
     setJump({ conversationId: hit.conversationId, query, ordinal: hit.ordinal, nonce: Date.now() })
   }
 
+  useTooltips()
   // 테마: 처음에는 바로, 이후 바뀔 때는 부드럽게
   const themeApplied = useRef(false)
   useEffect(() => {

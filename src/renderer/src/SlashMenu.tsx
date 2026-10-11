@@ -56,11 +56,13 @@ interface Props {
   loading: boolean
   onHover: (i: number) => void
   onPick: (c: SlashCommandInfo) => void
+  /** 닫히는 중: 나올 때와 같은 길로 들어간다 */
+  leaving?: boolean
 }
 
-export function SlashMenu({ items, index, loading, onHover, onPick }: Props): React.JSX.Element {
+export function SlashMenu({ items, index, loading, onHover, onPick, leaving }: Props): React.JSX.Element {
   return (
-    <div className="slash" role="listbox" aria-label="명령">
+    <div className={`slash ${leaving ? 'leaving' : ''}`} role="listbox" aria-label="명령">
       <div className="slash-head">
         <span>COMMANDS {items.length}</span>
         <span className="slash-keys">
@@ -95,15 +97,16 @@ export function SlashMenu({ items, index, loading, onHover, onPick }: Props): Re
 }
 
 /** 입력창의 @ 파일 후보. 파일 이름을 굵게, 폴더는 옅게 */
-export function FileMenu({ items, index, loading, onHover, onPick }: {
+export function FileMenu({ items, index, loading, onHover, onPick, leaving }: {
   items: string[]
   index: number
   loading: boolean
   onHover: (i: number) => void
   onPick: (path: string) => void
+  leaving?: boolean
 }): React.JSX.Element {
   return (
-    <div className="slash" role="listbox" aria-label="파일">
+    <div className={`slash ${leaving ? 'leaving' : ''}`} role="listbox" aria-label="파일">
       <div className="slash-head">
         <span>FILES {items.length >= 50 ? '50+' : items.length}</span>
         <span className="slash-keys">

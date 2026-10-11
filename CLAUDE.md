@@ -81,6 +81,8 @@
   - 하위 에이전트: `forwardSubagentText`로 받은 `parent_tool_use_id` 메시지를 `sub`·`sub_result` 이벤트로 보내 `ConversationState.subs`(Agent 도구 호출 ID별)에 쌓는다. `task_progress`는 `progress`. 앞에서 기다리는 에이전트는 AGENTS, 백그라운드 에이전트는 BACKGROUND에 나온다. 대화 기록의 Agent 도구를 펼치면 `SubLog`
 - 기록·보고서: 대화창을 열 때 화면 기록이 비어 있으면 `getSessionMessages`로 되살린다(`agent/history.ts`). 끝난 작업의 보고서는 `Conversation.lastTask`에 저장하고, 보관 전 보고서가 있는 대화를 닫으면 `closedAt`으로 숨기기만 한다. 탭·목록은 `openConversations()` 기준
 - 첨부는 경로로: 입력창에 파일을 끌어다 놓기·첨부 버튼(`pickFiles`)·이미지 붙여넣기(`saveImage`로 userData/attachments에 저장)를 하면 경로를 넣는다. 작업 폴더 안은 `@상대경로`. 끌어다 놓은 파일 경로는 sandbox라 preload의 `webUtils.getPathForFile`로
+- 툴팁: 요소에는 그냥 `title`을 쓴다. `tooltip.tsx`(`useTooltips`, App 루트)가 처음 올릴 때 `data-tip`으로 옮겨 OS 풍선 대신 `.tip`으로 보여준다. 누른 요소·`aria-expanded=true`인 요소에는 띄우지 않는다
+- 펼치는 목록(모델·effort·셸): `.model-list` + `ListHead`(ModelPicker.tsx) 머리줄 + `.model-row` 한 줄 행. 누른 칸 아래(셸은 위)에 붙어서 내려오고(`drop-in`), 긴 설명은 말줄임 + title
 - 답변은 `Markdown.tsx`(react-markdown, 원시 HTML 비허용). 링크는 메인이 외부 브라우저로만 연다 (`setWindowOpenHandler`, `will-navigate` 차단)
 - 알림(`main/notify.ts`): 확인 요청·작업 끝남·터미널 명령 끝남·한도 경고(설정 `notify`의 approval·done·terminal·usage). 누르면 `IPC.navigate`로 그 대화로. 배지는 렌더러가 `setBadge`로 보낸다
 - 대기열(OPEN-003): `AgentManager.send`가 `maxConcurrent`를 넘으면 `queued`로 두고, 상태가 끝나면 `drain()`. 확인 대기도 자리를 차지한다
@@ -110,7 +112,7 @@
 - 디자인은 G안(스위스 포스터): 흰 종이 + 검은 굵은 선 + 신호색 빨강 하나. 토큰은 `src/renderer/src/styles.css` 맨 위
   - 빨강은 사람이 봐야 할 것(승인 대기·오류)에만 쓴다. 실행 중은 검정, 완료는 외곽선 글자
   - 큰 글자는 Archivo 900(라틴·숫자)과 Black Han Sans(한글), 본문은 Pretendard, 코드는 Geist Mono. 모두 npm 패키지로 번들한다 (오프라인 동작)
-  - 움직임 토큰(`--ease-out` 나타남, `--ease-io` 상태 전환, `--spring` 숫자)과 시간(`--t-fast/med/slow`)을 쓴다. 깜빡임은 `steps()` 대신 부드러운 맥동으로
+  - 움직임 토큰(`--ease-out` 나타남, `--ease-io` 상태 전환, `--spring` 숫자)과 시간(`--t-fast/med/slow`)을 쓴다. 깜빡임은 `steps()` 대신 부드러운 맥동으로, 주기는 `--pulse`(살아 있음)·`--pulse-urgent`(사람이 봐야 함) 둘만
   - 사라지는 요소는 `usePresence`(motion.tsx)로 잠시 붙잡아 `leaving` 클래스로 나가게 한다. 대화 기록은 연 뒤에 새로 들어온 항목만 `enter`로 등장
   - 반복 애니메이션은 transform·opacity만 움직인다 (배경 위치 등 다시 그리기 유발 금지). 전광판은 rAF로 일정 속도
   - 글꼴 조각이 data URI로 인라인되므로 CSP에 `font-src 'self' data:`가 필요하다

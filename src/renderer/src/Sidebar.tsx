@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
+import { useSpin } from './motion'
 import { openConversations, type Project, type UpdateState, type UsageInfo, type UsageWindow } from '@shared/types'
 import { STATUS_LABEL } from '@shared/types'
 import { formatReset, limitLevel } from '@shared/usage'
@@ -152,6 +153,8 @@ function UpdateRow({ update }: { update: UpdateState }): React.JSX.Element | nul
 
 function Usage({ usage, onRefresh }: { usage: UsageInfo | null; onRefresh: () => Promise<unknown> }): React.JSX.Element {
   const [loading, setLoading] = useState(false)
+  const spinRef = useRef<HTMLButtonElement>(null)
+  const spinning = useSpin(loading, spinRef)
   const refresh = (): void => {
     if (loading) return
     setLoading(true)
@@ -162,7 +165,7 @@ function Usage({ usage, onRefresh }: { usage: UsageInfo | null; onRefresh: () =>
       <div className="usage-head">
         <span>USAGE</span>
         {usage?.plan && <span className="usage-plan">{usage.plan.toUpperCase()}</span>}
-        <button type="button" className={`usage-refresh ${loading ? 'spin' : ''}`} onClick={refresh} aria-label="한도 새로 고침" title="새로 고침">
+        <button type="button" ref={spinRef} className={`usage-refresh ${spinning ? 'spin' : ''}`} onClick={refresh} aria-label="한도 새로 고침" title="새로 고침">
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="square" aria-hidden="true">
             <path d="M13 8a5 5 0 1 1-1.5-3.6M13 2.5V5h-2.5" />
           </svg>
