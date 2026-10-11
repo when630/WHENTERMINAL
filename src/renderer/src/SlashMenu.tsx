@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import type { SlashCommandInfo } from '@shared/types'
-import { Keys } from './KeyHint'
 
 /** 앱이 직접 처리하는 명령. SDK 목록에 같은 이름이 있어도 이 설명을 쓴다 */
 const LOCAL: SlashCommandInfo[] = [
@@ -65,9 +64,6 @@ export function SlashMenu({ items, index, loading, onHover, onPick, leaving }: P
     <div className={`slash ${leaving ? 'leaving' : ''}`} role="listbox" aria-label="명령">
       <div className="slash-head">
         <span>COMMANDS {items.length}</span>
-        <span className="slash-keys">
-          <Keys keys="ctrl N" />/<Keys keys="ctrl P" /> MOVE · <Keys keys="tab" /> FILL · <Keys keys="enter" /> RUN · <Keys keys="esc" /> CLOSE
-        </span>
       </div>
       {items.length === 0 && <div className="slash-empty">{loading ? '명령을 불러오는 중…' : '맞는 명령이 없어요'}</div>}
       {items.map((c, i) => (
@@ -109,9 +105,6 @@ export function FileMenu({ items, index, loading, onHover, onPick, leaving }: {
     <div className={`slash ${leaving ? 'leaving' : ''}`} role="listbox" aria-label="파일">
       <div className="slash-head">
         <span>FILES {items.length >= 50 ? '50+' : items.length}</span>
-        <span className="slash-keys">
-          <Keys keys="ctrl N" />/<Keys keys="ctrl P" /> MOVE · <Keys keys="tab" /> INSERT · <Keys keys="esc" /> CLOSE
-        </span>
       </div>
       {items.length === 0 && <div className="slash-empty">{loading ? '파일을 찾는 중…' : '맞는 파일이 없어요'}</div>}
       {items.map((path, i) => {

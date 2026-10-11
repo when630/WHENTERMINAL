@@ -3,9 +3,7 @@ import { useSpin } from './motion'
 import { openConversations, type Project, type UpdateState, type UsageInfo, type UsageWindow } from '@shared/types'
 import { STATUS_LABEL } from '@shared/types'
 import { formatReset, limitLevel } from '@shared/usage'
-import { ALT_LABEL, HOME_ROW } from './keys'
-import { Keys } from './KeyHint'
-import { useKeymap } from './settings'
+import { HOME_ROW } from './keys'
 import { isActive, projectStatus, STAGES, type ConversationMap } from './state'
 
 interface Props {
@@ -31,7 +29,6 @@ interface Props {
 }
 
 export function Sidebar(props: Props): React.JSX.Element {
-  const km = useKeymap()
   const { projects, convs, activeProjectId, activeConversationId, unreadTotal, usage } = props
   return (
     <nav className="side" aria-label="프로젝트">
@@ -43,7 +40,6 @@ export function Sidebar(props: Props): React.JSX.Element {
       <button type="button" className={`nav nav-home ${activeProjectId === null && !props.settingsOpen ? 'on' : ''}`} onClick={props.onHome}>
         <span className="nav-name">HOME</span>
         {unreadTotal > 0 && <span className="pill">{unreadTotal}</span>}
-        <Keys keys={km.goHome} />
       </button>
 
       <div className="side-label">
@@ -62,7 +58,7 @@ export function Sidebar(props: Props): React.JSX.Element {
         return (
           <div key={p.id} className={`side-project ${props.armedProjectId === p.id ? 'armed' : ''}`}>
             <div className="side-row">
-            <button type="button" className={`nav ${on ? 'on' : ''}`} onClick={() => props.onOpenProject(i)} title={`${p.path}\n${ALT_LABEL}+${HOME_ROW[i] ?? '-'}`}>
+            <button type="button" className={`nav ${on ? 'on' : ''}`} onClick={() => props.onOpenProject(i)} title={p.path}>
               <span className="nav-key">{HOME_ROW[i] ?? ''}</span>
               <span className="nav-name">{p.name}</span>
               {unread > 0 && <span className="pill">{unread}</span>}
@@ -78,7 +74,7 @@ export function Sidebar(props: Props): React.JSX.Element {
               type="button"
               className="side-x"
               aria-label={props.armedProjectId === p.id ? '한 번 더 누르면 닫혀요' : `${p.name} 프로젝트 닫기`}
-              title={props.armedProjectId === p.id ? '한 번 더 누르면 목록에서 닫혀요. 폴더와 파일은 그대로예요' : `프로젝트 닫기 (${km.closeProject} 두 번)`}
+              title={props.armedProjectId === p.id ? '한 번 더 누르면 목록에서 닫혀요. 폴더와 파일은 그대로예요' : '프로젝트 닫기 (두 번 누르기)'}
               onClick={() => props.onRemoveProjectRequest(p.id)}
             >
               {props.armedProjectId === p.id ? 'CLOSE?' : '×'}
@@ -113,11 +109,9 @@ export function Sidebar(props: Props): React.JSX.Element {
 
       <button type="button" className={`nav nav-help ${props.helpOpen ? 'on' : ''}`} onClick={props.onHelp} title="모든 단축키를 모아 봐요">
         <span className="nav-name">HELP</span>
-        <Keys keys={km.help} />
       </button>
       <button type="button" className={`nav nav-settings ${props.settingsOpen ? 'on' : ''}`} onClick={props.onSettings}>
         <span className="nav-name">SETTINGS</span>
-        <Keys keys={km.openSettings} />
       </button>
 
       <Usage usage={usage} onRefresh={props.onRefreshUsage} />

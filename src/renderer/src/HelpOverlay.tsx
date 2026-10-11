@@ -101,7 +101,7 @@ export function HelpOverlay({ context, hotkey, leaving, onClose }: { context: He
           <h1 id="help-title" className="kr">KEYS</h1>
           <p>단축키는 설정에서 바꿀 수 있어요. 바꾼 키가 여기에도 그대로 보여요.</p>
           <button type="button" className="btn ghost" onClick={onClose}>
-            CLOSE <Keys keys="esc" />
+            CLOSE
           </button>
         </header>
         <div className="help-grid">

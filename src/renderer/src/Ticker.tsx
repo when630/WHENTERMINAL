@@ -1,8 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { HOME_ROW } from './keys'
 import { reducedMotion } from './motion'
-import { Keys } from './KeyHint'
-import { useKeymap } from './settings'
 import { STAGES, type BackgroundRef, type TaskRef } from './state'
 
 interface Props {
@@ -10,15 +8,13 @@ interface Props {
   reports: TaskRef[]
   /** 턴이 끝나도 도는 셸·모니터 등 */
   background: BackgroundRef[]
-  hotkey: string | null
 }
 
 /** 맨 위 전광판: 모든 프로젝트의 지금 상태가 한 줄로 흐른다. 확인이 필요한 항목만 빨갛게 */
 /** 초당 이동 거리(px). 길이가 달라도 읽는 속도가 같게 */
 const SPEED = 46
 
-export function Ticker({ running, reports, background, hotkey }: Props): React.JSX.Element {
-  const km = useKeymap()
+export function Ticker({ running, reports, background }: Props): React.JSX.Element {
   const runRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const el = runRef.current
@@ -70,7 +66,7 @@ export function Ticker({ running, reports, background, hotkey }: Props): React.J
     }
   }, [])
   const unread = reports.filter((r) => r.task.unread).length
-  const parts: { text: string; alert?: boolean; keys?: string; after?: string }[] = running.map((r) => {
+  const parts: { text: string; alert?: boolean }[] = running.map((r) => {
     const name = `■ ${HOME_ROW[r.projectIndex] ?? ''} ${r.project.name.toUpperCase()}`
     if (r.state.permissions.length > 0) return { text: `${name}  NEEDS YOU`, alert: true }
     if (r.state.status === 'queued') return { text: `${name}  QUEUED` }
@@ -79,23 +75,20 @@ export function Ticker({ running, reports, background, hotkey }: Props): React.J
   for (const b of background) {
     parts.push({ text: `■ ${HOME_ROW[b.projectIndex] ?? ''} ${b.project.name.toUpperCase()}  ${b.label}${b.text ? ` · ${b.text}` : ''}` })
   }
-  if (running.length === 0 && background.length === 0) parts.push({ text: '■ NO RUNNING TASKS · ', keys: km.dispatch, after: ' NEW TASK' })
+  if (running.length === 0 && background.length === 0) parts.push({ text: '■ NO RUNNING TASKS' })
   if (unread > 0) parts.push({ text: `■ ${unread} NEW REPORT${unread > 1 ? 'S' : ''}` })
-  if (hotkey) parts.push({ text: '■ ', keys: hotkey, after: ' SUMMON' })
 
   const line = parts.map((p, i) => {
     const body = (
       <>
         {p.text}
-        {p.keys && <Keys keys={p.keys} />}
-        {p.after}
         {'     '}
       </>
     )
     return p.alert ? <b key={i}>{body}</b> : <span key={i}>{body}</span>
   })
   return (
-    <div className="ticker" role="status" aria-label={parts.map((p) => `${p.text}${p.keys ?? ''}${p.after ?? ''}`).join(', ')}>
+    <div className="ticker" role="status" aria-label={parts.map((p) => p.text).join(', ')}>
       <div className="ticker-run" ref={runRef} aria-hidden="true">
         <span>{line}</span>
         <span>{line}</span>

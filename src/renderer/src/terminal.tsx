@@ -747,7 +747,7 @@ export function TerminalDrawer({ projectId, conversationId, onSend, onPath }: Dr
             })}
           </nav>
         )}
-        <button type="button" className="term-add" onClick={() => newTerminal(projectId, conversationId)} title={`새 터미널 (${km.terminalNew})`} aria-label="새 터미널">+</button>
+        <button type="button" className="term-add" onClick={() => newTerminal(projectId, conversationId)} title="새 터미널" aria-label="새 터미널">+</button>
         <ShellPicker info={tab?.info} onPick={(shell) => (shell ? switchShell(projectId, conversationId, active, shell) : entries.get(active)?.term.focus())} />
         {/* 빈 곳을 눌러도 접고 펼친다 (버튼은 위의 TERMINAL) */}
         <div className="term-fill" onClick={fold} aria-hidden="true">
@@ -759,7 +759,7 @@ export function TerminalDrawer({ projectId, conversationId, onSend, onPath }: Dr
             <button type="button" className="term-btn" onClick={restart}>RESTART</button>
           )}
           {ui.expanded && (
-            <button type="button" className={`term-btn ${ui.finding ? 'armed' : ''}`} onClick={() => openFind(conversationId)} title={`출력에서 찾아요 (${km.terminalFind})`}>
+            <button type="button" className={`term-btn ${ui.finding ? 'armed' : ''}`} onClick={() => openFind(conversationId)} title="출력에서 찾아요">
               FIND
             </button>
           )}
@@ -767,10 +767,10 @@ export function TerminalDrawer({ projectId, conversationId, onSend, onPath }: Dr
           <button type="button" className="term-btn" disabled={!selection} onMouseDown={(ev) => ev.preventDefault()} onClick={send} title="선택한 출력을 입력창에 붙여 Claude에게 물어봐요">
             SEND TO CLAUDE
           </button>
-          <button type="button" className="term-btn" onClick={fold} title={`${ui.expanded ? '접어요 (셸은 계속 돌아요)' : '펼쳐요'} (${km.terminal})`}>
+          <button type="button" className="term-btn" onClick={fold} title={ui.expanded ? '접어요 (셸은 계속 돌아요)' : '펼쳐요'}>
             {ui.expanded ? 'FOLD' : 'UNFOLD'}
           </button>
-          <button type="button" className="term-btn term-x" onClick={() => closeTab(conversationId, active)} title={`${ui.order.length > 1 ? '이 터미널의 셸을 끝내고 닫아요' : '셸을 끝내고 닫아요'} (${km.terminalClose})`} aria-label="터미널 닫기">×</button>
+          <button type="button" className="term-btn term-x" onClick={() => closeTab(conversationId, active)} title={ui.order.length > 1 ? '이 터미널의 셸을 끝내고 닫아요' : '셸을 끝내고 닫아요'} aria-label="터미널 닫기">×</button>
         </div>
       </header>
       <div className="term-body" hidden={!look}>

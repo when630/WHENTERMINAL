@@ -31,7 +31,7 @@ test('단축키: 글자만은 거부, 바꾼 키는 저장·표시·동작한다
   await win.locator('.transcript').click()
   await win.keyboard.press('Control+KeyE')
   await expect(win.locator('.confirm')).toBeVisible()
-  await expect(win.locator('.confirm .keys')).toHaveAttribute('aria-label', 'Ctrl+E')
+  await expect(win.locator('.confirm')).toContainText('컨텍스트를 비우고')
 })
 
 test('겹치는 키는 충돌로 표시하고 Backspace로 기본값', async ({ win }) => {

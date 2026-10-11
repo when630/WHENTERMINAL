@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { EFFORT_LABEL, type EffortInfo, type EffortLevel, type ModelOption, type UsageInfo } from '@shared/types'
 import { modelFamily as family } from '@shared/usage'
-import { Keys } from './KeyHint'
 import { usePresence } from './motion'
 
 /** 펼친 목록의 머리줄: 이름·개수와 키 안내 */
@@ -9,9 +8,6 @@ export function ListHead({ label, count }: { label: string; count?: number }): R
   return (
     <div className="model-head">
       <span>{label}{count !== undefined ? ` ${count}` : ''}</span>
-      <span className="slash-keys">
-        <Keys keys="ctrl N" />/<Keys keys="ctrl P" /> MOVE · <Keys keys="enter" /> PICK · <Keys keys="esc" /> CLOSE
-      </span>
     </div>
   )
 }

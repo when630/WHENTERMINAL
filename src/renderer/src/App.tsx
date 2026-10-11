@@ -476,7 +476,7 @@ export function App(): React.JSX.Element {
         onRemoveProjectRequest={requestRemoveProject}
       />
       <div className="content">
-        <Ticker running={running} reports={reports} background={background} hotkey={hotkey} />
+        <Ticker running={running} reports={reports} background={background} />
         <div className="stage" key={view.screen === 'chat' ? `chat:${view.projectId}` : view.screen}>
           {view.screen === 'settings' ? (
             <SettingsScreen settings={settings} activeHotkey={hotkey} update={update} onClose={closeSettings} onSaved={(next, hk) => { setSettings(next); if (hk !== undefined) setHotkey(hk) }} />

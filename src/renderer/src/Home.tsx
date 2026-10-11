@@ -1,8 +1,6 @@
 import { useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import { type PermissionDecision, type Project } from '@shared/types'
 import { HOME_ROW } from './keys'
-import { Keys } from './KeyHint'
-import { useKeymap } from './settings'
 import { boxIn, EASE, Odo, reducedMotion, Roll, useLayoutMotion } from './motion'
 import { STAGES, type TaskRef } from './state'
 import { elapsed, useNow } from './time'
@@ -40,7 +38,6 @@ interface Props {
 }
 
 export function Home(props: Props): React.JSX.Element {
-  const km = useKeymap()
   const { projects, running, reports, selectedId } = props
   const now = useNow(1000)
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -119,7 +116,6 @@ export function Home(props: Props): React.JSX.Element {
 }
 
 function Dispatch(props: Props & { scrollRef: RefObject<HTMLDivElement | null> }): React.JSX.Element {
-  const km = useKeymap()
   const p = props.projects[props.dispatchIndex]
   // 쓰던 작업 지시는 프로젝트마다 남는다
   const [text, setText] = useDraft(`home:${p?.id ?? ''}`)
@@ -132,7 +128,7 @@ function Dispatch(props: Props & { scrollRef: RefObject<HTMLDivElement | null> }
       <div className="ask ask-empty">
         <span>먼저 작업할 프로젝트 폴더를 추가해 주세요.</span>
         <button type="button" className="btn-pri" onClick={props.onAddProject}>
-          ADD PROJECT <Keys keys={km.addProject} />
+          ADD PROJECT
         </button>
       </div>
     )
@@ -183,7 +179,7 @@ function Dispatch(props: Props & { scrollRef: RefObject<HTMLDivElement | null> }
           }}
         />
         <button type="submit" className="btn-pri" disabled={!text.trim()}>
-          SEND <Keys keys="enter" />
+          SEND
         </button>
       </div>
       <div className="ask-meta">
@@ -191,7 +187,6 @@ function Dispatch(props: Props & { scrollRef: RefObject<HTMLDivElement | null> }
           <kbd>{HOME_ROW[props.dispatchIndex] ?? ''}</kbd>
           <Roll text={p?.name ?? ''} className="proj-name" />
         </button>
-        <span><Keys keys="tab" /> PROJECT</span>
         <span className="ask-mode seg" role="radiogroup" aria-label="보낼 곳">
           <button type="button" role="radio" aria-checked={!cont || !target} className={!cont || !target ? 'on' : ''} onClick={() => setCont(false)}>
             NEW
@@ -203,7 +198,7 @@ function Dispatch(props: Props & { scrollRef: RefObject<HTMLDivElement | null> }
         <span className="ask-target">
           {target ? (
             <>
-              <Keys keys="alt enter" /> CONTINUE · {target.title}
+              CONTINUE · {target.title}
             </>
           ) : (
             '끝나면 보고함으로 보고서가 와요'
@@ -222,7 +217,6 @@ function TaskCard({ r, now, selected, onSelect, onOpen, onRespond }: {
   onOpen: (r: TaskRef) => void
   onRespond: Props['onRespond']
 }): React.JSX.Element {
-  const km = useKeymap()
   const { task, state } = r
   const pending = state.permissions[0]
   const stage = Math.min(task.stage, STAGES.length - 1)
@@ -251,7 +245,6 @@ function TaskCard({ r, now, selected, onSelect, onOpen, onRespond }: {
             <div className="band-title" title={task.instruction}>{task.instruction}</div>
             <div className="act">
               <Roll text={pending ? 'WAITING FOR YOU' : task.activity} className="act-text" />
-              <button type="button" className="link" onClick={(e) => { e.stopPropagation(); onOpen(r) }}>OPEN <Keys keys={km.open} /></button>
             </div>
           </div>
           <div className="band-side" aria-label={`진행 단계: ${STAGES[stage]}`}>
@@ -264,15 +257,15 @@ function TaskCard({ r, now, selected, onSelect, onOpen, onRespond }: {
               <div className="cf-in">
                 <span className="cf-cmd mono">{pending.title ?? `${pending.toolName} ${summarizeInput(pending.input)}`}</span>
                 <button type="button" className="btn-pri sm" onClick={(e) => respond(e, 'allow')}>
-                  ALLOW {!pending.defaultToNo && <Keys keys={km.allow} />}
+                  ALLOW
                 </button>
                 {!pending.suppressAlwaysAllow && (
                   <button type="button" className="btn sm" onClick={(e) => respond(e, 'always')}>
-                    ALWAYS {!pending.defaultToNo && <Keys keys={km.always} />}
+                    ALWAYS
                   </button>
                 )}
                 <button type="button" className="btn sm" onClick={(e) => respond(e, 'deny')}>
-                  DENY <Keys keys={km.deny} />
+                  DENY
                 </button>
               </div>
             )}
@@ -335,7 +328,6 @@ function ReportSheet({ r, wrapRef, scrollRef, closeRef, onClosed, onOpenChat, on
   onNewTask: () => void
   onArchive: () => void
 }): React.JSX.Element {
-  const km = useKeymap()
   const sheetRef = useRef<HTMLElement>(null)
   const bgRef = useRef<HTMLDivElement>(null)
   const inRef = useRef<HTMLDivElement>(null)
@@ -397,7 +389,7 @@ function ReportSheet({ r, wrapRef, scrollRef, closeRef, onClosed, onOpenChat, on
               {task.finishedAt ? new Date(task.finishedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : ''}
               {task.durationMs !== undefined ? ` · ${mmss(task.durationMs)}` : ''}
             </span>
-            <button type="button" className="btn ghost sm sh-x" onClick={close}>CLOSE <Keys keys="esc" /></button>
+            <button type="button" className="btn ghost sm sh-x" onClick={close}>CLOSE</button>
           </div>
           <h3 className="st">{task.instruction}</h3>
           <div className="sh-sum st">{task.summary ? <Markdown text={task.summary} /> : state.status === 'done' ? '보고 내용이 없어요.' : '끝내지 못하고 멈췄어요. 대화에서 이유를 볼 수 있어요.'}</div>
@@ -418,9 +410,9 @@ function ReportSheet({ r, wrapRef, scrollRef, closeRef, onClosed, onOpenChat, on
             </div>
           </div>
           <div className="nexts st">
-            <button type="button" className="btn-pri" onClick={onOpenChat}>OPEN CHAT <Keys keys={km.open} /></button>
-            <button type="button" className="btn" onClick={onNewTask}>FOLLOW-UP <Keys keys={km.newTask} /></button>
-            <button type="button" className="btn ghost" onClick={onArchive}>ARCHIVE <Keys keys={km.archive} /></button>
+            <button type="button" className="btn-pri" onClick={onOpenChat}>OPEN CHAT</button>
+            <button type="button" className="btn" onClick={onNewTask}>FOLLOW-UP</button>
+            <button type="button" className="btn ghost" onClick={onArchive}>ARCHIVE</button>
           </div>
         </div>
       </section>

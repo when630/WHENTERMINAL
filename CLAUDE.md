@@ -100,8 +100,9 @@
   - 단축키: 동작 목록·기본값은 `src/shared/keymap.ts`(`ACTIONS`), 판정은 `matches()`(keys.ts). App의 키 처리와 화면의 키 표시는 모두 `useKeymap()`을 거친다. 새 단축키는 ACTIONS에 추가하고 하드코딩하지 말 것
   - 고정 키(바꿀 수 없음): Esc, ⌥A~L·Ctrl+1~9 프로젝트 이동, 선택 없을 때 Ctrl+C, 방향키. 대화창·전역 범위 키는 Ctrl/Alt/Meta가 있어야 한다 (입력 중 오작동 방지)
   - 전역 호출 키(`summon`)는 메인이 다시 등록한다. 실패하면 이전 키를 되살리고 저장하지 않는다
-- 단축키 안내는 화면 하단 줄 대신 도움말(`HelpOverlay.tsx`, `help` 기본 `Ctrl+/`, 사이드바 HELP 줄)에 모은다. 범위별 묶음(지금 화면이 맨 앞)·고정 키·입력창 명령. 터미널 키는 TERMINAL 묶음에 모으고 서랍 버튼에는 키를 붙이지 않는다(툴팁만). 새 동작을 ACTIONS에 넣으면 `GROUPS`에도 넣을 것. 열려 있는 동안 App은 Esc(닫기) 말고 키를 받지 않는다
-- 단축키 표시는 `<Keys keys="ctrl shift L" />`(`KeyHint.tsx`)를 쓴다. macOS는 수정·특수 키를 아이콘으로, Windows는 글자와 +로(`Ctrl+Shift+L`) 표시한다. 파일 이름이 `keys.ts`와 대소문자만 다르면 macOS에서 충돌하므로 `KeyHint`
+- 단축키 안내는 도움말(`HelpOverlay.tsx`, `help` 기본 `Ctrl+/`, 사이드바 HELP 줄)과 설정의 키맵에만 모은다. 범위별 묶음(지금 화면이 맨 앞)·고정 키·입력창 명령. 새 동작을 ACTIONS에 넣으면 `GROUPS`에도 넣을 것. 열려 있는 동안 App은 Esc(닫기) 말고 키를 받지 않는다
+  - 화면 안의 버튼·라벨·메뉴 머리줄·전광판·확인 문구·툴팁(`title`)에는 단축키를 적지 않는다. 프로젝트의 홈 열 글자(A S D…)는 프로젝트 표시라 그대로 둔다
+- 단축키 표시(도움말·설정)는 `<Keys keys="ctrl shift L" />`(`KeyHint.tsx`)를 쓴다. macOS는 수정·특수 키를 아이콘으로, Windows는 글자와 +로(`Ctrl+Shift+L`) 표시한다. 파일 이름이 `keys.ts`와 대소문자만 다르면 macOS에서 충돌하므로 `KeyHint`
 - 슬래시 명령 후보: 입력창에 `/`를 치면 `SlashMenu`. 목록은 살아 있는 세션의 `supportedCommands()`, 없으면 메시지 없이 CLI만 띄워 받아 프로젝트 폴더별로 5분 캐시 (`src/main/agent/commands.ts`). `/compact` `/clear`는 앱이 직접 처리
   - 메뉴가 열린 입력창에는 `data-menu-open`을 달아 App의 전역 키 처리(Esc 중단, Ctrl+K 등)를 건너뛴다
 - preload는 sandbox라 CJS(`index.cjs`)로 빌드됨. preload에서는 `electron` 외 모듈 import 금지 (`@shared` 상수는 번들에 포함되므로 허용)
@@ -116,4 +117,5 @@
   - 사라지는 요소는 `usePresence`(motion.tsx)로 잠시 붙잡아 `leaving` 클래스로 나가게 한다. 대화 기록은 연 뒤에 새로 들어온 항목만 `enter`로 등장
   - 반복 애니메이션은 transform·opacity만 움직인다 (배경 위치 등 다시 그리기 유발 금지). 전광판은 rAF로 일정 속도
   - 글꼴 조각이 data URI로 인라인되므로 CSP에 `font-src 'self' data:`가 필요하다
+  - 스크롤바는 styles.css 맨 위 `::-webkit-scrollbar` 디자인 하나로 통일한다. 스크롤 요소에 `scrollbar-width: thin`·`scrollbar-color`를 쓰면 Chromium이 그 디자인을 무시하고 OS 기본 막대를 그리므로 쓰지 말 것(숨길 때 `none`만). 좁은 곳은 그 선택자에 `::-webkit-scrollbar { width: 8px }`
   - 모서리는 둥글리지 않는다. `data-layout-id` 요소(진행 띠·보고 줄)에는 CSS 등장 애니메이션을 걸지 말 것. 위치 이동 애니메이션(`motion.tsx`)과 충돌한다
