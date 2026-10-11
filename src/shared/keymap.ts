@@ -1,3 +1,5 @@
+import type { TerminalShell } from './types'
+
 // 단축키 맵: 동작 ID → 키 조합. 메인(전역 호출 키)과 렌더러(앱 안 단축키)가 함께 쓴다.
 // 키 조합 문자열: 'Ctrl+Shift+L', 'Alt+Shift+Space', 'J', 'Ctrl+,' 처럼 수정 키 + 키 하나를 +로 잇는다.
 // 글자·숫자·기호 키는 물리 키(e.code) 기준이라 한글 입력 상태에서도 같은 키로 동작한다.
@@ -7,7 +9,7 @@ export type ActionId =
   | 'addProject' | 'focusAsk' | 'down' | 'up' | 'toRunning' | 'toReports' | 'open' | 'archive' | 'newTask'
   | 'allow' | 'always' | 'deny'
   | 'nextConversation' | 'prevConversation' | 'closeConversation' | 'closeProject' | 'clear' | 'compact' | 'cycleMode' | 'interrupt'
-  | 'panelNext' | 'panelPrev' | 'panelBack' | 'stopTask' | 'renameConversation' | 'newConversation'
+  | 'panelNext' | 'panelPrev' | 'panelBack' | 'stopTask' | 'renameConversation' | 'newConversation' | 'terminal'
 
 export type ActionScope = 'system' | 'anywhere' | 'home' | 'chat' | 'approval'
 
@@ -46,6 +48,7 @@ export const ACTIONS: ActionDef[] = [
   { id: 'always', label: 'Always allow', scope: 'approval', default: 'A' },
   { id: 'deny', label: 'Deny', scope: 'approval', default: 'N' },
   { id: 'newConversation', label: 'New tab', scope: 'chat', default: 'Ctrl+Shift+T' },
+  { id: 'terminal', label: 'Terminal: open / focus / fold', scope: 'chat', default: 'Ctrl+T' },
   { id: 'nextConversation', label: 'Next tab', scope: 'chat', default: 'Ctrl+Tab' },
   { id: 'prevConversation', label: 'Previous tab', scope: 'chat', default: 'Ctrl+Shift+Tab' },
   { id: 'closeConversation', label: 'Close tab (twice)', scope: 'chat', default: 'Ctrl+W' },
@@ -153,11 +156,13 @@ export interface Settings {
   worktree: boolean
   /** 로그인할 때 자동 실행 (창은 숨긴 채 트레이에). 패키징한 앱에서만 동작 */
   openAtLogin: boolean
+  /** 대화창 아래 터미널의 셸 */
+  terminalShell: TerminalShell
   /** 기본값과 다른 키만 저장 */
   keymap: Partial<Keymap>
 }
 
-export const DEFAULT_SETTINGS: Settings = { theme: 'poster', appIcon: 'prompt', maxConcurrent: 3, worktree: true, openAtLogin: false, notify: { approval: true, done: true, whenFocused: false }, keymap: {} }
+export const DEFAULT_SETTINGS: Settings = { theme: 'poster', appIcon: 'prompt', maxConcurrent: 3, worktree: true, openAtLogin: false, terminalShell: 'auto', notify: { approval: true, done: true, whenFocused: false }, keymap: {} }
 
 export function effectiveKeymap(settings: Settings): Keymap {
   return { ...DEFAULT_KEYMAP, ...settings.keymap }

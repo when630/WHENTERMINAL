@@ -195,6 +195,17 @@ export interface RateLimitInfo {
   resetsAt?: number
 }
 
+/** 대화창 아래 터미널의 셸. auto는 Windows면 pwsh(없으면 PowerShell), macOS면 $SHELL */
+export type TerminalShell = 'auto' | 'powershell' | 'gitbash' | 'cmd' | 'zsh' | 'bash'
+
+/** 떠 있는 터미널 */
+export interface TerminalInfo {
+  /** 표시 이름 (pwsh, Git Bash, zsh …) */
+  shell: string
+  cwd: string
+  pid: number
+}
+
 /** 대화 검색 결과 하나 (Ctrl+Shift+F) */
 export interface SearchHit {
   projectId: string
@@ -332,6 +343,13 @@ export const IPC = {
   getUsage: 'usage:get',
   usage: 'usage:changed',
   searchConversations: 'conversations:search',
+  terminalOpen: 'terminal:open',
+  terminalWrite: 'terminal:write',
+  terminalResize: 'terminal:resize',
+  terminalClose: 'terminal:close',
+  // 메인 → 렌더러
+  terminalData: 'terminal:data',
+  terminalExit: 'terminal:exit',
   getUpdate: 'update:get',
   checkUpdate: 'update:check',
   applyUpdate: 'update:apply',
@@ -414,6 +432,14 @@ export interface WhenTerminalApi {
   onUsage(cb: (u: UsageInfo) => void): () => void
   /** 모든 프로젝트의 열린 대화 내용에서 찾는다 (세션 기록 기준) */
   searchConversations(query: string): Promise<SearchHit[]>
+  /** 이 대화의 터미널: 살아 있으면 그대로(지금까지의 출력과 함께), 없으면 대화 폴더에서 새로 띄운다 */
+  terminalOpen(projectId: string, conversationId: string, cols: number, rows: number): Promise<TerminalInfo & { buffer: string }>
+  terminalWrite(conversationId: string, data: string): void
+  terminalResize(conversationId: string, cols: number, rows: number): void
+  /** 셸을 끝낸다 */
+  terminalClose(conversationId: string): Promise<void>
+  onTerminalData(cb: (e: { conversationId: string; data: string }) => void): () => void
+  onTerminalExit(cb: (e: { conversationId: string; code: number }) => void): () => void
   getUpdate(): Promise<UpdateState>
   /** 지금 릴리즈를 확인한다 (받는 중·받아 둔 상태면 그대로 돌려준다) */
   checkUpdate(): Promise<UpdateState>

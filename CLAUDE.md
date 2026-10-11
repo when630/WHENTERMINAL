@@ -47,6 +47,12 @@
   - Alt 니모닉과 겹치지 않도록 Windows에서는 기본 메뉴를 없앴다 (`Menu.setApplicationMenu(null)`). 개발 중 `Ctrl+Shift+I` 개발자 도구, `Ctrl+Shift+R` 새로고침
 - Windows 창은 테두리 없는 창(`frame: false`): 제목 표시줄·창 버튼이 없다. 사이드바 로고(`.side .brand`, `-webkit-app-region: drag`)를 잡고 옮기고 더블클릭하면 최대화, 크기 조절은 가장자리, 닫기는 `Alt+F4`(트레이로 숨김). macOS는 기본 제목 표시줄 그대로
 - 트레이 아이콘: Windows는 설정에서 고른 앱 아이콘을 16px(+1.25~2배)로 줄여 쓰고 아이콘을 바꾸면 같이 바뀐다(`makeTrayIcon`). macOS는 메뉴 막대 관례대로 흑백 템플릿 이미지
+- 터미널(대화창 아래 서랍): 메인 `terminal.ts`(node-pty, 대화마다 셸 하나, 폴더는 `cwdOf`) ↔ 렌더러 `terminal.tsx`(xterm, 대화마다 화면 하나를 만들어 두고 탭을 옮기면 다시 붙인다)
+  - 키맵 `terminal`(기본 `Ctrl+T`): 닫힘·접힘이면 펼치고 터미널로, 펼쳐져 있으면 입력창 → 터미널, 터미널에서 누르면 접고 입력창으로. 접어도 셸은 돈다. 높이는 끌어서(localStorage)
+  - 터미널에 포커스가 있으면(`[data-terminal]`) App은 앱을 오가는 키(terminal·goHome·help·search·탭 이동·새 탭·설정·⌥A~L)만 받고 나머지(Esc·Ctrl+C·Ctrl+L …)는 셸로. 선택이 있을 때 Ctrl+C·Ctrl+Shift+C 복사, Ctrl+Shift+V 붙여넣기
+  - Bash·PowerShell 도구 줄의 RUN IN TERMINAL: 명령을 입력줄에 넣기만 한다(실행은 사용자 Enter). SEND TO CLAUDE: 선택한 출력을 입력창에 코드 블록으로
+  - 대화·프로젝트 닫기, 작업 공간 버리기 전에 셸을 끝낸다 (셸이 작업 공간 폴더를 잡고 있으면 지울 수 없다). 셸은 설정 `terminalShell`(AUTO는 pwsh → PowerShell, macOS는 $SHELL), 환경 변수는 사용자 것 그대로
+  - 패키징: node-pty는 N-API 미리 빌드 바이너리를 쓰므로 `asarUnpack`에 넣고 `npmRebuild: false` (켜 두면 Visual Studio로 소스 빌드를 시도하다 실패한다)
 - 전체화면: `F11` 고정 (메인 `before-input-event`). 키맵 동작은 없다
 - 새 탭: 키맵 `newConversation`(기본 `Ctrl+Shift+T`). 탭 줄의 +와 같다
 - 대화 검색(`SearchOverlay.tsx`, 키맵 `search` 기본 `Ctrl+Shift+F`): 모든 프로젝트의 열린 대화를 세션 기록(`readHistory`, 끝 400개)에서 찾는다(`agent/search.ts`, 기록 파일 `lastModified`가 같으면 캐시). 띄어 쓴 말이 모두 들어간 내 메시지·답변·도구 호출. 고르면 그 대화를 열고 `jump`로 그 메시지까지 스크롤·강조. 무엇을 찾을지와 몇 번째로 맞았는지(`ordinal`)는 메인·렌더러가 `@shared/search`의 같은 함수로 센다

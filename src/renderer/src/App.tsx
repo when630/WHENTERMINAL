@@ -275,6 +275,13 @@ export function App(): React.JSX.Element {
     // 입력창의 명령 후보 메뉴나 설정의 키 입력칸이 열려 있으면 그쪽이 키를 처리한다
     const owner = (e.target as HTMLElement | null)?.dataset
     if (owner?.menuOpen === 'true' || owner?.keysOwn === 'true') return
+    // 터미널에 포커스가 있으면 키는 셸 몫이다 (Esc·Ctrl+C·Ctrl+L·Ctrl+K …). 앱을 오가는 키 몇 개만 앱이 받는다
+    if ((e.target as HTMLElement | null)?.closest?.('[data-terminal]')) {
+      const app = (['terminal', 'goHome', 'help', 'search', 'nextConversation', 'prevConversation', 'newConversation', 'openSettings'] as ActionId[]).some((id) => matches(e, km[id]))
+      if (!app && projectIndexFromKey(e, physicalCode(e)) === null) return
+      // 셸에는 가지 않게
+      e.stopPropagation()
+    }
     const code = physicalCode(e)
     const tag = (e.target as HTMLElement | null)?.tagName
     const typing = tag === 'TEXTAREA' || tag === 'INPUT'
@@ -399,6 +406,7 @@ export function App(): React.JSX.Element {
     if (is('panelBack')) return take(() => chatPanelRef.current?.back())
     if (is('stopTask')) return take(() => chatPanelRef.current?.stop())
     if (is('renameConversation')) return take(() => chatPanelRef.current?.rename())
+    if (is('terminal')) return take(() => chatPanelRef.current?.terminal())
     // 새 탭: 탭 줄의 +와 같다 (설정에 따라 작업 공간을 만든다)
     if (is('newConversation')) {
       return take(() => void window.api.addConversation(projectId).then((c) => setView({ screen: 'chat', projectId, conversationId: c.id })))

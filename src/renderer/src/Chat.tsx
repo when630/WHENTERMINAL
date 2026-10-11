@@ -8,6 +8,7 @@ import { useKeymap } from './settings'
 import { Roll, usePresence } from './motion'
 import { clock, useNow } from './time'
 import { SubLog, TaskDetail, type DetailTarget } from './TaskDetail'
+import { runInTerminal, TerminalDrawer, toggleTerminal } from './terminal'
 import { Markdown } from './Markdown'
 import { AttachButton, useAttach } from './attach'
 import { WorktreePanel } from './WorktreePanel'
@@ -48,6 +49,8 @@ export interface PanelControl {
   stop: () => void
   /** 지금 탭의 이름을 고치는 칸을 연다 */
   rename: () => void
+  /** 아래 터미널: 펼치고 터미널로 / 터미널 ↔ 입력창 / 터미널에서 누르면 접기 */
+  terminal: () => void
 }
 
 export function Chat({ project, projects, conversationId, convs, mode, usage, clearArmed, closeArmedId, projectArmed, onClearRequest, onCloseRequest, onClose, onSelectConversation, onRespond, panelRef, jump }: Props): React.JSX.Element {
@@ -298,6 +301,7 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
       if (shownTask) void window.api.stopTask(project.id, conversationId, shownTask.id)
     },
     rename: () => setEditingId(conversationId),
+    terminal: () => toggleTerminal(project.id, conversationId, () => inputRef.current?.focus()),
   }
   const attach = useAttach({ inputRef, value: draft, setValue: setDraft, root: conv?.worktree?.path ?? project.path, onCaret: setCaret })
 
@@ -485,7 +489,7 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
             </div>
           )}
           {state.items.map((item, idx) => (
-            <Item key={idx} item={item} n={item.type === 'tool' ? ++toolCount : 0} root={project.path} enter={idx >= seen.current.count} subs={state.subs} progress={state.progress} />
+            <Item key={idx} item={item} n={item.type === 'tool' ? ++toolCount : 0} root={project.path} enter={idx >= seen.current.count} subs={state.subs} progress={state.progress} onRun={(cmd) => void runInTerminal(project.id, conversationId, cmd)} />
           ))}
           {working.item && <Working status={state.status} activity={state.task?.activity} startedAt={state.task?.startedAt} leaving={working.leaving} />}
           {compacting.item && <div className={`msg compacting ${compacting.leaving ? 'leaving' : ''}`}>COMPACTING · 지금까지의 대화를 요약하고 있어요</div>}
@@ -576,6 +580,20 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
         </div>
       </div>
 
+      <TerminalDrawer
+        projectId={project.id}
+        conversationId={conversationId}
+        onSend={(text) => {
+          // 선택한 터미널 출력을 코드 블록으로 입력창 끝에 붙인다 (보내기 전에 질문을 덧붙일 수 있게)
+          setDraft((d) => `${d.trimEnd() ? `${d.trimEnd()}\n\n` : ''}\`\`\`\n${text}\n\`\`\`\n`)
+          requestAnimationFrame(() => {
+            const el = inputRef.current
+            if (!el) return
+            el.focus()
+            el.setSelectionRange(el.value.length, el.value.length)
+          })
+        }}
+      />
     </div>
   )
 }
@@ -758,7 +776,7 @@ function Working({ status, activity, startedAt, leaving }: { status: string; act
   )
 }
 
-function Item({ item, n, root, enter, subs, progress }: { item: TranscriptItem; n: number; root: string; enter: boolean; subs?: Record<string, SubItem[]>; progress?: Record<string, AgentProgress> }): React.JSX.Element {
+function Item({ item, n, root, enter, subs, progress, onRun }: { item: TranscriptItem; n: number; root: string; enter: boolean; subs?: Record<string, SubItem[]>; progress?: Record<string, AgentProgress>; onRun?: (command: string) => void }): React.JSX.Element {
   const e = enter ? ' enter' : ''
   switch (item.type) {
     case 'user':
@@ -791,6 +809,16 @@ function Item({ item, n, root, enter, subs, progress }: { item: TranscriptItem; 
           </summary>
           <div className="tool-body">
             <ToolInput name={item.name} input={item.input} />
+            {(item.name === 'Bash' || item.name === 'PowerShell') && typeof (item.input as { command?: unknown } | null)?.command === 'string' && onRun && (
+              <button
+                type="button"
+                className="tool-run"
+                onClick={() => onRun((item.input as { command: string }).command)}
+                title="이 명령을 아래 터미널 입력줄에 넣어요. 실행은 Enter로 직접 해요"
+              >
+                RUN IN TERMINAL
+              </button>
+            )}
             {sub && sub.length > 0 && (
               <>
                 <h5>AGENT LOG · {sub.length}</h5>
