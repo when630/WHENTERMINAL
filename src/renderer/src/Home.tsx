@@ -119,7 +119,6 @@ function Dispatch(props: Props & { scrollRef: RefObject<HTMLDivElement | null> }
   const p = props.projects[props.dispatchIndex]
   // 쓰던 작업 지시는 프로젝트마다 남는다
   const [text, setText] = useDraft(`home:${p?.id ?? ''}`)
-  const [cont, setCont] = useState(false)
   const target = props.continueTarget
   const altEnter = useRef(false)
   const attach = useAttach({ inputRef: props.inputRef, value: text, setValue: setText, root: p?.path ?? '' })
@@ -146,7 +145,7 @@ function Dispatch(props: Props & { scrollRef: RefObject<HTMLDivElement | null> }
         altEnter.current = false
         const t = text.trim()
         if (!t) return
-        const asContinue = (cont || viaAlt) && target
+        const asContinue = viaAlt && target
         const input = props.inputRef.current
         const root = props.scrollRef.current
         if (input && root && !asContinue) props.dispatchOrigin.current = { box: boxIn(input.closest('.ask')!, root), at: performance.now() }
@@ -187,23 +186,6 @@ function Dispatch(props: Props & { scrollRef: RefObject<HTMLDivElement | null> }
           <kbd>{HOME_ROW[props.dispatchIndex] ?? ''}</kbd>
           <Roll text={p?.name ?? ''} className="proj-name" />
         </button>
-        <span className="ask-mode seg" role="radiogroup" aria-label="보낼 곳">
-          <button type="button" role="radio" aria-checked={!cont || !target} className={!cont || !target ? 'on' : ''} onClick={() => setCont(false)}>
-            NEW
-          </button>
-          <button type="button" role="radio" aria-checked={cont && !!target} className={cont && target ? 'on' : ''} disabled={!target} onClick={() => setCont(true)} title={target ? `이어 보낼 대화: ${target.title}` : '이어 보낼 대화가 없어요'}>
-            CONTINUE
-          </button>
-        </span>
-        <span className="ask-target">
-          {target ? (
-            <>
-              CONTINUE · {target.title}
-            </>
-          ) : (
-            '끝나면 보고함으로 보고서가 와요'
-          )}
-        </span>
       </div>
     </form>
   )
