@@ -81,6 +81,7 @@
   - 하위 에이전트: `forwardSubagentText`로 받은 `parent_tool_use_id` 메시지를 `sub`·`sub_result` 이벤트로 보내 `ConversationState.subs`(Agent 도구 호출 ID별)에 쌓는다. `task_progress`는 `progress`. 앞에서 기다리는 에이전트는 AGENTS, 백그라운드 에이전트는 BACKGROUND에 나온다. 대화 기록의 Agent 도구를 펼치면 `SubLog`
 - 기록·보고서: 대화창을 열 때 화면 기록이 비어 있으면 `getSessionMessages`로 되살린다(`agent/history.ts`). 끝난 작업의 보고서는 `Conversation.lastTask`에 저장하고, 보관 전 보고서가 있는 대화를 닫으면 `closedAt`으로 숨기기만 한다. 탭·목록은 `openConversations()` 기준
 - 첨부는 경로로: 입력창에 파일을 끌어다 놓기·첨부 버튼(`pickFiles`)·이미지 붙여넣기(`saveImage`로 userData/attachments에 저장)를 하면 경로를 넣는다. 작업 폴더 안은 `@상대경로`. 끌어다 놓은 파일 경로는 sandbox라 preload의 `webUtils.getPathForFile`로
+- 포커스는 늘 글 입력칸으로(`focus.ts`): 대화창은 입력창, 홈은 작업 지시창. 화면을 옮기거나(마운트), 버튼을 누르거나(`refocusAfterClick`, 루트 onClick), 패널·세부 화면·덮개(도움말·검색, `requestRefocus`)를 닫으면 돌아온다. 예외는 다른 입력칸·터미널(`[data-terminal]`)·펼친 목록(`[data-keys-own]`)·글을 긁는 중·확인 요청(Y/A/N)·홈 보고서 상세(O/E/I)가 떠 있을 때. 홈에서 카드를 키로 고르려면 Esc로 입력칸에서 나온다
 - 툴팁: 요소에는 그냥 `title`을 쓴다. `tooltip.tsx`(`useTooltips`, App 루트)가 처음 올릴 때 `data-tip`으로 옮겨 OS 풍선 대신 `.tip`으로 보여준다. 누른 요소·`aria-expanded=true`인 요소에는 띄우지 않는다
 - 펼치는 목록(모델·effort·셸): `.model-list` + `ListHead`(ModelPicker.tsx) 머리줄 + `.model-row` 한 줄 행. 누른 칸 아래(셸은 위)에 붙어서 내려오고(`drop-in`), 긴 설명은 말줄임 + title
 - 답변은 `Markdown.tsx`(react-markdown, 원시 HTML 비허용). 링크는 메인이 외부 브라우저로만 연다 (`setWindowOpenHandler`, `will-navigate` 차단)
@@ -103,7 +104,17 @@
 - 단축키 안내는 도움말(`HelpOverlay.tsx`, `help` 기본 `Ctrl+/`, 사이드바 HELP 줄)과 설정의 키맵에만 모은다. 범위별 묶음(지금 화면이 맨 앞)·고정 키·입력창 명령. 새 동작을 ACTIONS에 넣으면 `GROUPS`에도 넣을 것. 열려 있는 동안 App은 Esc(닫기) 말고 키를 받지 않는다
   - 화면 안의 버튼·라벨·메뉴 머리줄·전광판·확인 문구·툴팁(`title`)에는 단축키를 적지 않는다. 프로젝트의 홈 열 글자(A S D…)는 프로젝트 표시라 그대로 둔다
 - 단축키 표시(도움말·설정)는 `<Keys keys="ctrl shift L" />`(`KeyHint.tsx`)를 쓴다. macOS는 수정·특수 키를 아이콘으로, Windows는 글자와 +로(`Ctrl+Shift+L`) 표시한다. 파일 이름이 `keys.ts`와 대소문자만 다르면 macOS에서 충돌하므로 `KeyHint`
-- 슬래시 명령 후보: 입력창에 `/`를 치면 `SlashMenu`. 목록은 살아 있는 세션의 `supportedCommands()`, 없으면 메시지 없이 CLI만 띄워 받아 프로젝트 폴더별로 5분 캐시 (`src/main/agent/commands.ts`). `/compact` `/clear`는 앱이 직접 처리
+- 슬래시 명령 후보: 입력창에 `/`를 치면 `SlashMenu`. 목록은 살아 있는 세션의 `supportedCommands()`, 없으면 메시지 없이 CLI만 띄워 받아 프로젝트 폴더별로 5분 캐시 (`src/main/agent/commands.ts`). 앱이 직접 처리하는 명령은 `SlashMenu.tsx`의 `LOCAL`과 `Chat.tsx`의 `submit`에 같이 적는다
+  - 명령 화면(`panels.tsx`, `ToolPanel`): `/rewind` `/resume` `/mcp` `/agents` `/permissions`(=`/hooks`) `/memory` `/status`(=`/login`)는 대화 기록 자리에 펼친다. 상태 패널의 TOOLS 수·홈 보고서의 TOOLS SHOW를 누르면 `tools`(이번 작업의 도구 호출 목록, 행을 누르면 `jumpToTool`로 기록의 그 호출을 펼친다. 홈에서는 `App.openChat(…, panel)` → Chat `openPanel`) (CHANGES·TaskDetail과 같은 자리, `Chat`의 `tool` 상태). `/fork [이름]` `/export` `/add-dir [폴더]`는 바로 실행
+  - 되감기(`/rewind`, 키맵 `rewind`, 사용자 메시지에 올리면 REWIND): 세션 옵션 `enableFileCheckpointing`과 보낼 때 붙인 `uuid`(MessageQueue.push)가 기준점. CODE는 `rewindFiles`, CHAT은 그 메시지 앞까지 `forkSession(upToMessageId)`로 포크해 세션을 바꿔 끼운다(`switchSession` → `replace` 이벤트). 되감은 메시지 글은 입력창으로 돌려준다
+  - `/resume`: `listSessions({dir})`로 이 폴더(작업 공간 포함)의 세션. 빈 대화면 거기에 붙이고 아니면 새 탭(`attachSession`). `/fork`: `forkSession`으로 복제한 세션을 새 탭에
+  - `/permissions`: 규칙·추가 폴더·훅은 `resolveSettings`로 읽고, 규칙 추가·삭제는 CLI와 같은 설정 파일에 직접 쓴다(`agent/config.ts`, 다음 세션부터). `/add-dir`은 `Conversation.additionalDirectories` → 세션 옵션 `additionalDirectories`, 살아 있으면 `applyFlagSettings({ permissions: { additionalDirectories } })`
+  - `/mcp`: `mcpServerStatus`·`reconnectMcpServer`·`toggleMcpServer`. OAuth 로그인은 CLI에서만 되므로 터미널에 CLI를 띄우라고 안내. `/status`·`/login`: `accountInfo()`, 로그인은 터미널 입력줄에 `claude auth login`(번들 바이너리 경로, `executable.ts`의 `loginCommand`)
+- 승인창(`PermissionBox`)의 특수 도구: `AskUserQuestion`은 `QuestionBox`(선택지·직접 적기·숫자 키, 답은 `respondPermission`의 `extra.answers` → SDK `updatedInput: { questions, answers }`), `ExitPlanMode`는 `PlanBox`(YES · AUTO EDITS / YES · ASK EACH / KEEP PLANNING, 고른 모드는 `extra.planMode` → CLI가 플랜 모드를 빠져나온 status 뒤에 `setPermissionMode`). 둘은 Y/A/N 한 키로 답할 수 없다
+- CLI가 화면에만 보이는 것들도 받는다: `local_command_output`(/context 등 출력, `notice` mono) · `informational`(notice 이상) · `notification` · `api_retry`(`retry` → 작업 줄 `RETRY n/m`) · `permission_denied`(자동 모드 거절) · `tool_progress`(도구 줄 `RUNNING 12s`) · `auth_status`. 생각은 `thinking`/`thinking_delta` 이벤트 → 접힌 `Thinking` 항목
+- 도구 결과는 앞 4000자만 보내고(`truncated`), 펼쳐서 SHOW ALL을 누르면 `toolResult`가 세션 기록에서 전문을 읽는다
+- 차례를 기다리는 메시지(`queuedId`): 자리 대기열(manager `waiting`)과 세션이 들고 있는 것(`held`) 모두 EDIT(입력창으로 되돌림)·CANCEL(`dropQueued`)
+- 입력창 ↑↓: 보낸 글 기록(`usePromptHistory`, localStorage `wt-hist:`). 입력이 비었거나 첫/끝 줄일 때만. `@`는 파일·폴더(끝에 `/`)·`@agent-이름`(`supportedAgents`)
   - 메뉴가 열린 입력창에는 `data-menu-open`을 달아 App의 전역 키 처리(Esc 중단, Ctrl+K 등)를 건너뛴다
 - preload는 sandbox라 CJS(`index.cjs`)로 빌드됨. preload에서는 `electron` 외 모듈 import 금지 (`@shared` 상수는 번들에 포함되므로 허용)
 - UI 문구: 라벨은 영어 대문자, 문장은 한국어 해요체

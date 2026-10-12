@@ -42,12 +42,77 @@ export function useDraft(key: string): [string, React.Dispatch<React.SetStateAct
   return [current.text, setText]
 }
 
+const HIST_PREFIX = 'wt-hist:'
+const HIST_MAX = 100
+
+function loadHistory(key: string): string[] {
+  try {
+    const raw = localStorage.getItem(HIST_PREFIX + key)
+    const list = raw ? (JSON.parse(raw) as unknown) : []
+    return Array.isArray(list) ? list.filter((x): x is string => typeof x === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+/**
+ * 보낸 글 기록 (대화마다). ↑로 앞서 보낸 글을 되살리고 ↓로 돌아온다 (CLI처럼).
+ * 되살리기 시작할 때 쓰던 글은 따로 두었다가 끝까지 내려오면 돌려준다
+ */
+export function usePromptHistory(key: string): { push: (text: string) => void; prev: (current: string) => string | null; next: () => string | null } {
+  const list = useRef<{ key: string; items: string[] }>({ key: '', items: [] })
+  if (list.current.key !== key) list.current = { key, items: loadHistory(key) }
+  // 지금 보고 있는 자리 (items.length = 기록 밖 = 쓰던 글)
+  const pos = useRef<{ key: string; at: number; draft: string }>({ key, at: -1, draft: '' })
+  if (pos.current.key !== key) pos.current = { key, at: -1, draft: '' }
+  const save = (): void => {
+    try {
+      localStorage.setItem(HIST_PREFIX + key, JSON.stringify(list.current.items))
+    } catch {
+      // 못 남겨도 된다
+    }
+  }
+  return {
+    push: (text) => {
+      const items = list.current.items.filter((t) => t !== text)
+      items.push(text)
+      list.current.items = items.slice(-HIST_MAX)
+      pos.current = { key, at: -1, draft: '' }
+      save()
+    },
+    prev: (current) => {
+      const items = list.current.items
+      if (items.length === 0) return null
+      const p = pos.current
+      if (p.at === -1) {
+        p.draft = current
+        p.at = items.length
+      }
+      if (p.at === 0) return null
+      p.at -= 1
+      return items[p.at]
+    },
+    next: () => {
+      const items = list.current.items
+      const p = pos.current
+      if (p.at === -1) return null
+      p.at += 1
+      if (p.at >= items.length) {
+        p.at = -1
+        return p.draft
+      }
+      return items[p.at]
+    },
+  }
+}
+
 /** 없어진 대화의 초안을 지운다 */
 export function pruneDrafts(alive: Set<string>): void {
   try {
     for (let i = localStorage.length - 1; i >= 0; i--) {
       const k = localStorage.key(i)
       if (k?.startsWith(PREFIX) && !alive.has(k.slice(PREFIX.length))) localStorage.removeItem(k)
+      else if (k?.startsWith(HIST_PREFIX) && !alive.has(k.slice(HIST_PREFIX.length))) localStorage.removeItem(k)
     }
   } catch {
     // 못 지워도 된다

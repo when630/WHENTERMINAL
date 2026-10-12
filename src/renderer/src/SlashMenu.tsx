@@ -6,6 +6,17 @@ const LOCAL: SlashCommandInfo[] = [
   { name: 'compact', description: '지금까지의 대화를 요약해 컨텍스트를 줄여요', argumentHint: '[요약할 때 중점]', builtin: true },
   { name: 'close', description: '이 대화(세션)를 닫아요. 실행 중이면 멈춰요', argumentHint: '', builtin: true },
   { name: 'clear', description: '컨텍스트를 비우고 다음 메시지부터 새 세션으로 시작해요', argumentHint: '', aliases: ['reset', 'new'], builtin: true },
+  { name: 'rename', description: '이 탭의 이름을 붙여요', argumentHint: '[이름]', builtin: true },
+  { name: 'rewind', description: '파일·대화를 앞선 메시지 시점으로 되돌려요', argumentHint: '', builtin: true },
+  { name: 'resume', description: '이 폴더의 지난 세션을 이어 열어요', argumentHint: '', builtin: true },
+  { name: 'fork', description: '지금 대화를 복제해 새 탭에서 따로 이어 가요', argumentHint: '[이름]', builtin: true },
+  { name: 'export', description: '대화를 마크다운 파일로 저장해요', argumentHint: '', builtin: true },
+  { name: 'mcp', description: 'MCP 서버 상태를 보고 다시 연결하거나 켜고 꺼요', argumentHint: '', builtin: true },
+  { name: 'agents', description: '쓸 수 있는 하위 에이전트 종류를 봐요', argumentHint: '', builtin: true },
+  { name: 'permissions', description: '권한 규칙·추가 폴더·훅을 보고 고쳐요', argumentHint: '', aliases: ['hooks'], builtin: true },
+  { name: 'add-dir', description: '작업 폴더 밖의 폴더를 이 대화에서 더 쓸 수 있게 해요', argumentHint: '[폴더]', builtin: true },
+  { name: 'memory', description: 'CLAUDE.md와 자동 메모리 파일을 열어요', argumentHint: '', builtin: true },
+  { name: 'status', description: '로그인 계정·세션·모델·폴더를 봐요', argumentHint: '', aliases: ['login'], builtin: true },
 ]
 
 const cache = new Map<string, SlashCommandInfo[]>()
@@ -92,26 +103,34 @@ export function SlashMenu({ items, index, loading, onHover, onPick, leaving }: P
   )
 }
 
-/** 입력창의 @ 파일 후보. 파일 이름을 굵게, 폴더는 옅게 */
+/** 입력창의 @ 후보 하나: 파일·폴더(경로) 또는 하위 에이전트(agent-이름) */
+export type Mention = { kind: 'file'; path: string } | { kind: 'agent'; name: string; description: string }
+
+/** @ 뒤에 넣을 글 */
+export const mentionText = (m: Mention): string => (m.kind === 'file' ? m.path : `agent-${m.name}`)
+
+/** 입력창의 @ 후보. 파일 이름을 굵게, 폴더는 옅게. 에이전트는 AGENT 표시 */
 export function FileMenu({ items, index, loading, onHover, onPick, leaving }: {
-  items: string[]
+  items: Mention[]
   index: number
   loading: boolean
   onHover: (i: number) => void
-  onPick: (path: string) => void
+  onPick: (m: Mention) => void
   leaving?: boolean
 }): React.JSX.Element {
   return (
-    <div className={`slash ${leaving ? 'leaving' : ''}`} role="listbox" aria-label="파일">
+    <div className={`slash ${leaving ? 'leaving' : ''}`} role="listbox" aria-label="파일·에이전트">
       <div className="slash-head">
-        <span>FILES {items.length >= 50 ? '50+' : items.length}</span>
+        <span>MENTIONS {items.length >= 50 ? '50+' : items.length}</span>
       </div>
-      {items.length === 0 && <div className="slash-empty">{loading ? '파일을 찾는 중…' : '맞는 파일이 없어요'}</div>}
-      {items.map((path, i) => {
-        const cut = path.lastIndexOf('/')
+      {items.length === 0 && <div className="slash-empty">{loading ? '찾는 중…' : '맞는 파일·에이전트가 없어요'}</div>}
+      {items.map((m, i) => {
+        const path = m.kind === 'file' ? m.path : ''
+        const dir = path.endsWith('/')
+        const cut = (dir ? path.slice(0, -1) : path).lastIndexOf('/')
         return (
           <button
-            key={path}
+            key={mentionText(m)}
             type="button"
             role="option"
             aria-selected={i === index}
@@ -119,10 +138,21 @@ export function FileMenu({ items, index, loading, onHover, onPick, leaving }: {
             ref={i === index ? (el) => { el?.scrollIntoView({ block: 'nearest' }) } : undefined}
             onMouseMove={() => i !== index && onHover(i)}
             onMouseDown={(e) => e.preventDefault()}
-            onClick={() => onPick(path)}
+            onClick={() => onPick(m)}
           >
-            <span className="slash-name">@{path.slice(cut + 1)}</span>
-            <span className="slash-desc">{cut >= 0 ? path.slice(0, cut + 1) : './'}</span>
+            {m.kind === 'agent' ? (
+              <>
+                <span className="slash-name">@agent-{m.name}</span>
+                <span className="slash-desc">{m.description}</span>
+                <span className="slash-tag">AGENT</span>
+              </>
+            ) : (
+              <>
+                <span className="slash-name">@{path.slice(cut + 1)}</span>
+                <span className="slash-desc">{cut >= 0 ? path.slice(0, cut + 1) : './'}</span>
+                {dir && <span className="slash-tag">DIR</span>}
+              </>
+            )}
           </button>
         )
       })}

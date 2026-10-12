@@ -1,10 +1,11 @@
-import { resolveSettings, type Query } from '@anthropic-ai/claude-agent-sdk'
-import { cwdOf, EFFORT_LEVELS, type EffortInfo, type EffortLevel, type ModelOption, type AgentEventEnvelope, type TaskOutput, AgentMode, PermissionDecision, RateLimitInfo, SlashCommandInfo } from '@shared/types'
+import { forkSession, getSessionMessages, listSessions, resolveSettings, type Query } from '@anthropic-ai/claude-agent-sdk'
+import { randomUUID } from 'node:crypto'
+import { cwdOf, EFFORT_LEVELS, openConversations, type AccountStatus, type AgentOption, type EffortInfo, type EffortLevel, type McpServerInfo, type ModelOption, type AgentEventEnvelope, type PermissionExtra, type RewindResult, type RewindScope, type SessionOption, type SessionStatus, type TaskOutput, AgentMode, PermissionDecision, RateLimitInfo, SlashCommandInfo } from '@shared/types'
 import type { ProjectStore } from '../store'
 import { AgentSession } from './session'
 import { commandsFor, remember, withProbe } from './commands'
 import { modelLabel, toContext } from './session'
-import { readHistory } from './history'
+import { fullToolResult, readHistory } from './history'
 import { readTaskOutput } from './task-output'
 import { draftTitle, saveSessionTitle, sessionTitle } from './title'
 import { removeWorktreeIfClean } from '../worktree'
@@ -13,8 +14,8 @@ import { removeWorktreeIfClean } from '../worktree'
 export class AgentManager {
   private sessions = new Map<string, AgentSession>()
 
-  /** 자리가 나길 기다리는 메시지 (OPEN-003). 들어온 순서대로 시작한다 */
-  private waiting: { projectId: string; conversationId: string; text: string }[] = []
+  /** 자리가 나길 기다리는 메시지 (OPEN-003). 들어온 순서대로 시작한다. id는 화면의 queuedId */
+  private waiting: { id: string; projectId: string; conversationId: string; text: string }[] = []
 
   constructor(
     private readonly store: ProjectStore,
@@ -33,12 +34,28 @@ export class AgentManager {
     if (session.isBusy()) return session.send(text)
     const alreadyWaiting = this.waiting.some((w) => w.conversationId === conversationId)
     if (alreadyWaiting || this.atCapacity()) {
-      this.waiting.push({ projectId, conversationId, text })
-      session.enqueue(text)
+      const id = randomUUID()
+      this.waiting.push({ id, projectId, conversationId, text })
+      session.enqueue(text, id)
       this.announcePositions()
       return
     }
     session.send(text)
+  }
+
+  /** 차례를 기다리던 메시지를 빼고 그 글을 돌려준다 (자리 대기열 또는 세션이 들고 있던 것). 이미 보냈으면 null */
+  dropQueued(projectId: string, conversationId: string, queuedId: string): string | null {
+    const i = this.waiting.findIndex((w) => w.id === queuedId)
+    if (i >= 0) {
+      const [w] = this.waiting.splice(i, 1)
+      const session = this.sessions.get(conversationId)
+      // 이 대화가 더 기다리는 게 없으면 상태도 되돌린다
+      if (session && !this.waiting.some((x) => x.conversationId === conversationId)) session.cancelQueued()
+      this.broadcast({ projectId, conversationId, event: { kind: 'unqueued', queuedId } })
+      this.announcePositions()
+      return w.text
+    }
+    return this.sessions.get(conversationId)?.dropHeld(queuedId) ?? null
   }
 
   /** 새 세션의 첫 메시지(처음, 또는 클리어한 뒤)면 그 메시지로 임시 제목을 붙인다. 직접 붙인 이름은 그대로 */
@@ -101,7 +118,7 @@ export class AgentManager {
   drain(): void {
     while (this.waiting.length && !this.atCapacity()) {
       const w = this.waiting.shift()!
-      this.sessions.get(w.conversationId)?.send(w.text, false)
+      this.sessions.get(w.conversationId)?.send(w.text, false, w.id)
     }
     this.announcePositions()
   }
@@ -316,8 +333,185 @@ export class AgentManager {
     this.broadcast({ projectId, conversationId, event: { kind: 'mode', mode } })
   }
 
-  respondPermission(conversationId: string, requestId: string, decision: PermissionDecision): void {
-    this.sessions.get(conversationId)?.respondPermission(requestId, decision)
+  respondPermission(conversationId: string, requestId: string, decision: PermissionDecision, extra?: PermissionExtra): void {
+    this.sessions.get(conversationId)?.respondPermission(requestId, decision, extra)
+  }
+
+  /** 도구 결과 전문. 세션 기록에서 그 tool_use_id의 결과를 찾는다 */
+  async toolResult(projectId: string, conversationId: string, toolUseId: string): Promise<string | null> {
+    const project = this.store.get(projectId)
+    const conv = this.store.getConversation(projectId, conversationId)
+    if (!project || !conv?.sessionId) return null
+    return fullToolResult(conv.sessionId, cwdOf(project, conv), toolUseId)
+  }
+
+  /**
+   * 되감기. code: 파일을 그 메시지 시점으로(SDK rewindFiles). chat: 그 메시지 앞까지만 남긴 세션으로 포크해 바꿔 끼운다.
+   * 대화를 되감으면 그 메시지의 글을 돌려줘 입력창에 되돌려 놓는다
+   */
+  async rewind(projectId: string, conversationId: string, uuid: string, scope: RewindScope, dryRun = false): Promise<RewindResult> {
+    const project = this.store.get(projectId)
+    const conv = this.store.getConversation(projectId, conversationId)
+    if (!project || !conv?.sessionId) return { ok: false, message: '되감을 세션이 없어요' }
+    const session = this.getOrCreate(projectId, conversationId)
+    if (session.isBusy()) return { ok: false, message: '작업이 끝난 뒤에 되감을 수 있어요' }
+    const cwd = cwdOf(project, conv)
+    let files: string[] | undefined
+    if (scope !== 'chat') {
+      try {
+        const r = await session.rewindFiles(uuid, dryRun)
+        if (!r.canRewind) return { ok: false, message: r.error ?? '이 시점으로는 파일을 되돌릴 수 없어요' }
+        files = r.filesChanged
+      } catch (err) {
+        return { ok: false, message: `파일을 되돌리지 못했어요: ${err instanceof Error ? err.message : String(err)}` }
+      }
+    }
+    if (dryRun) return { ok: true, message: files?.length ? `${files.length}개 파일이 바뀌어요` : '바뀌는 파일이 없어요', files }
+    let text: string | undefined
+    if (scope !== 'code') {
+      try {
+        const messages = await getSessionMessages(conv.sessionId, { dir: cwd, includeSystemMessages: true })
+        const main = messages.filter((m) => !m.parent_tool_use_id)
+        const at = main.findIndex((m) => m.uuid === uuid)
+        if (at < 0) return { ok: false, message: '세션 기록에서 그 메시지를 찾지 못했어요', files }
+        const msg = main[at].message as { content?: unknown }
+        text = typeof msg?.content === 'string' ? msg.content : undefined
+        const before = main[at - 1]
+        let next: string | undefined
+        if (before) next = (await forkSession(conv.sessionId, { dir: cwd, upToMessageId: before.uuid, title: conv.title })).sessionId
+        // 첫 메시지면 남길 대화가 없다: 새 세션으로
+        session.switchSession(next)
+        this.store.updateConversation(projectId, conversationId, { sessionId: next, contextPercent: undefined })
+        const items = next ? await readHistory(next, cwd) : []
+        this.broadcast({ projectId, conversationId, event: { kind: 'replace', items } })
+        void this.peek(projectId, conversationId)
+      } catch (err) {
+        return { ok: false, message: `대화를 되감지 못했어요: ${err instanceof Error ? err.message : String(err)}`, files }
+      }
+    }
+    const parts = [scope !== 'chat' ? `파일 ${files?.length ?? 0}개를 되돌렸어요` : '', scope !== 'code' ? '대화를 그 시점으로 되감았어요' : ''].filter(Boolean)
+    this.broadcast({ projectId, conversationId, event: { kind: 'task_note', text: `REWIND · ${parts.join(' · ')}` } })
+    return { ok: true, message: parts.join(' · '), files, text }
+  }
+
+  /** 이 프로젝트 폴더의 지난 세션 (작업 공간 포함, 최근 순). 이미 열린 대화에 붙은 세션은 표시만 */
+  async listSessions(projectId: string): Promise<SessionOption[]> {
+    const project = this.store.get(projectId)
+    if (!project) return []
+    const attached = new Map(project.conversations.filter((c) => c.sessionId).map((c) => [c.sessionId!, c.id]))
+    const list = await listSessions({ dir: project.path, includeWorktrees: true, limit: 60 })
+    return list.map((s) => ({
+      sessionId: s.sessionId,
+      title: (s.customTitle ?? s.summary ?? s.firstPrompt ?? '').trim() || '(제목 없음)',
+      firstPrompt: s.firstPrompt,
+      modified: s.lastModified,
+      branch: s.gitBranch,
+      cwd: (s as { cwd?: string }).cwd,
+      conversationId: attached.get(s.sessionId),
+    }))
+  }
+
+  /** 지난 세션을 이어 연다. 아직 아무것도 보내지 않은 대화면 거기에 붙이고, 아니면 새 탭을 만든다 */
+  async attachSession(projectId: string, conversationId: string, sessionId: string, title: string): Promise<string> {
+    const project = this.store.get(projectId)
+    if (!project) throw new Error(`프로젝트 없음: ${projectId}`)
+    const already = project.conversations.find((c) => c.sessionId === sessionId && !c.closedAt)
+    if (already) return already.id
+    const conv = this.store.getConversation(projectId, conversationId)
+    const fresh = conv && !conv.sessionId && !conv.lastTask && !this.sessions.get(conv.id)?.isBusy()
+    const target = fresh ? conv : this.store.addConversation(projectId, {})
+    this.sessions.get(target.id)?.switchSession(sessionId)
+    this.store.updateConversation(projectId, target.id, { sessionId, title: title.slice(0, 80), titleSource: 'auto', contextPercent: undefined })
+    const items = await readHistory(sessionId, cwdOf(project, target)).catch(() => [])
+    this.broadcast({ projectId, conversationId: target.id, event: { kind: 'replace', items } })
+    void this.peek(projectId, target.id)
+    return target.id
+  }
+
+  /** 지금 대화를 포크해 새 탭으로. 기록은 복사되고 이후는 따로 간다 */
+  async forkConversation(projectId: string, conversationId: string, title?: string): Promise<string> {
+    const project = this.store.get(projectId)
+    const conv = this.store.getConversation(projectId, conversationId)
+    if (!project || !conv) throw new Error(`대화 없음: ${projectId}/${conversationId}`)
+    if (!conv.sessionId) throw new Error('아직 대화가 없어 포크할 내용이 없어요')
+    const name = title?.trim() || `${conv.title} (fork)`
+    const { sessionId } = await forkSession(conv.sessionId, { dir: cwdOf(project, conv), title: name })
+    const next = this.store.addConversation(projectId, { sessionId, title: name.slice(0, 80), titleSource: title?.trim() ? 'custom' : 'auto', mode: conv.mode, modelChoice: conv.modelChoice, effort: conv.effort, additionalDirectories: conv.additionalDirectories })
+    const items = await readHistory(sessionId, cwdOf(project, next)).catch(() => [])
+    this.broadcast({ projectId, conversationId: next.id, event: { kind: 'replace', items } })
+    return next.id
+  }
+
+  /** 살아 있는 세션의 Query, 없으면 잠깐 띄운 CLI로 fn을 실행한다 */
+  private async withQuery<T>(projectId: string, conversationId: string, fn: (q: Query) => Promise<T>): Promise<T> {
+    const live = this.sessions.get(conversationId)?.query()
+    if (live) return fn(live)
+    const project = this.store.get(projectId)
+    const conv = this.store.getConversation(projectId, conversationId)
+    return withProbe(project && conv ? cwdOf(project, conv) : (project?.path ?? process.cwd()), fn, conv?.sessionId)
+  }
+
+  async mcpStatus(projectId: string, conversationId: string): Promise<McpServerInfo[]> {
+    const list = await this.withQuery(projectId, conversationId, (q) => q.mcpServerStatus())
+    return list.map((s) => {
+      const c = (s.config ?? {}) as { command?: string; args?: string[]; url?: string; type?: string }
+      const target = c.url ?? [c.command, ...(c.args ?? [])].filter(Boolean).join(' ')
+      return { name: s.name, status: s.status, version: s.serverInfo?.version, error: s.error, target: target || undefined }
+    })
+  }
+
+  /** 다시 연결·켜고 끄기는 살아 있는 세션에서만 뜻이 있다. 없으면 띄워 둔 세션에서 한다 (다음 메시지가 이어 쓴다) */
+  async mcpReconnect(projectId: string, conversationId: string, name: string): Promise<void> {
+    await this.getOrCreate(projectId, conversationId).ensureQuery().reconnectMcpServer(name)
+  }
+
+  async mcpToggle(projectId: string, conversationId: string, name: string, enabled: boolean): Promise<void> {
+    await this.getOrCreate(projectId, conversationId).ensureQuery().toggleMcpServer(name, enabled)
+  }
+
+  async listAgents(projectId: string): Promise<AgentOption[]> {
+    const project = this.store.get(projectId)
+    const first = project ? openConversations(project)[0] : undefined
+    const list = await this.withQuery(projectId, first?.id ?? '', (q) => q.supportedAgents())
+    return list.map((a) => ({ name: a.name, description: a.description, model: a.model }))
+  }
+
+  async setAdditionalDirectories(projectId: string, conversationId: string, dirs: string[]): Promise<void> {
+    this.store.updateConversation(projectId, conversationId, { additionalDirectories: dirs.length ? dirs : undefined })
+    await this.sessions.get(conversationId)?.setAdditionalDirectories(dirs)
+  }
+
+  private account: { at: number; info: AccountStatus } | null = null
+
+  /** 로그인 상태. 계정 단위라 10분 캐시 */
+  async accountStatus(refresh = false): Promise<AccountStatus> {
+    if (!refresh && this.account && Date.now() - this.account.at < 10 * 60_000) return this.account.info
+    const live = this.liveQuery()
+    const cwd = this.store.list()[0]?.path ?? process.cwd()
+    try {
+      const a = live ? await live.accountInfo() : await withProbe(cwd, (q) => q.accountInfo())
+      const method = a.apiKeySource ? `API KEY (${a.apiKeySource})` : a.tokenSource ?? (a.email ? 'claude.ai' : undefined)
+      const info: AccountStatus = { loggedIn: !!(a.email || a.tokenSource || a.apiKeySource), email: a.email, organization: a.organization, subscription: a.subscriptionType, method }
+      this.account = { at: Date.now(), info }
+      return info
+    } catch (err) {
+      return { loggedIn: false, error: err instanceof Error ? err.message : String(err) }
+    }
+  }
+
+  async sessionStatus(projectId: string, conversationId: string): Promise<SessionStatus> {
+    const project = this.store.get(projectId)
+    const conv = this.store.getConversation(projectId, conversationId)
+    if (!project || !conv) throw new Error(`대화 없음: ${projectId}/${conversationId}`)
+    return {
+      sessionId: conv.sessionId,
+      cwd: cwdOf(project, conv),
+      model: conv.modelLabel ?? conv.model,
+      mode: conv.mode,
+      contextPercent: conv.contextPercent,
+      additionalDirectories: conv.additionalDirectories ?? [],
+      account: await this.accountStatus(),
+    }
   }
 
   /** 프로젝트를 목록에서 닫기 전: 세션을 모두 끝내고(실행 중이면 중단) 대기열에서 빼고, 변경 없는 작업 공간은 정리한다. 프로젝트 폴더는 건드리지 않는다 */
@@ -346,6 +540,7 @@ export class AgentManager {
       resumeSessionId: conv.sessionId,
       model: conv.modelChoice && conv.modelChoice !== 'default' ? conv.modelChoice : undefined,
       effort: conv.effort,
+      additionalDirectories: conv.additionalDirectories,
       emit: (event) => {
         // 실행이 끝나 자리가 나면 다음 차례를 시작한다
         if (event.kind === 'status' && event.status !== 'running' && event.status !== 'waiting_approval' && event.status !== 'queued') {
