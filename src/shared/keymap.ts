@@ -5,7 +5,7 @@ import type { TerminalShell } from './types'
 // 글자·숫자·기호 키는 물리 키(e.code) 기준이라 한글 입력 상태에서도 같은 키로 동작한다.
 
 export type ActionId =
-  | 'summon' | 'goHome' | 'dispatch' | 'openSettings' | 'search' | 'help'
+  | 'summon' | 'goHome' | 'dispatch' | 'quickAsk' | 'openSettings' | 'search' | 'help'
   | 'addProject' | 'focusAsk' | 'down' | 'up' | 'toRunning' | 'toReports' | 'open' | 'archive' | 'newTask'
   | 'allow' | 'always' | 'deny'
   | 'nextConversation' | 'prevConversation' | 'closeConversation' | 'closeProject' | 'clear' | 'compact' | 'cycleMode' | 'interrupt'
@@ -33,6 +33,7 @@ export const ACTIONS: ActionDef[] = [
   { id: 'summon', label: 'Summon app', scope: 'system', default: 'Ctrl+Shift+Space' },
   { id: 'goHome', label: 'Go home', scope: 'anywhere', default: 'Ctrl+H' },
   { id: 'dispatch', label: 'New task', scope: 'anywhere', default: 'Ctrl+K' },
+  { id: 'quickAsk', label: 'Quick question', scope: 'anywhere', default: 'Ctrl+Shift+K' },
   { id: 'openSettings', label: 'Settings', scope: 'anywhere', default: 'Ctrl+,' },
   { id: 'search', label: 'Search all conversations', scope: 'anywhere', default: 'Ctrl+Shift+F' },
   { id: 'help', label: 'Keyboard shortcuts', scope: 'anywhere', default: 'Ctrl+/' },

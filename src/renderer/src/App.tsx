@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { MAX_PROJECTS, MODE_CYCLE, needsChoice, openConversations, type AgentMode, type StoredTask, type PermissionDecision, type PermissionExtra, type Project, type UpdateState, type UsageInfo } from '@shared/types'
+import { MAX_PROJECTS, MODE_CYCLE, needsChoice, QUICK_PROJECT_ID, openConversations, type AgentMode, type StoredTask, type PermissionDecision, type PermissionExtra, type Project, type UpdateState, type UsageInfo } from '@shared/types'
 import { applyEvent, collectBackground, collectTasks, mostUrgentConversation, type ConversationMap, type TaskInfo, type TaskRef } from './state'
 import { Home, type DispatchOrigin } from './Home'
 import { Chat, type PanelControl } from './Chat'
@@ -12,6 +12,7 @@ import { applyTheme, KeymapContext } from './settings'
 import { SettingsScreen } from './SettingsScreen'
 import { HelpOverlay } from './HelpOverlay'
 import { SearchOverlay } from './SearchOverlay'
+import { QuickAsk } from './QuickAsk'
 import type { SearchHit } from '@shared/types'
 import { usePresence } from './motion'
 import { forgetTerminals, newTerminal, showTerminal, stepTerminal } from './terminal'
@@ -47,6 +48,9 @@ export function App(): React.JSX.Element {
   // 대화 검색 (Ctrl+Shift+F). 결과를 고르면 그 대화를 열고 jump로 그 메시지까지 스크롤한다
   const [searchOpen, setSearchOpen] = useState(false)
   const search = usePresence(searchOpen ? true : null, 300)
+  // 프로젝트 없이 묻는 질문 창 (키맵 quickAsk). 닫아도 대화는 남는다
+  const [quickOpen, setQuickOpen] = useState(false)
+  const quick = usePresence(quickOpen ? true : null, 300)
   const [jump, setJump] = useState<{ conversationId: string; query: string; ordinal: number; nonce: number } | null>(null)
   const openHit = (hit: SearchHit, query: string): void => {
     setSearchOpen(false)
@@ -81,6 +85,8 @@ export function App(): React.JSX.Element {
       window.api.onSettingsChanged(setSettings),
       window.api.onOpenSettings(() => openSettingsRef.current()),
       window.api.onNavigate(({ projectId, conversationId, terminal }) => {
+        // 질문 창의 알림은 그 창을 연다
+        if (projectId === QUICK_PROJECT_ID) return setQuickOpen(true)
         openChatRef.current(projectId, conversationId)
         // 터미널 알림: 대화를 연 뒤 그 터미널을 펼친다
         if (terminal) requestAnimationFrame(() => showTerminal(conversationId, terminal))
@@ -327,6 +333,16 @@ export function App(): React.JSX.Element {
     }
 
     // 도움말: 어디서든 열고 닫는다. 열려 있는 동안은 Esc로 닫는 것 말고는 키를 받지 않는다
+    // 질문 창: 어디서든 열고 닫는다. 열려 있는 동안 키는 그 창이 처리한다 (Esc·Y/A/N·클리어)
+    if (is('quickAsk')) {
+      return take(() => {
+        setHelpOpen(false)
+        setSearchOpen(false)
+        setQuickOpen((v) => !v)
+        if (quickOpen) requestRefocus()
+      })
+    }
+    if (quickOpen) return
     if (is('help')) {
       return take(() => {
         setSearchOpen(false)
@@ -558,6 +574,18 @@ export function App(): React.JSX.Element {
           )}
         </div>
       </div>
+      {quick.item && (
+        <QuickAsk
+          convs={convs}
+          usage={usage}
+          leaving={quick.leaving}
+          onRespond={respond}
+          onClose={() => {
+            setQuickOpen(false)
+            requestRefocus()
+          }}
+        />
+      )}
       {search.item && <SearchOverlay leaving={search.leaving} onOpen={openHit} onClose={() => { setSearchOpen(false); requestRefocus() }} />}
       {help.item && <HelpOverlay context={view.screen} hotkey={hotkey} leaving={help.leaving} onClose={() => { setHelpOpen(false); requestRefocus() }} />}
     </div>

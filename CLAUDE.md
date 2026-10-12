@@ -47,6 +47,7 @@
 - SDK API는 추측하지 말고 `node_modules/@anthropic-ai/claude-agent-sdk/sdk.d.ts`에서 확인
 - 권한 모드는 `MODE_CYCLE`(기본 → 편집 자동 허용 → 자동 → 플랜). 자동(`auto`)은 모델 분류기가 승인/거절하고 판단 못 한 것만 `canUseTool`로 묻는다. 모드 변경이 거절되면 원래 모드로 되돌리고, 세션이 스스로 바꾼 모드(status 메시지의 `permissionMode`)도 저장값에 맞춘다
 - `canUseTool` 옵션의 `defaultToNo`(한 키 승인 금지)와 `suppressAlwaysAllowRule`(항상 허용 금지)을 UI에서 반드시 지킨다
+  - '항상 허용'은 SDK `suggestions`를 그대로 `updatedPermissions`로 돌려준다. 범위는 CLI가 정한 대로(파일 편집은 이 세션의 acceptEdits, 폴더 밖 읽기는 세션, 명령·WebFetch는 프로젝트 `localSettings`)이고 넓히지 않는다. `describeAlways()`가 무엇을 어디까지 기억하는지 풀어 `PermissionRequest.always`로 보내고 버튼에 `npm view * · PROJECT`처럼 보인다(섞이면 가장 좁은 범위). 제안이 없으면(`cd .. && git status`처럼 이어 붙인 명령) 한 번 허용과 같으므로 `suppressAlwaysAllow`로 버튼·A 키를 감춘다
 - 대화창에서 `Esc`는 실행 중단 전용. 나가기(홈)는 `Ctrl+H` (기획서 초안의 ``Ctrl+` ``에서 변경)
 - 사용자는 40% 배열 키보드를 쓴다. 단축키는 알파벳 + Ctrl/Alt/Shift만으로 되게 하고, 숫자·방향키·F키·백틱은 보조로만 둔다 (`src/renderer/src/keys.ts`)
   - 프로젝트 이동: `Alt+A S D F G H J K L` = 1~9 (보조: `Ctrl+1~9`, 홈에서 `1~9`). 그래서 프로젝트는 `MAX_PROJECTS`(9)개까지만: 넘으면 렌더러가 사이드바 `flash`로 안내하고 메인 `addProject`도 null (OPEN-007)
@@ -71,6 +72,10 @@
   - 패키징: node-pty는 N-API 미리 빌드 바이너리를 쓰므로 `asarUnpack`에 넣고 `npmRebuild: false` (켜 두면 Visual Studio로 소스 빌드를 시도하다 실패한다)
 - 전체화면: `F11` 고정 (메인 `before-input-event`). 키맵 동작은 없다
 - 새 탭: 키맵 `newConversation`(기본 `Ctrl+Shift+T`). 탭 줄의 +와 같다
+- 질문 창(`QuickAsk.tsx`, 키맵 `quickAsk` 기본 `Ctrl+Shift+K`, 앱 안에서만): 프로젝트 없이 묻는 덮개 창. 숨은 프로젝트 `QUICK_PROJECT_ID`(`userData/quick.json`, 폴더 `userData/quick`)의 대화 하나를 이어 쓴다. `store.get()`으로는 찾지만 `list()`에는 없어 사이드바·홈·9개 상한·Alt+A~L·검색에서 빠진다
+  - 도구는 읽기·웹만(`QUICK_DISALLOWED_TOOLS`로 수정·명령·하위 에이전트를 빼고 `QUICK_ALLOWED_TOOLS`는 묻지 않음, 세션 옵션 `tools`). 도구 목록은 띄울 때 고정되므로 미리 띄운 CLI는 쓰지 않는다. 동시 실행 제한에 세지 않는다(manager `quickIds`). 처음 모델·effort는 `haiku`·`low`
+  - 열려 있는 동안 App은 `quickAsk` 말고 키를 받지 않고 창이 처리한다: Esc는 답하는 중이면 멈춤·아니면 닫기, 클리어(`clear`) 두 번, Y/A/N, `/clear`·`/compact`. 대화창의 `Item`·`Working`·`PermissionBox`를 그대로 쓴다. 알림을 누르면(`navigate`의 projectId가 quick) 이 창을 연다
+  - `peek`·`withProbe`는 대화에서 고른 모델(`modelChoice`)로 띄운다. 빠뜨리면 기본 모델로 표시 모델을 덮어쓴다
 - 대화 검색(`SearchOverlay.tsx`, 키맵 `search` 기본 `Ctrl+Shift+F`): 모든 프로젝트의 열린 대화를 세션 기록(`readHistory`, 끝 400개)에서 찾는다(`agent/search.ts`, 기록 파일 `lastModified`가 같으면 캐시). 띄어 쓴 말이 모두 들어간 내 메시지·답변·도구 호출. 고르면 그 대화를 열고 `jump`로 그 메시지까지 스크롤·강조. 무엇을 찾을지와 몇 번째로 맞았는지(`ordinal`)는 메인·렌더러가 `@shared/search`의 같은 함수로 센다
 - macOS도 지원한다 (`isMac` 분기, `src/main/index.ts`)
   - 단축키는 macOS에서도 Ctrl 기반 그대로. Cmd로 바꾸지 말 것. 화면의 Alt 표기만 `⌥`로 바꾼다 (`ALT_LABEL`)

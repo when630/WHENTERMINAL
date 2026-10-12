@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
-import { type PermissionDecision, type Project } from '@shared/types'
+import { ALWAYS_SCOPE_LABEL, ALWAYS_SCOPE_TIP, ELICITATION_TOOL, needsChoice, type PermissionDecision, type PermissionRequest, type Project } from '@shared/types'
 import { refocusAfterClick, useRefocus } from './focus'
 import { HOME_ROW } from './keys'
 import { boxIn, EASE, Odo, reducedMotion, Roll, useLayoutMotion } from './motion'
@@ -254,22 +254,27 @@ function TaskCard({ r, now, selected, onSelect, onOpen, onRespond }: {
         </div>
         <div className={`cf ${pending ? 'open' : ''}`}>
           <div>
-            {pending && (pending.toolName === 'AskUserQuestion' || pending.toolName === 'ExitPlanMode') && (
+            {pending && needsChoice(pending.toolName) && (
               <div className="cf-in">
-                <span className="cf-cmd mono">{pending.toolName === 'ExitPlanMode' ? '계획을 세웠어요. 대화창에서 승인해요' : '물어볼 게 있어요. 대화창에서 답해요'}</span>
+                <span className="cf-cmd mono">{choiceNote(pending)}</span>
                 <button type="button" className="btn-pri sm" onClick={(e) => { e.stopPropagation(); onOpen(r) }}>
                   {pending.toolName === 'ExitPlanMode' ? 'REVIEW PLAN' : 'ANSWER'}
                 </button>
               </div>
             )}
-            {pending && pending.toolName !== 'AskUserQuestion' && pending.toolName !== 'ExitPlanMode' && (
+            {pending && !needsChoice(pending.toolName) && (
               <div className="cf-in">
                 <span className="cf-cmd mono">{pending.title ?? `${pending.toolName} ${summarizeInput(pending.input)}`}</span>
                 <button type="button" className="btn-pri sm" onClick={(e) => respond(e, 'allow')}>
                   ALLOW
                 </button>
                 {!pending.suppressAlwaysAllow && (
-                  <button type="button" className="btn sm" onClick={(e) => respond(e, 'always')}>
+                  <button
+                    type="button"
+                    className="btn sm"
+                    onClick={(e) => respond(e, 'always')}
+                    title={pending.always ? `${pending.always.what} · ${ALWAYS_SCOPE_LABEL[pending.always.scope]} · ${ALWAYS_SCOPE_TIP[pending.always.scope]}` : undefined}
+                  >
                     ALWAYS
                   </button>
                 )}
@@ -458,4 +463,12 @@ function summarizeInput(input: unknown): string {
   const o = input as Record<string, unknown>
   const v = o.command ?? o.file_path ?? o.path ?? o.pattern ?? o.url
   return typeof v === 'string' ? v.split('\n')[0].slice(0, 120) : ''
+}
+
+/** 홈 카드에서 한 키로 답할 수 없는 요청의 안내 (대화창에서 답한다) */
+function choiceNote(req: PermissionRequest): string {
+  if (req.toolName === 'ExitPlanMode') return '계획을 세웠어요. 대화창에서 승인해요'
+  if (req.toolName === ELICITATION_TOOL) return `${req.elicitation?.serverName ?? 'MCP'} 서버가 입력을 기다려요. 대화창에서 답해요`
+  if (req.toolName === 'AskUserQuestion') return '물어볼 게 있어요. 대화창에서 답해요'
+  return '모델이 답하지 않았어요. 대화창에서 어떻게 할지 골라요'
 }

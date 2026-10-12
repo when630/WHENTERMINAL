@@ -22,7 +22,7 @@ const GROUPS: Group[] = [
     id: 'anywhere',
     title: 'ANYWHERE',
     note: '어느 화면에서든',
-    actions: ['help', 'search', 'goHome', 'dispatch', 'openSettings'],
+    actions: ['help', 'search', 'goHome', 'dispatch', 'quickAsk', 'openSettings'],
     fixed: [
       ['alt A S D F G H J K L', 'Go to project 1–9'],
       ['ctrl 1…9', 'Go to project (alt.)'],

@@ -94,6 +94,19 @@ export const cwdOf = (p: Project, c: Conversation | undefined): string => c?.wor
 /** 탭·목록에 보이는 대화 (닫힌 대화 제외) */
 export const openConversations = (p: Project): Conversation[] => p.conversations.filter((c) => !c.closedAt)
 
+/**
+ * 프로젝트 없이 묻는 질문 창(Ctrl+Shift+K)의 숨은 프로젝트. userData/quick 빈 폴더에서 세션을 띄우고,
+ * 프로젝트 목록·9개 상한·Alt+A~L 순번·동시 실행 제한·미리 띄우기에서 빠진다. 대화는 하나를 이어 쓴다
+ */
+export const QUICK_PROJECT_ID = 'quick'
+/** 질문 창은 읽기와 웹만: 파일 수정·명령 실행·하위 에이전트는 모델에게서 뺀다 */
+export const QUICK_DISALLOWED_TOOLS = ['Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'Bash', 'PowerShell', 'Agent', 'Task']
+/** 묻지 않고 쓰는 읽기·웹 도구 */
+export const QUICK_ALLOWED_TOOLS = ['Read', 'Glob', 'Grep', 'WebSearch', 'WebFetch']
+/** 처음 쓰는 모델·effort (빠르게 답하도록). 창 머리에서 바꿀 수 있다 */
+export const QUICK_DEFAULT_MODEL = 'haiku'
+export const QUICK_DEFAULT_EFFORT: EffortLevel = 'low'
+
 /** 프로젝트 수 상한. 홈 열의 키(A S D F G H J K L)와 Ctrl+1~9가 9개라 그 안에서만 받는다 (OPEN-007) */
 export const MAX_PROJECTS = 9
 
@@ -118,6 +131,22 @@ export interface PermissionExtra {
   elicitation?: { action: 'accept' | 'decline' | 'cancel'; content?: Record<string, string | number | boolean | string[]> }
   /** 모델이 답을 거절했을 때의 선택 (CLI refusal_fallback_prompt 대화 상자) */
   dialog?: RefusalChoice
+}
+
+/** '항상 허용'의 범위. chat: 이 대화(세션)만 · project: 프로젝트 설정 · user: 사용자 설정(모든 프로젝트) */
+export type AlwaysScope = 'chat' | 'project' | 'user'
+
+export interface AlwaysInfo {
+  /** 기억하는 것: 'npm view *', 'WebFetch(domain:example.com)', 'ALL EDITS' … */
+  what: string
+  scope: AlwaysScope
+}
+
+export const ALWAYS_SCOPE_LABEL: Record<AlwaysScope, string> = { chat: 'THIS CHAT', project: 'PROJECT', user: 'ALL PROJECTS' }
+export const ALWAYS_SCOPE_TIP: Record<AlwaysScope, string> = {
+  chat: '이 대화에서만 다시 묻지 않아요. 새 대화나 홈에서 맡긴 다음 작업에서는 다시 물어요',
+  project: '이 프로젝트에서는 다시 묻지 않아요. 프로젝트 설정에 저장돼요',
+  user: '모든 프로젝트에서 다시 묻지 않아요. 사용자 설정에 저장돼요',
 }
 
 /** 거절 대화 상자의 답: 다른 모델로 다시 시도 · 지시를 고쳐 다시 보냄 · 그만 */
@@ -159,8 +188,10 @@ export interface PermissionRequest {
   description?: string
   /** true면 Y 한 키로 승인 불가 (SDK가 요구). 클릭 또는 확인 단계 필요 */
   defaultToNo?: boolean
-  /** true면 '항상 허용'(A) 제공 불가 */
+  /** true면 '항상 허용'(A) 제공 불가. SDK가 금지했거나 CLI가 기억할 규칙을 주지 않은 경우(이어 붙인 명령 등) */
   suppressAlwaysAllow?: boolean
+  /** '항상 허용'이 기억하는 것과 범위 (SDK suggestions를 풀어 쓴 것) */
+  always?: AlwaysInfo
   /** 하위 에이전트 안에서 온 요청이면 그 에이전트 ID */
   agentId?: string
   /** toolName이 ELICITATION_TOOL일 때 */
@@ -596,6 +627,7 @@ export const IPC = {
   accountStatus: 'agent:account-status',
   loginCommand: 'agent:login-command',
   prewarm: 'agent:prewarm',
+  quickProject: 'quick:project',
 } as const
 
 /** preload가 window.api로 노출하는 API */
@@ -607,6 +639,8 @@ export interface WhenTerminalApi {
   addProject(): Promise<Project | null>
   /** 새 대화의 첫 메시지를 바로 보낼 수 있게 CLI를 미리 띄워 둔다 (홈·빈 대화에 글을 치기 시작할 때). 이미 있으면 아무것도 안 함 */
   prewarm(): Promise<void>
+  /** 질문 창(QUICK_PROJECT_ID)의 숨은 프로젝트. 대화 하나를 이어 쓴다 */
+  quickProject(): Promise<Project>
   removeProject(projectId: string): Promise<void>
   addConversation(projectId: string): Promise<Conversation>
   /** 대화(세션)를 닫는다. 실행 중이면 중단한다. 마지막 대화였다면 빈 대화를 새로 만든다. 남은 대화 중 옮겨 갈 ID를 돌려준다 */

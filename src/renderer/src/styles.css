@@ -753,6 +753,8 @@ pre { font: 12.5px/1.65 var(--mono); background: transparent; padding: 0; overfl
 .permission-actions button { display: inline-flex; align-items: center; gap: 10px; padding: 9px 16px; border: 3px solid var(--on-signal); background: transparent; color: var(--on-signal); font: 900 15px/1 var(--disp); transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out), transform 0.1s; }
 .permission-actions button:hover { background: var(--on-signal); color: var(--signal); }
 .permission-actions button:active { transform: scale(0.96); }
+.permission-actions .always-what { display: inline-flex; min-width: 0; gap: 0.4em; font: 600 11.5px/1 var(--mono); opacity: 0.85; white-space: nowrap; }
+.permission-actions .always-rule { max-width: 280px; overflow: hidden; text-overflow: ellipsis; }
 .permission .muted { color: var(--on-signal); opacity: 0.85; font-size: 12.5px; font-weight: 600; }
 
 .composer { position: relative; flex: none; display: flex; align-items: flex-start; gap: 14px; padding: 8px 28px; border-top: var(--rule-thick); transition: background var(--t-fast) var(--ease-out); }
@@ -824,6 +826,17 @@ pre { font: 12.5px/1.65 var(--mono); background: transparent; padding: 0; overfl
 .search-head .kr { font-size: 30px; line-height: 1; }
 .search-input { flex: 1; min-width: 0; padding: 6px 0; border: 0; background: transparent; color: var(--ink); font: 600 20px/1.3 var(--font); outline: none; }
 .search-input::placeholder { color: var(--gray-2); }
+/* 질문 창 (프로젝트 없이 묻기) */
+.quick-sheet { width: min(860px, 100%); height: min(78vh, 820px); }
+.quick-head { flex: none; display: flex; align-items: stretch; border-bottom: var(--rule-thick); }
+.quick-head .kr { align-self: center; padding: 12px 20px; font-size: 30px; line-height: 1; }
+.quick-note { flex: 1; min-width: 0; align-self: center; font-size: 12.5px; color: var(--gray); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.quick-meta { flex: none; display: flex; align-items: stretch; border-left: var(--rule); }
+.quick-meta > .btn { align-self: center; margin-left: 8px; }
+.quick-meta > .btn:last-child { margin-right: 14px; }
+.quick-ctx.hot .meta-v { color: var(--signal); }
+.quick-log { min-height: 0; }
+.quick-empty { padding: 28px 28px 0; color: var(--gray); font-size: 15px; line-height: 1.6; }
 .search-count { font-size: 13px; color: var(--gray); }
 .search-list { flex: 1; min-height: 0; margin: 0; padding: 0; list-style: none; overflow-y: auto; }
 .search-list .empty { border-bottom: 0; }

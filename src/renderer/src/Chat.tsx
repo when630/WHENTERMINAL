@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { refocusAfterClick, useRefocus } from './focus'
-import { ELICITATION_TOOL, MODE_CYCLE, MODE_LABEL, openConversations, REFUSAL_TOOL, STATUS_LABEL, type AgentOption, type AskQuestion, type EffortInfo, type EffortLevel, type GitBranch, type UsageInfo, type SlashCommandInfo, type AgentMode, type PermissionDecision, type PermissionExtra, type PermissionRequest, type Project, type BackgroundTask, type AgentProgress, type RefusalChoice, type SubItem } from '@shared/types'
+import { ALWAYS_SCOPE_LABEL, ALWAYS_SCOPE_TIP, ELICITATION_TOOL, MODE_CYCLE, MODE_LABEL, openConversations, REFUSAL_TOOL, STATUS_LABEL, type AgentOption, type AskQuestion, type EffortInfo, type EffortLevel, type GitBranch, type UsageInfo, type SlashCommandInfo, type AgentMode, type PermissionDecision, type PermissionExtra, type PermissionRequest, type Project, type BackgroundTask, type AgentProgress, type RefusalChoice, type SubItem } from '@shared/types'
 import { agentInfo, artifactsOf, describeBackground, emptyConversation, isAgentTool, relPath, runningAgents, STAGES, subActivity, summarizeInput, type ArtifactLink, type ConversationMap, type TaskInfo, type ToolItem, type TranscriptItem } from './state'
 import { PANEL_TITLE, ToolPanelView, type ToolPanel } from './panels'
 import { usePromptHistory } from './drafts'
@@ -1066,7 +1066,7 @@ function TaskStatus({ task, status, now, onTools }: { task: TaskInfo; status: st
 }
 
 /** 대화 맨 아래 작업 중 줄. 1초마다 다시 그려지므로 따로 떼어 둔다 */
-function Working({ status, activity, startedAt, leaving }: { status: string; activity?: string; startedAt?: number; leaving: boolean }): React.JSX.Element {
+export function Working({ status, activity, startedAt, leaving }: { status: string; activity?: string; startedAt?: number; leaving: boolean }): React.JSX.Element {
   const now = useNow(1000)
   return (
     <div className={`working ${status === 'queued' ? 'queued' : ''} ${leaving ? 'leaving' : ''}`} role="status" aria-live="polite">
@@ -1095,7 +1095,7 @@ interface ItemProps {
   onExpand?: (toolUseId: string) => Promise<string | null>
 }
 
-function Item({ item, n, root, enter, subs, progress, onRun, onQueueEdit, onQueueCancel, onRewind, onExpand }: ItemProps): React.JSX.Element {
+export function Item({ item, n, root, enter, subs, progress, onRun, onQueueEdit, onQueueCancel, onRewind, onExpand }: ItemProps): React.JSX.Element {
   const e = enter ? ' enter' : ''
   switch (item.type) {
     case 'user':
@@ -1270,7 +1270,7 @@ function ToolInput({ name, input }: { name: string; input: unknown }): React.JSX
   )
 }
 
-function PermissionBox({ req, leaving, onRespond, onEditPrompt }: { req: PermissionRequest; leaving: boolean; onRespond: (d: PermissionDecision, extra?: PermissionExtra) => void; onEditPrompt?: () => void }): React.JSX.Element {
+export function PermissionBox({ req, leaving, onRespond, onEditPrompt }: { req: PermissionRequest; leaving: boolean; onRespond: (d: PermissionDecision, extra?: PermissionExtra) => void; onEditPrompt?: () => void }): React.JSX.Element {
   const cls = `permission ${leaving ? 'leaving' : ''}`
   // 모델이 묻는 질문: 선택지를 고르거나 직접 적어 답한다
   if (req.toolName === 'AskUserQuestion' && Array.isArray(req.input.questions)) {
@@ -1295,7 +1295,16 @@ function PermissionBox({ req, leaving, onRespond, onEditPrompt }: { req: Permiss
       <pre>{JSON.stringify(req.input, null, 2)}</pre>
       <div className="permission-actions">
         <button type="button" onClick={() => onRespond('allow')}>ALLOW</button>
-        {!req.suppressAlwaysAllow && <button type="button" onClick={() => onRespond('always')}>ALWAYS ALLOW</button>}
+        {!req.suppressAlwaysAllow && (
+          <button type="button" onClick={() => onRespond('always')} title={req.always ? ALWAYS_SCOPE_TIP[req.always.scope] : undefined}>
+            ALWAYS ALLOW
+            {req.always && (
+              <span className="always-what">
+                <span className="always-rule" title={req.always.what}>{req.always.what}</span> · {ALWAYS_SCOPE_LABEL[req.always.scope]}
+              </span>
+            )}
+          </button>
+        )}
         <button type="button" onClick={() => onRespond('deny')}>DENY</button>
       </div>
       {req.defaultToNo && <div className="muted">이 요청은 단축키로 허락할 수 없어요. 버튼을 직접 눌러 주세요.</div>}
