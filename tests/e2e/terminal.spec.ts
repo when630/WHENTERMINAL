@@ -232,3 +232,26 @@ test.describe('명령 끝남', () => {
     await expect(term.locator('.term-tab-done')).toHaveCount(0)
   })
 })
+
+test('아래 터미널: 붙여넣기는 Ctrl+V·Ctrl+Shift+V 모두 한 번만', async ({ app, win }) => {
+  test.setTimeout(90_000)
+  await win.keyboard.press('Alt+a')
+  const term = win.locator('.term')
+  const rows = term.locator('.xterm-rows')
+  await win.locator('#composer-input').click()
+  await win.keyboard.press('Control+t')
+  await expect(term).toHaveClass(/open/)
+  await expect(rows).not.toBeEmpty({ timeout: 20_000 })
+  const count = async (word: string): Promise<number> => ((await rows.innerText()).match(new RegExp(word, 'g')) ?? []).length
+
+  for (const [key, word] of [['Control+Shift+v', 'pasteshift'], ['Control+v', 'pasteplain']] as const) {
+    await app.evaluate(({ clipboard }, w) => clipboard.writeText(w), word)
+    await win.keyboard.press(key)
+    await expect.poll(() => count(word), { timeout: 10_000 }).toBeGreaterThanOrEqual(1)
+    // 두 번째 붙여넣기가 늦게 들어오는지 잠시 더 본다
+    await win.waitForTimeout(800)
+    expect(await count(word), key).toBe(1)
+    // 입력줄을 비운다 (실행하지 않는다)
+    await win.keyboard.press('Control+c')
+  }
+})

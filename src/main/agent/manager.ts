@@ -1,8 +1,23 @@
-import { forkSession, getSessionMessages, listSessions, resolveSettings, type Query } from '@anthropic-ai/claude-agent-sdk'
+import { forkSession, getSessionMessages, listSessions, resolveSettings, tagSession, type Query } from '@anthropic-ai/claude-agent-sdk'
 import { randomUUID } from 'node:crypto'
-import { cwdOf, EFFORT_LEVELS, openConversations, QUICK_ALLOWED_TOOLS, QUICK_DISALLOWED_TOOLS, QUICK_PROJECT_ID, type AccountStatus, type AgentOption, type EffortInfo, type EffortLevel, type McpServerInfo, type ModelOption, type AgentEventEnvelope, type PermissionExtra, type RewindResult, type RewindScope, type SessionOption, type SessionStatus, type TaskOutput, AgentMode, PermissionDecision, RateLimitInfo, SlashCommandInfo } from '@shared/types'
+import { cwdOf, EFFORT_LEVELS, openConversations, QUICK_ALLOWED_TOOLS, QUICK_DISALLOWED_TOOLS, QUICK_PROJECT_ID, type AccountStatus, type AgentOption, type DeniedCall, type EffortInfo, type EffortLevel, type McpServerInfo, type ModelOption, type AgentEventEnvelope, type PermissionExtra, type RewindResult, type RewindScope, type SessionOption, type SessionStatus, type TaskOutput, AgentMode, PermissionDecision, RateLimitInfo, SlashCommandInfo } from '@shared/types'
+import type { LimitLevel } from '@shared/usage'
 import type { ProjectStore } from '../store'
-import { AgentSession, baseOptions, modelLabel, toContext } from './session'
+import { AgentSession, baseOptions, modelLabel, toContext, type BasePrefs } from './session'
+
+/** 매니저가 설정에서 읽는 것 */
+export interface ManagerPrefs extends BasePrefs {
+  /** 동시 실행 수. 0이면 제한 없음 */
+  maxConcurrent: number
+  away: boolean
+  budgetWhenHot: boolean
+}
+
+/** 구독 한도 단계별 토큰 예산 (taskBudget). 80%부터 걸고 95%면 더 좁힌다. 경험값이라 조정될 수 있다 */
+export const BUDGET_BY_LEVEL: Partial<Record<LimitLevel, number>> = { 80: 150_000, 95: 60_000, 100: 60_000 }
+
+/** 한도가 풀린 직후 바로 보내면 아직 거절될 수 있어 조금 기다린다 */
+const HOLD_MARGIN_MS = 5_000
 import { commandsFor, remember, withProbe } from './commands'
 import { SpareKeeper } from './spare'
 import { fullToolResult, readHistory } from './history'
@@ -20,22 +35,91 @@ export class AgentManager {
   private waiting: { id: string; projectId: string; conversationId: string; text: string }[] = []
 
   /** 미리 띄워 둔 CLI 하나. 새 세션의 첫 메시지가 기동을 기다리지 않게 */
-  private readonly spare = new SpareKeeper((cb) => baseOptions(cb))
+  private readonly spare = new SpareKeeper((cb) => baseOptions(cb, this.prefs()))
 
   /** 홈·빈 대화에 글을 치기 시작했다: 새 세션이 곧 생길 수 있으니 CLI를 미리 띄운다 */
   prewarm(): void {
     this.spare.ensure()
   }
 
+  /** 구독 한도: 지금 가장 높은 단계와, 다 썼을 때 풀리는 시각. 한도를 다 썼으면 대기열을 그때까지 잡아 둔다 */
+  private limit: { level: LimitLevel; resetsAt: number | null } = { level: 0, resetsAt: null }
+  private holdUntil: number | null = null
+  private holdTimer: ReturnType<typeof setTimeout> | null = null
+
   constructor(
     private readonly store: ProjectStore,
     private readonly broadcast: (e: AgentEventEnvelope) => void,
     private readonly onRateLimit: (info: RateLimitInfo) => void,
-    /** 동시 실행 수. 0이면 제한 없음 */
-    private readonly maxConcurrent: () => number = () => 0,
+    private readonly prefs: () => ManagerPrefs = () => ({ maxConcurrent: 0, away: false, budgetWhenHot: false, promptSuggestions: false }),
     /** 저장된 대화 정보(제목 등)가 바뀌었을 때 */
     private readonly onProjectsChanged: () => void = () => {},
+    /** 한도 보류가 풀렸다 (사용량을 다시 읽을 때) */
+    private readonly onHoldEnd: () => void = () => {},
   ) {}
+
+  /**
+   * 사용량이 바뀔 때마다 (OPEN-006). 한도를 다 썼고 초기화 시각을 알면 새 작업을 그때까지 보류했다가 자동으로 흘려보낸다.
+   * 실행 중인 작업은 건드리지 않는다 (CLI가 재시도한다)
+   */
+  setLimit(level: LimitLevel, resetsAt: number | null): void {
+    this.limit = { level, resetsAt }
+    const until = level === 100 && resetsAt && resetsAt > Date.now() ? resetsAt + HOLD_MARGIN_MS : null
+    if (until === this.holdUntil) return
+    if (this.holdTimer) clearTimeout(this.holdTimer)
+    this.holdTimer = null
+    this.holdUntil = until
+    if (until) {
+      this.holdTimer = setTimeout(() => {
+        this.holdUntil = null
+        this.holdTimer = null
+        this.onHoldEnd()
+        this.drain()
+      }, until - Date.now())
+      this.announcePositions()
+    } else this.drain()
+  }
+
+  /** 새 세션에 걸 토큰 예산. 설정이 꺼져 있거나 한도가 낮으면 없음 */
+  private budgetFor(): number | null {
+    if (!this.prefs().budgetWhenHot) return null
+    return BUDGET_BY_LEVEL[this.limit.level] ?? null
+  }
+
+  /** AWAY 모드를 바꿨다. 켰으면 이미 기다리던 확인 요청도 거절해 작업이 이어지게 한다 */
+  setAway(on: boolean): void {
+    if (!on) return
+    for (const s of this.sessions.values()) s.applyAway()
+  }
+
+  /** 세션 태그 (/tag). 세션 기록에도 남겨 CLI의 /resume 목록과 같게 */
+  async setTag(projectId: string, conversationId: string, raw: string | null): Promise<void> {
+    const tag = raw?.replace(/\s+/g, ' ').trim().slice(0, 40) || undefined
+    const project = this.store.get(projectId)
+    const conv = this.store.getConversation(projectId, conversationId)
+    if (!project || !conv) return
+    this.store.updateConversation(projectId, conversationId, { tag })
+    if (conv.sessionId) {
+      try {
+        await tagSession(conv.sessionId, tag ?? null, { dir: cwdOf(project, conv) })
+      } catch (err) {
+        console.warn('세션 태그를 저장하지 못함', err)
+      }
+    }
+  }
+
+  /** AWAY에서 거절한 호출을 승인하고 이어서 하라고 보낸다 */
+  approveDenied(projectId: string, conversationId: string, calls: DeniedCall[]): void {
+    if (!calls.length) return
+    this.getOrCreate(projectId, conversationId).preapprove(calls)
+    const list = calls.map((c) => `- ${c.title ?? c.toolName}`).join('\n')
+    this.send(projectId, conversationId, `자리를 비운 사이 거절됐던 다음 호출을 모두 승인했어요. 멈췄던 곳부터 이어서 해 주세요.\n${list}`)
+  }
+
+  /** CLI 명령(/goal …)을 세션에 보낸다. 작업으로 치지 않는다 */
+  command(projectId: string, conversationId: string, text: string): void {
+    this.getOrCreate(projectId, conversationId).command(text)
+  }
 
   send(projectId: string, conversationId: string, text: string): void {
     const session = this.getOrCreate(projectId, conversationId)
@@ -119,7 +203,9 @@ export class AgentManager {
   }
 
   private atCapacity(): boolean {
-    const limit = this.maxConcurrent()
+    // 구독 한도를 다 썼으면 풀릴 때까지 아무것도 시작하지 않는다
+    if (this.holdUntil && this.holdUntil > Date.now()) return true
+    const limit = this.prefs().maxConcurrent
     if (limit <= 0) return false
     let busy = 0
     for (const [id, s] of this.sessions) if (s.isBusy() && !this.quickIds.has(id)) busy++
@@ -137,10 +223,11 @@ export class AgentManager {
 
   private announcePositions(): void {
     const seen = new Set<string>()
+    const until = this.holdUntil && this.holdUntil > Date.now() ? this.holdUntil : undefined
     this.waiting.forEach((w, i) => {
       if (seen.has(w.conversationId)) return
       seen.add(w.conversationId)
-      this.broadcast({ projectId: w.projectId, conversationId: w.conversationId, event: { kind: 'queue', position: i + 1 } })
+      this.broadcast({ projectId: w.projectId, conversationId: w.conversationId, event: { kind: 'queue', position: i + 1, until } })
     })
   }
 
@@ -450,7 +537,7 @@ export class AgentManager {
     if (!conv.sessionId) throw new Error('아직 대화가 없어 포크할 내용이 없어요')
     const name = title?.trim() || `${conv.title} (fork)`
     const { sessionId } = await forkSession(conv.sessionId, { dir: cwdOf(project, conv), title: name })
-    const next = this.store.addConversation(projectId, { sessionId, title: name.slice(0, 80), titleSource: title?.trim() ? 'custom' : 'auto', mode: conv.mode, modelChoice: conv.modelChoice, effort: conv.effort, additionalDirectories: conv.additionalDirectories })
+    const next = this.store.addConversation(projectId, { sessionId, title: name.slice(0, 80), titleSource: title?.trim() ? 'custom' : 'auto', mode: conv.mode, modelChoice: conv.modelChoice, effort: conv.effort, additionalDirectories: conv.additionalDirectories, tag: conv.tag })
     const items = await readHistory(sessionId, cwdOf(project, next)).catch(() => [])
     this.broadcast({ projectId, conversationId: next.id, event: { kind: 'replace', items } })
     return next.id
@@ -541,6 +628,7 @@ export class AgentManager {
     for (const s of this.sessions.values()) s.dispose()
     this.sessions.clear()
     this.spare.dispose()
+    if (this.holdTimer) clearTimeout(this.holdTimer)
   }
 
   private getOrCreate(projectId: string, conversationId: string): AgentSession {
@@ -558,6 +646,10 @@ export class AgentManager {
       additionalDirectories: conv.additionalDirectories,
       takeSpare: () => this.spare.take(),
       tools: projectId === QUICK_PROJECT_ID ? { disallowed: QUICK_DISALLOWED_TOOLS, allowed: QUICK_ALLOWED_TOOLS } : undefined,
+      prefs: () => this.prefs(),
+      // 질문 창은 사람이 보고 있는 창이라 AWAY를 적용하지 않는다
+      away: () => projectId !== QUICK_PROJECT_ID && this.prefs().away,
+      budget: () => (projectId === QUICK_PROJECT_ID ? null : this.budgetFor()),
       emit: (event) => {
         // 실행이 끝나 자리가 나면 다음 차례를 시작한다
         if (event.kind === 'status' && event.status !== 'running' && event.status !== 'waiting_approval' && event.status !== 'queued') {

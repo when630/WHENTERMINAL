@@ -88,22 +88,22 @@ test('git이 아닌 폴더는 브랜치 없이 경로만', async ({ win }) => {
   await expect(win.locator('.tb-proj .tb-branch')).toHaveCount(0)
 })
 
-test('한도 경고: 80% 넘으면 입력창 위에 알리고, 다 쓰면 Enter를 한 번 더 눌러야 보낸다', async ({ app, win }) => {
+test('한도 경고: 80% 넘으면 알리고, 다 썼을 때 초기화 시각을 알면 보내 두고 모르면 Enter를 한 번 더 눌러야 보낸다', async ({ app, win }) => {
   await win.keyboard.press('Alt+a')
   // 실제 사용량을 다 받은 뒤에 덮어써야 나중에 온 값에 지워지지 않는다
   await expect(win.locator('.usage .uw, .usage .usage-foot:not(:has-text("불러오는 중"))').first()).toBeVisible({ timeout: 30_000 })
-  const send = async (percent: number): Promise<void> => {
-    await app.evaluate(({ BrowserWindow }, p) => {
+  const send = async (percent: number, knownReset = true): Promise<void> => {
+    await app.evaluate(({ BrowserWindow }, [p, known]) => {
       BrowserWindow.getAllWindows()[0].webContents.send('usage:changed', {
         plan: 'max',
         available: true,
         fetchedAt: Date.now(),
         windows: [
-          { id: 'five_hour', label: '5H', percent: p, resetsAt: Date.now() + 2 * 3600_000 },
+          { id: 'five_hour', label: '5H', percent: p, resetsAt: known ? Date.now() + 2 * 3600_000 : null },
           { id: 'seven_day', label: 'WEEKLY', percent: 10, resetsAt: Date.now() + 5 * 86400_000 },
         ],
       })
-    }, percent)
+    }, [percent, knownReset] as const)
   }
   const warn = win.locator('.limit-warn')
   await send(50)
@@ -124,11 +124,20 @@ test('한도 경고: 80% 넘으면 입력창 위에 알리고, 다 쓰면 Enter�
   })
   const sent = (): Promise<string[]> => app.evaluate(() => (globalThis as unknown as { sent: string[] }).sent)
   const input = win.locator('#composer-input')
+  // 초기화 시각을 알면 확인 없이 보낸다 (메인이 대기열에 잡아 두었다가 초기화 뒤 시작)
+  await expect(warn).toContainText('초기화된 뒤 자동으로 시작해요')
+  await input.fill('보내 두기')
+  await input.press('Enter')
+  await expect(input).toHaveValue('')
+  await expect.poll(sent).toEqual(['보내 두기'])
+  // 초기화 시각을 모르면 한 번 더 확인한다
+  await send(100, false)
+  await expect(warn).toContainText('보내면 거절될 수 있어요')
   await input.fill('한도 시험')
   await input.press('Enter')
   await expect(input).toHaveValue('한도 시험')
   await expect(warn).toHaveClass(/armed/)
-  expect(await sent()).toEqual([])
+  expect(await sent()).toEqual(['보내 두기'])
   // 글을 고치면 확인이 풀린다
   await input.press('End')
   await win.keyboard.type('!')
@@ -137,5 +146,5 @@ test('한도 경고: 80% 넘으면 입력창 위에 알리고, 다 쓰면 Enter�
   await expect(warn).toHaveClass(/armed/)
   await input.press('Enter')
   await expect(input).toHaveValue('')
-  await expect.poll(sent).toEqual(['한도 시험!'])
+  await expect.poll(sent).toEqual(['보내 두기', '한도 시험!'])
 })

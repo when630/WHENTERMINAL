@@ -23,6 +23,9 @@ async function run(label: string, cwd: string, keeper: SpareKeeper): Promise<{ o
     const session = new AgentSession({
       cwd,
       mode: 'default',
+      prefs: () => ({ promptSuggestions: false }),
+      away: () => false,
+      budget: () => null,
       takeSpare: () => {
         const h = keeper.take()
         tookSpare = !!h
@@ -55,7 +58,7 @@ const coldDir = mkdtempSync(join(tmpdir(), 'wt-spare-cold-'))
 mkdirSync(join(coldDir, '.claude'))
 writeFileSync(join(coldDir, '.claude', 'settings.json'), JSON.stringify({ model: 'sonnet' }))
 
-const keeper = new SpareKeeper((cb) => baseOptions(cb))
+const keeper = new SpareKeeper((cb) => baseOptions(cb, { promptSuggestions: false }))
 try {
   const warm = await run('warm', warmDir, keeper)
   const cold = await run('fallback', coldDir, keeper)

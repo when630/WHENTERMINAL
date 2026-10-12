@@ -13,6 +13,9 @@ export function limitLevel(w: UsageWindow): LimitLevel {
   return 0
 }
 
+/** 다 썼어도 서버가 허용한다고 알려 왔다 (추가 사용량 등). 이때는 새 작업을 보류하지 않는다 */
+export const limitAllowed = (w: UsageWindow): boolean => w.status === 'allowed' || w.status === 'allowed_warning'
+
 /** 모델 계열 이름 ('Fable 5.1' → 'fable', 'claude-opus-5-5' → 'opus') */
 export const modelFamily = (s: string): string => s.toLowerCase().replace(/^claude-/, '').split(/[\s-]/)[0]
 

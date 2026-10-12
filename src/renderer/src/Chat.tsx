@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { refocusAfterClick, useRefocus } from './focus'
 import { ALWAYS_SCOPE_LABEL, ALWAYS_SCOPE_TIP, ELICITATION_TOOL, MODE_CYCLE, MODE_LABEL, openConversations, REFUSAL_TOOL, STATUS_LABEL, type AgentOption, type AskQuestion, type EffortInfo, type EffortLevel, type GitBranch, type UsageInfo, type SlashCommandInfo, type AgentMode, type PermissionDecision, type PermissionExtra, type PermissionRequest, type Project, type BackgroundTask, type AgentProgress, type RefusalChoice, type SubItem } from '@shared/types'
-import { agentInfo, artifactsOf, describeBackground, emptyConversation, isAgentTool, relPath, runningAgents, STAGES, subActivity, summarizeInput, type ArtifactLink, type ConversationMap, type TaskInfo, type ToolItem, type TranscriptItem } from './state'
+import { agentInfo, artifactsOf, describeBackground, emptyConversation, foldSummaries, isAgentTool, relPath, runningAgents, STAGES, subActivity, summarizeInput, type ArtifactLink, type ConversationMap, type TaskInfo, type ToolItem, type TranscriptItem } from './state'
+import type { GoalInfo, MemoryRecall } from '@shared/types'
 import { PANEL_TITLE, ToolPanelView, type ToolPanel } from './panels'
 import { usePromptHistory } from './drafts'
 import { HOME_ROW } from './keys'
@@ -15,7 +16,7 @@ import { AttachButton, useAttach } from './attach'
 import { WorktreePanel } from './WorktreePanel'
 import { EffortPicker, ModelPicker } from './ModelPicker'
 import { useDraft } from './drafts'
-import { formatReset, worstLimit } from '@shared/usage'
+import { formatReset, limitAllowed, worstLimit } from '@shared/usage'
 import { FileMenu, mentionText, rankCommands, SlashMenu, useSlashCommands, type Mention } from './SlashMenu'
 
 interface Props {
@@ -43,6 +44,10 @@ interface Props {
   jump?: { query: string; ordinal: number; nonce: number } | null
   /** 열자마자 펼칠 명령 화면 (홈 보고서의 TOOLS에서 왔을 때) */
   openPanel?: { panel: ToolPanel; nonce: number } | null
+  /** 자리 비움 모드: 확인 요청을 묻지 않고 거절한다 (입력창 위에 안내) */
+  away: boolean
+  /** 다음 지시 예측을 입력창에 흐리게 보일지 (설정) */
+  suggestions: boolean
 }
 
 /** App의 전역 키 처리가 대화창을 다루는 손잡이: 오른쪽 패널 세부 내용(panelNext·panelPrev·panelBack·stopTask)과 이름 바꾸기 */
@@ -64,7 +69,7 @@ export interface PanelControl {
   rewind: () => void
 }
 
-export function Chat({ project, projects, conversationId, convs, mode, usage, clearArmed, closeArmedId, projectArmed, onClearRequest, onCloseRequest, onClose, onSelectConversation, onRespond, panelRef, jump, openPanel }: Props): React.JSX.Element {
+export function Chat({ project, projects, conversationId, convs, mode, usage, clearArmed, closeArmedId, projectArmed, onClearRequest, onCloseRequest, onClose, onSelectConversation, onRespond, panelRef, jump, openPanel, away, suggestions }: Props): React.JSX.Element {
   const state = convs[conversationId] ?? emptyConversation()
   // 쓰던 글은 대화마다 남는다 (탭을 옮기거나 앱을 껐다 켜도)
   const [draft, setDraft] = useDraft(conversationId)
@@ -157,8 +162,11 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
     stick.current = false
     // 맨 아래로 따라가는 스크롤이 끝난 뒤에 옮긴다
     setTimeout(() => {
-      const el = scrollRef.current?.children[idx] as HTMLElement | undefined
+      // 요약 묶음 안으로 접힌 도구일 수 있어 순번 대신 data-idx로 찾고, 묶음을 펼친다
+      const el = scrollRef.current?.querySelector<HTMLElement>(`[data-idx="${idx}"]`)
       if (!el) return
+      const group = el.parentElement?.closest<HTMLDetailsElement>('details.tgroup')
+      if (group) group.open = true
       el.scrollIntoView({ block: 'center' })
       el.classList.add('hit')
       setTimeout(() => el.classList.remove('hit'), 2400)
@@ -199,10 +207,17 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
   // 브랜치: 대화를 열 때·작업이 끝날 때·창으로 돌아올 때·30초마다
   const branch = useBranch(project.id, conversationId, state.status)
 
-  // 구독 한도: 이 모델로 보낼 때 걸리는 창 중 가장 위험한 것. 다 썼으면 Enter를 한 번 더 눌러야 보낸다
+  // 구독 한도: 이 모델로 보낼 때 걸리는 창 중 가장 위험한 것. 다 썼고 초기화 시각을 알면 보낸 메시지는 그때까지 기다렸다가 자동으로 시작한다.
+  // 초기화 시각을 모르면 Enter를 한 번 더 눌러야 보낸다
   const limit = worstLimit(usage, model?.id ?? model?.label)
+  const limitHolds = limit?.level === 100 && !!limit.window.resetsAt && !limitAllowed(limit.window)
   const [limitArmed, setLimitArmed] = useState(false)
   useEffect(() => setLimitArmed(false), [draft, conversationId])
+  // 다음 지시 예측: 입력창이 비어 있고 쉬고 있을 때만 흐리게. Tab으로 받는다
+  const idle = !(state.status === 'running' || state.status === 'waiting_approval' || state.status === 'queued')
+  const ghost = suggestions && !draft && idle && state.suggestion ? state.suggestion : null
+  // AWAY에서 거절한 호출 (끝난 작업의 보고서에 모인다). 돌아와서 한 번에 승인하고 이어 간다
+  const denied = idle && state.task?.finishedAt ? (state.task.denied ?? []) : []
   const cycleMode = (): void => {
     void window.api.setMode(project.id, conversationId, MODE_CYCLE[(MODE_CYCLE.indexOf(mode) + 1) % MODE_CYCLE.length])
   }
@@ -389,6 +404,8 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
     setTimeout(() => {
       const el = scrollRef.current?.querySelector<HTMLDetailsElement>(`[data-tool-id="${toolUseId}"]`)
       if (!el) return
+      const group = el.parentElement?.closest<HTMLDetailsElement>('details.tgroup')
+      if (group) group.open = true
       el.open = true
       el.scrollIntoView({ block: 'center' })
       el.classList.add('hit')
@@ -444,13 +461,27 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
     const text = raw.trim()
     if (!text) return
     // 앱이 직접 처리하는 명령: /compact [요약 지시], /clear, /close, /rename [이름], 그리고 명령 화면들
-    const cmd = /^\/(compact|clear|reset|new|close|rename|rewind|resume|fork|export|mcp|agents|permissions|hooks|add-dir|memory|status|login)\b\s*([\s\S]*)$/.exec(text)
+    const cmd = /^\/(compact|clear|reset|new|close|rename|rewind|resume|fork|export|mcp|agents|permissions|hooks|add-dir|memory|status|login|goal|tag)\b\s*([\s\S]*)$/.exec(text)
     if (cmd) {
       setDraft('')
       const arg = cmd[2].trim()
       switch (cmd[1]) {
         case 'compact': return compact(cmd[2])
         case 'close': return onClose(conversationId)
+        case 'goal':
+          // CLI의 /goal: 조건을 걸면 턴이 끝날 때마다 따로 확인하고, 못 미치면 계속한다. clear로 푼다
+          if (!arg) return setNotice({ ok: false, text: '목표 조건을 적어 주세요 (예: /goal typecheck가 통과할 때까지) · /goal clear로 풀어요' })
+          history.push(text)
+          void window.api.command(project.id, conversationId, `/goal ${arg}`)
+          return
+        case 'tag': {
+          const tag = !arg || arg === 'clear' ? null : arg.replace(/^#/, '')
+          void window.api.setTag(project.id, conversationId, tag).then(
+            () => setNotice({ ok: true, text: tag ? `태그 #${tag} · 홈에서 태그로 거를 수 있어요` : '태그를 뗐어요' }),
+            (err) => setNotice({ ok: false, text: err instanceof Error ? err.message : String(err) }),
+          )
+          return
+        }
         case 'rename':
           // 이름을 같이 적으면 바로 바꾸고, 없으면 탭의 이름 칸을 연다
           if (arg) void window.api.renameConversation(project.id, conversationId, arg)
@@ -477,7 +508,8 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
         default: return void window.api.clear(project.id, conversationId)
       }
     }
-    if (limit?.level === 100 && !limitArmed) {
+    // 한도를 다 썼는데 언제 풀리는지 모르면 한 번 더 확인. 알면 보내 두면 그때 자동으로 시작한다
+    if (limit?.level === 100 && !limitHolds && !limitArmed) {
       setLimitArmed(true)
       return
     }
@@ -517,6 +549,14 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
 
   const projectIndex = projects.findIndex((p) => p.id === project.id)
   let toolCount = 0
+  // 도구 호출 묶음은 요약 한 줄 아래로 접어 그린다
+  const nodes = useMemo(() => foldSummaries(state.items), [state.items])
+  const [approving, setApproving] = useState(false)
+  const approveDenied = (): void => {
+    if (!denied.length || approving) return
+    setApproving(true)
+    void window.api.approveDenied(project.id, conversationId, denied).finally(() => setApproving(false))
+  }
 
   return (
     <div className="screen" onClick={(e) => refocusAfterClick(e, () => (document.querySelector('.permission') ? null : inputRef.current))}>
@@ -563,6 +603,8 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
           <button type="button" className={`tb-btn ${clearArmed ? 'armed' : ''}`} onClick={onClearRequest} title="컨텍스트를 비우고 새 세션으로 시작해요 (/clear)">
             {clearArmed ? 'AGAIN' : 'CLEAR'}
           </button>
+          {state.goal && <GoalBadge goal={state.goal} />}
+          {conv?.tag && <span className="badge tag" title="세션 태그 · /tag로 바꾸거나 /tag clear로 떼요">#{conv.tag}</span>}
           <span className={`badge badge-${state.status}`}>{STATUS_LABEL[state.status]}</span>
         </div>
         <div className="tb-row2">
@@ -702,22 +744,31 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
               <span className="mono">{project.path}</span>
             </div>
           )}
-          {state.items.map((item, idx) => (
-            <Item
-              key={`${conversationId}:${idx}`}
-              item={item}
-              n={item.type === 'tool' ? ++toolCount : 0}
-              root={root}
-              enter={idx >= seen.current.count}
-              subs={state.subs}
-              progress={state.progress}
-              onRun={(cmd) => void runInTerminal(project.id, conversationId, cmd)}
-              onQueueEdit={(id) => void editQueued(id)}
-              onQueueCancel={(id) => void cancelQueued(id)}
-              onRewind={!busy && state.status !== 'queued' ? (uuid) => openTool({ kind: 'rewind', uuid }) : undefined}
-              onExpand={(toolUseId) => window.api.toolResult(project.id, conversationId, toolUseId)}
-            />
-          ))}
+          {nodes.map((node) => {
+            const render = (item: TranscriptItem, idx: number): React.JSX.Element => (
+              <Item
+                key={`${conversationId}:${idx}`}
+                idx={idx}
+                item={item}
+                n={item.type === 'tool' ? ++toolCount : 0}
+                root={root}
+                enter={idx >= seen.current.count}
+                subs={state.subs}
+                progress={state.progress}
+                onRun={(cmd) => void runInTerminal(project.id, conversationId, cmd)}
+                onQueueEdit={(id) => void editQueued(id)}
+                onQueueCancel={(id) => void cancelQueued(id)}
+                onRewind={!busy && state.status !== 'queued' ? (uuid) => openTool({ kind: 'rewind', uuid }) : undefined}
+                onExpand={(toolUseId) => window.api.toolResult(project.id, conversationId, toolUseId)}
+              />
+            )
+            if (node.kind === 'item') return render(node.item, node.idx)
+            return (
+              <ToolGroup key={`${conversationId}:g${node.idx}`} summary={node.summary.summary} tools={node.tools.map((t) => t.item)} enter={node.idx >= seen.current.count}>
+                {node.tools.map((t) => render(t.item, t.idx))}
+              </ToolGroup>
+            )
+          })}
           {working.item && <Working status={state.status} activity={state.task?.activity} startedAt={state.task?.startedAt} leaving={working.leaving} />}
           {compacting.item && <div className={`msg compacting ${compacting.leaving ? 'leaving' : ''}`}>COMPACTING · 지금까지의 대화를 요약하고 있어요</div>}
           {permission.item && (
@@ -780,6 +831,7 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
           <SlashMenu items={menuItems} index={menuIndex} loading={slash.loading} leaving={slashShown.leaving} onHover={setMenuIndex} onPick={(c) => pickCommand(c, true)} />
         )}
         {fileShown.item && <FileMenu items={fileItems} index={menuIndex} loading={!files || files.q !== fileQuery} leaving={fileShown.leaving} onHover={setMenuIndex} onPick={pickFile} />}
+        <div className="composer-bars">
         {notice && (
           <div className={`limit-warn ${notice.ok ? '' : 'full'}`} role="status">
             <b>{notice.ok ? 'OK' : 'ERROR'}</b>
@@ -793,9 +845,33 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
               {limitShown.item.window.label} {limitShown.item.level === 100 ? '한도를 다 썼어요' : `${limitShown.item.window.percent ?? limitShown.item.level}%`}
               {limitShown.item.window.resetsAt ? ` · ${formatReset(limitShown.item.window.resetsAt)}` : ''}
             </span>
-            {limitShown.item.level === 100 && <em>{limitArmed ? '지금 보내면 거절될 수 있어요 · 한 번 더 보내면 그대로 보내요' : '보내면 거절될 수 있어요'}</em>}
+            {limitShown.item.level === 100 && (
+              <em>
+                {limitHolds
+                  ? '보내 두면 초기화된 뒤 자동으로 시작해요'
+                  : limitArmed ? '지금 보내면 거절될 수 있어요 · 한 번 더 보내면 그대로 보내요' : '보내면 거절될 수 있어요'}
+              </em>
+            )}
           </div>
         )}
+        {denied.length > 0 && (
+          <div className="limit-warn denied" role="status">
+            <b>AWAY</b>
+            <span title={denied.map((d) => d.title ?? d.toolName).join('\n')}>
+              자리를 비운 사이 거절한 호출 {denied.length}개 · {denied.slice(0, 2).map((d) => d.title ?? d.toolName).join(' · ')}{denied.length > 2 ? ' …' : ''}
+            </span>
+            <button type="button" className="lw-btn" disabled={approving} onClick={approveDenied} title="거절했던 호출을 모두 승인하고 멈춘 곳부터 이어서 하라고 보내요">
+              APPROVE ALL · CONTINUE
+            </button>
+          </div>
+        )}
+        {away && (
+          <div className="limit-warn away" role="status">
+            <b>AWAY</b>
+            <span>확인 요청은 묻지 않고 거절해요. 거절한 호출은 보고서에 모여요</span>
+          </div>
+        )}
+        </div>
         <span className="composer-prompt" aria-hidden="true">&gt;</span>
         <AttachButton onClick={attach.pick} />
         <div className="composer-body">
@@ -809,7 +885,9 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
             aria-autocomplete="list"
             aria-expanded={menuOpen}
             rows={1}
-            placeholder={busy ? '작업 중이에요 · 지금 입력하면 다음 차례로 보내요' : '메시지 입력 · / 명령 · @ 파일'}
+            className={ghost ? 'ghost' : undefined}
+            placeholder={ghost ?? (busy ? '작업 중이에요 · 지금 입력하면 다음 차례로 보내요' : '메시지 입력 · / 명령 · @ 파일')}
+            title={ghost ? '예측한 다음 지시예요' : undefined}
             onChange={(e) => {
               // 아직 세션이 없는 대화에 글을 치기 시작하면 CLI를 미리 띄워 첫 응답을 앞당긴다
               if (!draft && e.target.value && !conv?.sessionId && state.items.length === 0) void window.api.prewarm()
@@ -821,6 +899,13 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
             onKeyDown={(e) => {
               if (menuKey(e) || historyKey(e)) {
                 e.preventDefault()
+                return
+              }
+              // 흐리게 보이는 다음 지시 예측을 받는다
+              if (e.key === 'Tab' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey && ghost) {
+                e.preventDefault()
+                setDraft(ghost)
+                setCaret(ghost.length)
                 return
               }
               if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -1080,6 +1165,8 @@ export function Working({ status, activity, startedAt, leaving }: { status: stri
 
 interface ItemProps {
   item: TranscriptItem
+  /** state.items에서의 자리. 검색 점프가 data-idx로 찾는다 */
+  idx?: number
   n: number
   root: string
   enter: boolean
@@ -1095,12 +1182,12 @@ interface ItemProps {
   onExpand?: (toolUseId: string) => Promise<string | null>
 }
 
-export function Item({ item, n, root, enter, subs, progress, onRun, onQueueEdit, onQueueCancel, onRewind, onExpand }: ItemProps): React.JSX.Element {
+export function Item({ item, idx: di, n, root, enter, subs, progress, onRun, onQueueEdit, onQueueCancel, onRewind, onExpand }: ItemProps): React.JSX.Element {
   const e = enter ? ' enter' : ''
   switch (item.type) {
     case 'user':
       return (
-        <div className={`msg user ${item.pending ? 'pending' : ''}${e}`}>
+        <div className={`msg user ${item.pending ? 'pending' : ''}${e}`} data-idx={di}>
           {item.text}
           {item.pending && item.queuedId && (
             <span className="msg-acts">
@@ -1118,24 +1205,29 @@ export function Item({ item, n, root, enter, subs, progress, onRun, onQueueEdit,
       )
     case 'assistant':
       return (
-        <div className={`msg assistant ${item.streaming ? 'streaming' : ''}${e}`}>
+        <div className={`msg assistant ${item.streaming ? 'streaming' : ''}${e}`} data-idx={di}>
           <Markdown text={item.text} />
         </div>
       )
     case 'thinking':
-      return <Thinking text={item.text} streaming={item.streaming} enter={enter} />
+      return <Thinking text={item.text} streaming={item.streaming} enter={enter} idx={di} />
     case 'notice':
       return item.mono ? (
-        <pre className={`msg notice output ${item.tone}${e}`}>{item.text}</pre>
+        <pre className={`msg notice output ${item.tone}${e}`} data-idx={di}>{item.text}</pre>
       ) : (
-        <div className={`msg notice ${item.tone}${e}`}>{item.text}</div>
+        <div className={`msg notice ${item.tone}${e}`} data-idx={di}>{item.text}</div>
       )
     case 'divider':
-      return <div className={`divider${e}`} role="separator">■ {item.text}</div>
+      return <div className={`divider${e}`} role="separator" data-idx={di}>■ {item.text}</div>
+    case 'summary':
+      // 묶을 도구가 화면에 없을 때만 따로 그린다 (질문 창 등): 한 줄로
+      return <div className={`tsum${e}`} data-idx={di}><span className="tsum-k">TOOLS</span>{item.summary}</div>
+    case 'memory':
+      return <MemoryItem recall={item.recall} enter={enter} idx={di} />
     case 'hook': {
       const st = item.running ? 'RUNNING' : item.outcome === 'error' ? `ERROR${item.exitCode ? ` ${item.exitCode}` : ''}` : item.outcome === 'cancelled' ? 'CANCELLED' : 'OK'
       return (
-        <details className={`hook ${item.outcome === 'error' ? 'error' : ''}${e}`}>
+        <details className={`hook ${item.outcome === 'error' ? 'error' : ''}${e}`} data-idx={di}>
           <summary>
             <span className="hook-k">HOOK</span>
             <span className="hook-ev">{item.event}</span>
@@ -1152,7 +1244,7 @@ export function Item({ item, n, root, enter, subs, progress, onRun, onQueueEdit,
       const sub = isAgentTool(item.name) ? subs?.[item.toolUseId] : undefined
       const subTools = progress?.[item.toolUseId]?.tools ?? sub?.filter((i) => i.type === 'tool').length ?? 0
       return (
-        <details className={`tool ${item.isError ? 'error' : ''}${e}`} data-tool-id={item.toolUseId}>
+        <details className={`tool ${item.isError ? 'error' : ''}${e}`} data-tool-id={item.toolUseId} data-idx={di}>
           <summary>
             <span className="tool-n">{String(n).padStart(2, '0')}</span>
             <span className="tool-name">{item.name}</span>
@@ -1217,10 +1309,10 @@ function ToolOutput({ toolUseId, text, truncated, onExpand }: { toolUseId: strin
 }
 
 /** 모델의 생각 (요약본). 접힌 채로 첫 줄만, 생각하는 동안은 맥동 */
-function Thinking({ text, streaming, enter }: { text: string; streaming: boolean; enter: boolean }): React.JSX.Element {
+function Thinking({ text, streaming, enter, idx }: { text: string; streaming: boolean; enter: boolean; idx?: number }): React.JSX.Element {
   const first = text.trim().split('\n').find(Boolean) ?? ''
   return (
-    <details className={`thinking ${streaming ? 'streaming' : ''}${enter ? ' enter' : ''}`}>
+    <details className={`thinking ${streaming ? 'streaming' : ''}${enter ? ' enter' : ''}`} data-idx={idx}>
       <summary>
         <span className="thinking-k">{streaming ? 'THINKING' : 'THOUGHT'}</span>
         <span className="thinking-first">{first}</span>
@@ -1229,6 +1321,60 @@ function Thinking({ text, streaming, enter }: { text: string; streaming: boolean
         <Markdown text={text} />
       </div>
     </details>
+  )
+}
+
+/** 도구 호출 묶음: CLI가 만든 한 줄 요약 아래로 접는다. 도는 중이거나 오류가 있으면 펼쳐 둔다 */
+function ToolGroup({ summary, tools, enter, children }: { summary: string; tools: ToolItem[]; enter: boolean; children: React.ReactNode }): React.JSX.Element {
+  const running = tools.some((t) => t.result === undefined)
+  const errors = tools.filter((t) => t.isError).length
+  const [open, setOpen] = useState(running || errors > 0)
+  return (
+    <details className={`tgroup ${errors ? 'error' : ''}${enter ? ' enter' : ''}`} open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
+      <summary>
+        <span className="tgroup-n">{tools.length}</span>
+        <span className="tgroup-k">TOOLS</span>
+        <span className="tgroup-s" title={summary}>{summary}</span>
+        <span className={`tool-st ${running ? 'run' : ''}`}>{running ? 'RUNNING' : errors ? `ERROR ${errors}` : 'DONE'}</span>
+      </summary>
+      <div className="tgroup-body">{children}</div>
+    </details>
+  )
+}
+
+/** 이번 턴에 들어간 기억 (memory_recall). 접힌 채로 파일 이름만, 펼치면 경로·내용 */
+function MemoryItem({ recall, enter, idx }: { recall: MemoryRecall; enter: boolean; idx?: number }): React.JSX.Element {
+  const name = (p: string): string => (p.startsWith('<synthesis:') ? 'SYNTHESIS' : (p.split(/[\\/]/).pop() ?? p))
+  return (
+    <details className={`memory${enter ? ' enter' : ''}`} data-idx={idx}>
+      <summary>
+        <span className="memory-k">MEMORY</span>
+        <span className="memory-n">{recall.memories.length}</span>
+        <span className="memory-list">{recall.memories.map((m) => name(m.path)).join(' · ')}</span>
+      </summary>
+      <div className="memory-body">
+        {recall.memories.map((m, i) => (
+          <div key={`${m.path}:${i}`} className="memory-row">
+            <h5>
+              {m.scope.toUpperCase()} · <span className="mono">{m.path}</span>
+              {!m.content && !m.path.startsWith('<') && !/^https?:/.test(m.path) && (
+                <button type="button" className="tool-more" onClick={() => void window.api.openPath(m.path)} title="편집기로 열어요">OPEN</button>
+              )}
+            </h5>
+            {m.content && <pre>{m.content}</pre>}
+          </div>
+        ))}
+      </div>
+    </details>
+  )
+}
+
+/** /goal 목표: 조건을 못 미쳐 다시 돈 횟수. 툴팁에 조건과 마지막 이유 */
+function GoalBadge({ goal }: { goal: GoalInfo }): React.JSX.Element {
+  return (
+    <span className="badge goal" title={`목표 · ${goal.condition}${goal.lastReason ? `\n아직 못 미친 이유 · ${goal.lastReason}` : ''}\n/goal clear로 풀어요`}>
+      GOAL{goal.iterations > 0 ? ` · ${goal.iterations}` : ''}
+    </span>
   )
 }
 

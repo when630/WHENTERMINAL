@@ -1,4 +1,4 @@
-import { openConversations, type StoredTask, type AgentEvent, type AgentMode, type AgentProgress, type AgentStatus, type BackgroundTask, type HistoryItem, type HookOutcome, type SubItem, type ContextInfo, type PermissionRequest, type Project, type TaskInfo } from '@shared/types'
+import { openConversations, type StoredTask, type AgentEvent, type AgentMode, type AgentProgress, type AgentStatus, type BackgroundTask, type GoalInfo, type HistoryItem, type HookOutcome, type MemoryRecall, type SubItem, type ContextInfo, type PermissionRequest, type Project, type TaskInfo } from '@shared/types'
 export type { TaskInfo }
 import { STATUS_PRIORITY } from '@shared/types'
 
@@ -14,6 +14,10 @@ export type TranscriptItem =
   | { type: 'divider'; text: string; at: number }
   /** 설정의 훅이 도는 것 (살아 있는 세션에서만. 기록 파일에는 남지 않는다) */
   | HookItem
+  /** 도구 호출 묶음의 한 줄 요약. 화면에서는 ids의 도구 항목을 이 줄 아래로 접는다 (foldSummaries) */
+  | { type: 'summary'; summary: string; ids: string[]; at: number }
+  /** 이번 턴에 들어간 기억 (접힌 채로) */
+  | { type: 'memory'; recall: MemoryRecall; at: number }
 
 export type HookItem = { type: 'hook'; hookId: string; name: string; event: string; running: boolean; output?: string; outcome?: HookOutcome; exitCode?: number; at: number }
 
@@ -41,6 +45,10 @@ export interface ConversationState {
   subs?: Record<string, SubItem[]>
   /** 작업(하위 에이전트 등)의 진행 수치. 키는 작업을 띄운 도구 호출 ID */
   progress?: Record<string, AgentProgress>
+  /** 턴이 끝난 뒤 예측한 다음 지시. 입력창에 흐리게 보이고 Tab으로 받는다. 다음 메시지를 보내면 지운다 */
+  suggestion?: string
+  /** /goal로 건 목표. null이면 풀렸다 */
+  goal?: GoalInfo | null
 }
 
 export type ConversationMap = Record<string, ConversationState>
@@ -119,11 +127,13 @@ export function applyEvent(prev: ConversationState | undefined, event: AgentEven
       break
     case 'user':
       finalizeStreaming()
+      s.suggestion = undefined
       s.items.push({ type: 'user', text: event.text, at: now, uuid: event.uuid, queuedId: event.queuedId, pending: event.next || undefined })
       // 실행 중에 보낸 메시지는 지금 작업을 덮지 않는다. 차례가 오면 task_start
       if (!event.next) startTask(event.text)
       break
     case 'task_start': {
+      s.suggestion = undefined
       startTask(event.text)
       // 기다리던 메시지가 이제 보내졌다: 되감기 기준점을 받고 대기 표시를 뗀다
       const idx = event.queuedId ? s.items.findIndex((i) => i.type === 'user' && i.queuedId === event.queuedId) : -1
@@ -207,6 +217,8 @@ export function applyEvent(prev: ConversationState | undefined, event: AgentEven
       s.permissions = []
       s.context = undefined
       s.compacting = false
+      s.suggestion = undefined
+      s.goal = undefined
       if (s.status === 'running' || s.status === 'waiting_approval') s.status = 'stopped'
       break
     case 'tool_use': {
@@ -252,7 +264,45 @@ export function applyEvent(prev: ConversationState | undefined, event: AgentEven
       s.context = event.context
       break
     case 'queue':
-      task({ activity: `QUEUED #${event.position}` })
+      task({ activity: event.until ? `LIMIT · ${hhmm(event.until)} 재개 · #${event.position}` : `QUEUED #${event.position}` })
+      break
+    case 'suggestion':
+      s.suggestion = event.text ?? undefined
+      break
+    case 'goal': {
+      const prev = s.goal
+      s.goal = event.goal
+      // 조건을 못 미쳐 다시 도는 것과 목표가 풀린 것은 구분선으로 남긴다
+      if (event.goal && prev && event.goal.iterations > prev.iterations) {
+        finalizeStreaming()
+        s.items.push({ type: 'divider', text: `GOAL NOT MET · ${event.goal.iterations}${event.goal.lastReason ? ` · ${event.goal.lastReason}` : ''}`, at: now })
+      } else if (event.goal && (!prev || prev.condition !== event.goal.condition)) {
+        finalizeStreaming()
+        s.items.push({ type: 'divider', text: `GOAL · ${event.goal.condition}`, at: now })
+      } else if (!event.goal && prev) {
+        finalizeStreaming()
+        s.items.push({ type: 'divider', text: `GOAL MET · ${prev.condition}`, at: now })
+      }
+      break
+    }
+    case 'tool_summary':
+      finalizeStreaming()
+      s.items.push({ type: 'summary', summary: event.summary, ids: event.toolUseIds, at: now })
+      break
+    case 'memory':
+      finalizeStreaming()
+      s.items.push({ type: 'memory', recall: event.recall, at: now })
+      break
+    case 'away_denied': {
+      finalizeStreaming()
+      const label = event.call.title ?? `${event.call.toolName} ${summarizeInput(event.call.input)}`.trim()
+      s.items.push({ type: 'notice', text: `AWAY · DENIED · ${label}`, tone: 'warn', at: now })
+      if (s.task) task({ denied: [...(s.task.denied ?? []), event.call] })
+      break
+    }
+    case 'budget':
+      finalizeStreaming()
+      s.items.push({ type: 'divider', text: `BUDGET · ${Math.round(event.tokens / 1000)}K TOKENS · 구독 한도가 높아 이 세션은 예산 안에서 마무리해요`, at: now })
       break
     case 'history':
       // 이미 이번 실행에서 대화가 시작됐으면 덮지 않는다
@@ -313,9 +363,56 @@ export function applyEvent(prev: ConversationState | undefined, event: AgentEven
       s.status = 'idle'
       s.context = undefined
       s.compacting = false
+      s.suggestion = undefined
+      s.goal = undefined
       break
   }
   return s
+}
+
+const hhmm = (ms: number): string => {
+  const d = new Date(ms)
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
+/** 화면에 그릴 단위: 항목 하나, 또는 요약 한 줄 아래로 접은 도구 묶음. idx는 items에서의 자리 (키·등장 애니메이션용) */
+export type RenderNode =
+  | { kind: 'item'; item: TranscriptItem; idx: number }
+  | { kind: 'group'; summary: Extract<TranscriptItem, { type: 'summary' }>; idx: number; tools: { item: ToolItem; idx: number }[] }
+
+/**
+ * 도구 호출 묶음 요약(summary)이 가리키는 도구 항목을 그 요약 아래로 접는다. 상태는 평평하게 두고 그릴 때만 묶는다
+ * (runningAgents·artifactsOf 같은 계산이 그대로 돌게). 요약이 끝내 안 오면 그대로 그린다
+ */
+export function foldSummaries(items: TranscriptItem[]): RenderNode[] {
+  const claimed = new Map<string, number>()
+  items.forEach((it, i) => {
+    if (it.type === 'summary') for (const id of it.ids) claimed.set(id, i)
+  })
+  if (claimed.size === 0) return items.map((item, idx) => ({ kind: 'item', item, idx }))
+  const out: RenderNode[] = []
+  const buffered = new Map<number, { item: ToolItem; idx: number }[]>()
+  items.forEach((item, idx) => {
+    if (item.type === 'tool') {
+      const at = claimed.get(item.toolUseId)
+      if (at !== undefined && at > idx) {
+        const list = buffered.get(at) ?? []
+        list.push({ item, idx })
+        buffered.set(at, list)
+        return
+      }
+    }
+    if (item.type === 'summary') {
+      const tools = buffered.get(idx) ?? []
+      buffered.delete(idx)
+      if (tools.length) out.push({ kind: 'group', summary: item, idx, tools })
+      return
+    }
+    out.push({ kind: 'item', item, idx })
+  })
+  // 요약이 없는 채 남은 것 (없어야 하지만) 뒤에 그대로
+  for (const list of buffered.values()) for (const t of list) out.push({ kind: 'item', item: t.item, idx: t.idx })
+  return out
 }
 
 /** 세션 기록 파일에서 되살린 항목을 화면 항목으로 (등장 애니메이션 없이 그리도록 at은 0) */
@@ -451,6 +548,8 @@ export interface TaskRef {
   projectIndex: number
   conversationId: string
   title: string
+  /** 세션 태그 (/tag) */
+  tag?: string
   state: ConversationState
   task: TaskInfo
 }
@@ -464,7 +563,7 @@ export function collectTasks(projects: Project[], convs: ConversationMap): { run
       const state = convs[c.id]
       const task = state?.task
       if (!state || !task) continue
-      const ref = { project, projectIndex, conversationId: c.id, title: c.title, state, task }
+      const ref = { project, projectIndex, conversationId: c.id, title: c.title, tag: c.tag, state, task }
       if (isActive(state.status)) running.push(ref)
       else if (task.finishedAt && !task.archived) reports.push(ref)
     }

@@ -37,6 +37,13 @@ const NOTIFY: { id: keyof Settings['notify']; label: string; note: string }[] = 
   { id: 'whenFocused', label: 'Even when focused', note: '끄면 다른 창에 있을 때만 알려요' },
 ]
 
+/** RUN 묶음의 켜고 끄는 항목 */
+const TOGGLES: { id: 'away' | 'promptSuggestions' | 'budgetWhenHot'; label: string; note: string }[] = [
+  { id: 'away', label: 'Away mode', note: '확인 요청을 묻지 않고 거절해 작업이 멈추지 않게 해요. 거절한 호출은 보고서에 모이고, 돌아와서 한 번에 승인하고 이어 갈 수 있어요. 사이드바 AWAY와 같아요' },
+  { id: 'promptSuggestions', label: 'Suggest next prompt', note: '답이 끝나면 다음에 보낼 만한 지시를 입력창에 흐리게 보여 줘요. Tab으로 받아요. 프롬프트 캐시를 타서 사용량이 거의 늘지 않고, 한도에 가까우면 CLI가 알아서 꺼요' },
+  { id: 'budgetWhenHot', label: 'Token budget near limit', note: '구독 한도가 80%를 넘으면 새로 시작하는 세션에 토큰 예산을 걸어 모델이 그 안에서 마무리하게 해요. 실험적 기능이에요' },
+]
+
 /** 새 키를 받아도 되는지. 안 되면 이유 */
 function validate(a: ActionDef, binding: string): string | null {
   const hasMod = /(^|\+)(Ctrl|Alt|Meta)\+/.test(binding)
@@ -219,6 +226,29 @@ export function SettingsScreen({ settings, activeHotkey, update, onClose, onSave
             <span className="krow-side" />
           </div>
         </section>
+
+        {TOGGLES.map((t) => (
+          <section key={t.id} className="set-sec set-sec-cont" aria-label={t.label}>
+            <div className="krow">
+              <span className="krow-label">
+                {t.label}
+                <span className="krow-note">{t.note}</span>
+              </span>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={settings[t.id]}
+                aria-label={t.label}
+                className={`switch ${settings[t.id] ? 'on' : ''}`}
+                onClick={() => void save({ ...settings, [t.id]: !settings[t.id] })}
+              >
+                <i />
+                <span>{settings[t.id] ? 'ON' : 'OFF'}</span>
+              </button>
+              <span className="krow-side" />
+            </div>
+          </section>
+        ))}
 
         <section className="set-sec set-sec-cont" aria-label="터미널 셸">
           <div className="krow">

@@ -28,6 +28,9 @@ interface Props {
   /** 닫기 확인을 기다리는 프로젝트 (× 또는 단축키 한 번) */
   armedProjectId: string | null
   onRemoveProjectRequest: (projectId: string) => void
+  /** 자리 비움(AWAY) 모드 */
+  away: boolean
+  onToggleAway: () => void
 }
 
 export function Sidebar(props: Props): React.JSX.Element {
@@ -114,6 +117,18 @@ export function Sidebar(props: Props): React.JSX.Element {
       <span className="side-spacer" />
 
       {props.update && <UpdateRow update={props.update} />}
+
+      <button
+        type="button"
+        role="switch"
+        aria-checked={props.away}
+        className={`nav nav-away ${props.away ? 'on' : ''}`}
+        onClick={props.onToggleAway}
+        title={props.away ? '확인 요청을 묻지 않고 거절하는 중이에요. 거절한 호출은 보고서에 모여요' : '자리를 비울 때 켜요. 확인 요청 때문에 작업이 멈추지 않아요'}
+      >
+        <span className="nav-name">AWAY</span>
+        <span className="nav-away-side">{props.away ? 'ON' : 'OFF'}</span>
+      </button>
 
       <button type="button" className={`nav nav-help ${props.helpOpen ? 'on' : ''}`} onClick={props.onHelp} title="모든 단축키를 모아 봐요">
         <span className="nav-name">HELP</span>

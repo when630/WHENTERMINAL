@@ -14,6 +14,9 @@ const done = new Promise<void>((resolve, reject) => {
   const session = new AgentSession({
     cwd,
     mode: 'default',
+    prefs: () => ({ promptSuggestions: false }),
+    away: () => false,
+    budget: () => null,
     emit: (e) => {
       events.push(e)
       if (e.kind === 'permission_request') {

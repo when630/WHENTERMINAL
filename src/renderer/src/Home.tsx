@@ -38,6 +38,12 @@ interface Props {
   onNewTaskFor: (projectIndex: number) => void
   onRespond: (projectId: string, conversationId: string, requestId: string, decision: PermissionDecision) => void
   onAddProject: () => void
+  /** 카드에 붙은 세션 태그들과 지금 거르는 태그 (/tag) */
+  tags: string[]
+  tag: string | null
+  onTag: (tag: string | null) => void
+  /** AWAY에서 거절한 호출을 모두 승인하고 이어서 하게 한다 */
+  onApproveDenied: (ref: TaskRef) => void
 }
 
 export function Home(props: Props): React.JSX.Element {
@@ -88,6 +94,18 @@ export function Home(props: Props): React.JSX.Element {
 
         <Dispatch {...props} scrollRef={scrollRef} />
 
+        {props.tags.length > 0 && (
+          <div className="tagbar" role="radiogroup" aria-label="태그로 거르기">
+            <span className="tagbar-k">TAGS</span>
+            <button type="button" role="radio" aria-checked={!props.tag} className={!props.tag ? 'on' : ''} onClick={() => props.onTag(null)}>ALL</button>
+            {props.tags.map((t) => (
+              <button key={t} type="button" role="radio" aria-checked={props.tag === t} className={props.tag === t ? 'on' : ''} onClick={() => props.onTag(props.tag === t ? null : t)}>
+                #{t}
+              </button>
+            ))}
+          </div>
+        )}
+
         <div className="cols">
           <section className="col col-run" aria-label="진행 중">
             <h2 className="col-h">
@@ -124,6 +142,7 @@ export function Home(props: Props): React.JSX.Element {
           onOpenTools={() => props.onOpenTools(openReport)}
           onNewTask={() => props.onNewTaskFor(openReport.projectIndex)}
           onArchive={() => props.onArchive(openReport.conversationId)}
+          onApproveDenied={() => props.onApproveDenied(openReport)}
         />
       )}
     </div>
@@ -242,6 +261,9 @@ function TaskCard({ r, now, selected, onSelect, onOpen, onRespond }: {
               <span>{r.project.name}</span>
               <span className="mono">{mmss(now - task.startedAt)}</span>
               {state.context && <span className="mono">CONTEXT {state.context.percent}%</span>}
+              {state.goal && <span className="band-goal" title={state.goal.condition}>GOAL{state.goal.iterations > 0 ? ` · ${state.goal.iterations}` : ''}</span>}
+              {r.tag && <span className="band-tag">#{r.tag}</span>}
+              {(task.denied?.length ?? 0) > 0 && <span className="band-denied">AWAY DENIED {task.denied!.length}</span>}
             </div>
             <div className="band-title" title={task.instruction}>{task.instruction}</div>
             <div className="act">
@@ -323,6 +345,8 @@ function ReportCard({ r, now, selected, hidden, onOpen }: {
         {task.summary && <span className="rep-sum">{plain(task.summary)}</span>}
         <span className="chips">
           <span className={`chip ${state.status === 'done' ? 'ok' : 'bad'}`}>{RESULT_LABEL[state.status] ?? state.status}</span>
+          {(task.denied?.length ?? 0) > 0 && <span className="chip bad">AWAY DENIED {task.denied!.length}</span>}
+          {r.tag && <span className="chip">#{r.tag}</span>}
           {task.files.length > 0 && <span className="chip">FILES {task.files.length}</span>}
           <span className="chip">TOOLS {task.tools}</span>
           {task.durationMs !== undefined && <span className="chip">{mmss(task.durationMs)}</span>}
@@ -332,9 +356,10 @@ function ReportCard({ r, now, selected, hidden, onOpen }: {
   )
 }
 
-function ReportSheet({ r, wrapRef, scrollRef, closeRef, onClosed, onOpenChat, onOpenTools, onNewTask, onArchive }: {
+function ReportSheet({ r, wrapRef, scrollRef, closeRef, onClosed, onOpenChat, onOpenTools, onNewTask, onArchive, onApproveDenied }: {
   r: TaskRef
   onOpenTools: () => void
+  onApproveDenied: () => void
   wrapRef: RefObject<HTMLDivElement | null>
   scrollRef: RefObject<HTMLDivElement | null>
   closeRef: RefObject<(() => void) | null>
@@ -430,6 +455,18 @@ function ReportSheet({ r, wrapRef, scrollRef, closeRef, onClosed, onOpenChat, on
               <div className="kv"><span>CHAT</span><b>{r.title}</b></div>
             </div>
           </div>
+          {(task.denied?.length ?? 0) > 0 && (
+            <div className="sh-denied st">
+              <h4>AWAY DENIED {task.denied!.length}</h4>
+              <p className="muted">자리를 비운 사이 묻지 않고 거절한 호출이에요. 모두 승인하면 같은 호출은 묻지 않고 실행하고, 멈춘 곳부터 이어서 해요.</p>
+              {task.denied!.map((d, i) => (
+                <div key={i} className="fl mono" title={JSON.stringify(d.input, null, 2)}>
+                  {d.title ?? `${d.toolName} ${summarizeInput(d.input)}`}
+                </div>
+              ))}
+              <button type="button" className="btn-pri" onClick={onApproveDenied}>APPROVE ALL · CONTINUE</button>
+            </div>
+          )}
           <div className="nexts st">
             <button type="button" className="btn-pri" onClick={onOpenChat}>OPEN CHAT</button>
             <button type="button" className="btn" onClick={onNewTask}>FOLLOW-UP</button>
