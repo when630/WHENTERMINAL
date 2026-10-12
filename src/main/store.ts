@@ -1,7 +1,8 @@
 import { app } from 'electron'
+import { mkdirSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { openConversations, type Conversation, type Project, type StoredTask } from '@shared/types'
+import { openConversations, QUICK_DEFAULT_EFFORT, QUICK_DEFAULT_MODEL, QUICK_PROJECT_ID, type Conversation, type Project, type StoredTask } from '@shared/types'
 import { draftTitle } from './agent/title'
 import { readJson, writeJson } from './json-file'
 
@@ -9,17 +10,37 @@ import { readJson, writeJson } from './json-file'
 export class ProjectStore {
   private readonly file = join(app.getPath('userData'), 'projects.json')
   private projects: Project[] = []
+  /** 질문 창의 숨은 프로젝트 (userData/quick.json). list()에는 없고 get()으로만 찾는다 */
+  private readonly quickFile = join(app.getPath('userData'), 'quick.json')
+  private quickProject: Project
 
   constructor() {
     const saved = readJson(this.file)
     if (Array.isArray(saved)) this.projects = saved as Project[]
+    const path = join(app.getPath('userData'), 'quick')
+    mkdirSync(path, { recursive: true })
+    const q = readJson(this.quickFile) as Project | null
+    this.quickProject =
+      q && Array.isArray(q.conversations) && q.conversations.length
+        ? { ...q, id: QUICK_PROJECT_ID, path }
+        : {
+            id: QUICK_PROJECT_ID,
+            name: 'ASK',
+            path,
+            conversations: [{ id: randomUUID(), title: 'ASK', titleSource: 'custom', mode: 'default', modelChoice: QUICK_DEFAULT_MODEL, effort: QUICK_DEFAULT_EFFORT }],
+          }
   }
 
   list(): Project[] {
     return structuredClone(this.projects)
   }
 
+  quick(): Project {
+    return structuredClone(this.quickProject)
+  }
+
   get(projectId: string): Project | undefined {
+    if (projectId === QUICK_PROJECT_ID) return this.quickProject
     return this.projects.find((p) => p.id === projectId)
   }
 
@@ -119,6 +140,7 @@ export class ProjectStore {
 
   private save(): void {
     writeJson(this.file, this.projects)
+    writeJson(this.quickFile, this.quickProject)
   }
 }
 

@@ -72,6 +72,10 @@
   - 패키징: node-pty는 N-API 미리 빌드 바이너리를 쓰므로 `asarUnpack`에 넣고 `npmRebuild: false` (켜 두면 Visual Studio로 소스 빌드를 시도하다 실패한다)
 - 전체화면: `F11` 고정 (메인 `before-input-event`). 키맵 동작은 없다
 - 새 탭: 키맵 `newConversation`(기본 `Ctrl+Shift+T`). 탭 줄의 +와 같다
+- 질문 창(`QuickAsk.tsx`, 키맵 `quickAsk` 기본 `Ctrl+Shift+K`, 앱 안에서만): 프로젝트 없이 묻는 덮개 창. 숨은 프로젝트 `QUICK_PROJECT_ID`(`userData/quick.json`, 폴더 `userData/quick`)의 대화 하나를 이어 쓴다. `store.get()`으로는 찾지만 `list()`에는 없어 사이드바·홈·9개 상한·Alt+A~L·검색에서 빠진다
+  - 도구는 읽기·웹만(`QUICK_DISALLOWED_TOOLS`로 수정·명령·하위 에이전트를 빼고 `QUICK_ALLOWED_TOOLS`는 묻지 않음, 세션 옵션 `tools`). 도구 목록은 띄울 때 고정되므로 미리 띄운 CLI는 쓰지 않는다. 동시 실행 제한에 세지 않는다(manager `quickIds`). 처음 모델·effort는 `haiku`·`low`
+  - 열려 있는 동안 App은 `quickAsk` 말고 키를 받지 않고 창이 처리한다: Esc는 답하는 중이면 멈춤·아니면 닫기, 클리어(`clear`) 두 번, Y/A/N, `/clear`·`/compact`. 대화창의 `Item`·`Working`·`PermissionBox`를 그대로 쓴다. 알림을 누르면(`navigate`의 projectId가 quick) 이 창을 연다
+  - `peek`·`withProbe`는 대화에서 고른 모델(`modelChoice`)로 띄운다. 빠뜨리면 기본 모델로 표시 모델을 덮어쓴다
 - 대화 검색(`SearchOverlay.tsx`, 키맵 `search` 기본 `Ctrl+Shift+F`): 모든 프로젝트의 열린 대화를 세션 기록(`readHistory`, 끝 400개)에서 찾는다(`agent/search.ts`, 기록 파일 `lastModified`가 같으면 캐시). 띄어 쓴 말이 모두 들어간 내 메시지·답변·도구 호출. 고르면 그 대화를 열고 `jump`로 그 메시지까지 스크롤·강조. 무엇을 찾을지와 몇 번째로 맞았는지(`ordinal`)는 메인·렌더러가 `@shared/search`의 같은 함수로 센다
 - macOS도 지원한다 (`isMac` 분기, `src/main/index.ts`)
   - 단축키는 macOS에서도 Ctrl 기반 그대로. Cmd로 바꾸지 말 것. 화면의 Alt 표기만 `⌥`로 바꾼다 (`ALT_LABEL`)

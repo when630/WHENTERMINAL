@@ -1,6 +1,6 @@
 import { forkSession, getSessionMessages, listSessions, resolveSettings, type Query } from '@anthropic-ai/claude-agent-sdk'
 import { randomUUID } from 'node:crypto'
-import { cwdOf, EFFORT_LEVELS, openConversations, type AccountStatus, type AgentOption, type EffortInfo, type EffortLevel, type McpServerInfo, type ModelOption, type AgentEventEnvelope, type PermissionExtra, type RewindResult, type RewindScope, type SessionOption, type SessionStatus, type TaskOutput, AgentMode, PermissionDecision, RateLimitInfo, SlashCommandInfo } from '@shared/types'
+import { cwdOf, EFFORT_LEVELS, openConversations, QUICK_ALLOWED_TOOLS, QUICK_DISALLOWED_TOOLS, QUICK_PROJECT_ID, type AccountStatus, type AgentOption, type EffortInfo, type EffortLevel, type McpServerInfo, type ModelOption, type AgentEventEnvelope, type PermissionExtra, type RewindResult, type RewindScope, type SessionOption, type SessionStatus, type TaskOutput, AgentMode, PermissionDecision, RateLimitInfo, SlashCommandInfo } from '@shared/types'
 import type { ProjectStore } from '../store'
 import { AgentSession, baseOptions, modelLabel, toContext } from './session'
 import { commandsFor, remember, withProbe } from './commands'
@@ -13,6 +13,8 @@ import { removeWorktreeIfClean } from '../worktree'
 /** 대화별 AgentSession을 만들고 보관한다. 동시 실행 제한(OPEN-003)과 대기열도 여기서 */
 export class AgentManager {
   private sessions = new Map<string, AgentSession>()
+  /** 질문 창의 대화 ID (동시 실행 수에 세지 않는다) */
+  private quickIds = new Set<string>()
 
   /** 자리가 나길 기다리는 메시지 (OPEN-003). 들어온 순서대로 시작한다. id는 화면의 queuedId */
   private waiting: { id: string; projectId: string; conversationId: string; text: string }[] = []
@@ -36,8 +38,10 @@ export class AgentManager {
   ) {}
 
   send(projectId: string, conversationId: string, text: string): void {
-    this.draftTitle(projectId, conversationId, text)
     const session = this.getOrCreate(projectId, conversationId)
+    // 질문 창은 동시 실행 제한을 받지 않는다 (작업이 꽉 차 있어도 바로 답해야 하므로). 제목도 고정
+    if (projectId === QUICK_PROJECT_ID) return session.send(text)
+    this.draftTitle(projectId, conversationId, text)
     // 이미 실행 중인 대화에 이어 보내는 건 자리를 더 쓰지 않는다
     if (session.isBusy()) return session.send(text)
     const alreadyWaiting = this.waiting.some((w) => w.conversationId === conversationId)
@@ -118,7 +122,7 @@ export class AgentManager {
     const limit = this.maxConcurrent()
     if (limit <= 0) return false
     let busy = 0
-    for (const s of this.sessions.values()) if (s.isBusy()) busy++
+    for (const [id, s] of this.sessions) if (s.isBusy() && !this.quickIds.has(id)) busy++
     return busy >= limit
   }
 
@@ -247,7 +251,9 @@ export class AgentManager {
     if (!project || !conv || this.peeking.has(conversationId)) return
     this.peeking.add(conversationId)
     try {
-      const u = await withProbe(cwdOf(project, conv), (q) => q.getContextUsage({ detail: 'summary' }), conv.sessionId)
+      // 고른 모델로 띄워야 그 모델이 보인다 (빠뜨리면 기본 모델로 덮어쓴다)
+      const model = conv.modelChoice && conv.modelChoice !== 'default' ? conv.modelChoice : undefined
+      const u = await withProbe(cwdOf(project, conv), (q) => q.getContextUsage({ detail: 'summary' }), conv.sessionId, model)
       const emit = (event: AgentEventEnvelope['event']): void => this.broadcast({ projectId, conversationId, event })
       const context = toContext(u)
       this.store.updateConversation(projectId, conversationId, { contextPercent: context.percent, ...(u.model ? { model: u.model, modelLabel: conv.modelLabel ?? modelLabel(u.model) } : {}) })
@@ -551,6 +557,7 @@ export class AgentManager {
       effort: conv.effort,
       additionalDirectories: conv.additionalDirectories,
       takeSpare: () => this.spare.take(),
+      tools: projectId === QUICK_PROJECT_ID ? { disallowed: QUICK_DISALLOWED_TOOLS, allowed: QUICK_ALLOWED_TOOLS } : undefined,
       emit: (event) => {
         // 실행이 끝나 자리가 나면 다음 차례를 시작한다
         if (event.kind === 'status' && event.status !== 'running' && event.status !== 'waiting_approval' && event.status !== 'queued') {
@@ -566,6 +573,7 @@ export class AgentManager {
       onRateLimit: this.onRateLimit,
     })
     this.sessions.set(conversationId, session)
+    if (projectId === QUICK_PROJECT_ID) this.quickIds.add(conversationId)
     return session
   }
 }

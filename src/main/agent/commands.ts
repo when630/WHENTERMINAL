@@ -43,11 +43,12 @@ async function probe(cwd: string): Promise<SlashCommandInfo[]> {
  * 메시지를 보내지 않은 채 CLI만 띄워 fn을 실행하고 바로 닫는다. 초기화·조회만 하므로 모델을 부르지 않는다.
  * 살아 있는 세션이 없을 때 명령 목록·사용량을 받는 데 쓴다
  */
-export async function withProbe<T>(cwd: string, fn: (q: Query) => Promise<T>, resume?: string): Promise<T> {
+export async function withProbe<T>(cwd: string, fn: (q: Query) => Promise<T>, resume?: string, model?: string): Promise<T> {
   const queue = new MessageQueue()
   const q = query({
     prompt: queue,
-    options: { cwd, resume, pathToClaudeCodeExecutable: claudeExecutable(), env: subscriptionEnv(), settingSources: ['user', 'project', 'local'], systemPrompt: { type: 'preset', preset: 'claude_code' } },
+    // model: 대화에서 고른 모델 (없으면 설정의 기본 모델). 컨텍스트 크기·표시 모델이 그 모델 기준이 된다
+    options: { cwd, resume, model, pathToClaudeCodeExecutable: claudeExecutable(), env: subscriptionEnv(), settingSources: ['user', 'project', 'local'], systemPrompt: { type: 'preset', preset: 'claude_code' } },
   })
   let timer: ReturnType<typeof setTimeout> | undefined
   try {

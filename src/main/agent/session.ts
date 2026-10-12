@@ -38,6 +38,8 @@ export interface AgentSessionOptions {
   resumeSessionId?: string
   /** 미리 띄워 둔 CLI가 있으면 가져온다 (새 세션일 때만 쓴다) */
   takeSpare?: () => SpareHandle | null
+  /** 도구 제한 (질문 창). 띄울 때 정해지므로 미리 띄운 CLI는 쓰지 않는다 */
+  tools?: { disallowed: string[]; allowed: string[] }
   emit: (event: AgentEvent) => void
   onSessionId: (sessionId: string) => void
   onRateLimit: (info: RateLimitInfo) => void
@@ -416,7 +418,7 @@ export class AgentSession {
   private start(): void {
     this.queue = new MessageQueue()
     // 이어 여는 세션은 claim할 수 없다. 새 세션이고 미리 띄운 CLI가 있으면 그걸 쓴다
-    const spare = this.sessionId ? null : (this.opts.takeSpare?.() ?? null)
+    const spare = this.sessionId || this.opts.tools ? null : (this.opts.takeSpare?.() ?? null)
     if (spare) this.startFromSpare(spare)
     else this.startCold()
   }
@@ -432,6 +434,7 @@ export class AgentSession {
         model: this.opts.model,
         effort: this.opts.effort,
         additionalDirectories: this.additionalDirectories(),
+        ...(this.opts.tools ? { disallowedTools: this.opts.tools.disallowed, allowedTools: this.opts.tools.allowed } : {}),
       },
     })
     void this.consume(this.q)

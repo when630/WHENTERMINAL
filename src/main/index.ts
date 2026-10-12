@@ -443,6 +443,7 @@ function bootstrap(): void {
   ipcMain.handle(IPC.accountStatus, (_e, refresh?: boolean) => manager.accountStatus(refresh))
   ipcMain.handle(IPC.loginCommand, () => loginCommand())
   ipcMain.handle(IPC.prewarm, () => manager.prewarm())
+  ipcMain.handle(IPC.quickProject, () => store.quick())
 
   // Windows: 기본 메뉴의 Alt 니모닉(Alt+F 파일, Alt+H 도움말 …)이 Alt+홈 줄 프로젝트 이동과 겹치므로 메뉴를 없앤다.
   // 메뉴가 없어도 입력창의 복사·붙여넣기는 그대로 동작한다.
