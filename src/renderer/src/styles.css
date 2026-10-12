@@ -753,6 +753,8 @@ pre { font: 12.5px/1.65 var(--mono); background: transparent; padding: 0; overfl
 .permission-actions button { display: inline-flex; align-items: center; gap: 10px; padding: 9px 16px; border: 3px solid var(--on-signal); background: transparent; color: var(--on-signal); font: 900 15px/1 var(--disp); transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out), transform 0.1s; }
 .permission-actions button:hover { background: var(--on-signal); color: var(--signal); }
 .permission-actions button:active { transform: scale(0.96); }
+.permission-actions .always-what { display: inline-flex; min-width: 0; gap: 0.4em; font: 600 11.5px/1 var(--mono); opacity: 0.85; white-space: nowrap; }
+.permission-actions .always-rule { max-width: 280px; overflow: hidden; text-overflow: ellipsis; }
 .permission .muted { color: var(--on-signal); opacity: 0.85; font-size: 12.5px; font-weight: 600; }
 
 .composer { position: relative; flex: none; display: flex; align-items: flex-start; gap: 14px; padding: 8px 28px; border-top: var(--rule-thick); transition: background var(--t-fast) var(--ease-out); }

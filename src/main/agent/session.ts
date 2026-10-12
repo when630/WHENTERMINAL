@@ -1,6 +1,6 @@
 import { query, type SlashCommand, type ElicitationRequest, type ElicitationResult, type Options, type PermissionResult, type PermissionUpdate, type Query, type SDKMessage, type UserDialogRequest, type UserDialogResult } from '@anthropic-ai/claude-agent-sdk'
 import { randomUUID } from 'node:crypto'
-import { ELICITATION_TOOL, isAgentMode, REFUSAL_TOOL, type EffortLevel, type AgentEvent, type AgentMode, type AgentStatus, type BackgroundTask, type ContextInfo, type PermissionDecision, type PermissionExtra, type PermissionRequest, type RateLimitInfo } from '@shared/types'
+import { ELICITATION_TOOL, isAgentMode, REFUSAL_TOOL, type AlwaysInfo, type AlwaysScope, type EffortLevel, type AgentEvent, type AgentMode, type AgentStatus, type BackgroundTask, type ContextInfo, type PermissionDecision, type PermissionExtra, type PermissionRequest, type RateLimitInfo } from '@shared/types'
 import { MessageQueue } from './message-queue'
 import { claudeExecutable } from '../executable'
 import { outputPathIn, rememberTaskOutput } from './task-output'
@@ -89,6 +89,36 @@ const resultText = (block: ToolResultBlock): string =>
   typeof block.content === 'string' ? block.content : (block.content ?? []).map((c) => (c.type === 'text' ? c.text : `[${c.type}]`)).join('\n')
 
 type ContextUsage = Awaited<ReturnType<Query['getContextUsage']>>
+
+const SHELL_TOOLS = new Set(['Bash', 'PowerShell'])
+
+function scopeOf(destination: PermissionUpdate['destination']): AlwaysScope {
+  if (destination === 'userSettings') return 'user'
+  if (destination === 'localSettings' || destination === 'projectSettings') return 'project'
+  return 'chat'
+}
+
+/**
+ * '항상 허용'이 무엇을 어디까지 기억하는지 (CLI가 선택지에 적어 보이는 것). 허용을 더하는 제안이 없으면 undefined.
+ * 범위가 섞여 있으면 가장 좁은 것으로 보인다 (사용자가 넓게 믿고 놀라지 않게)
+ */
+export function describeAlways(suggestions: PermissionUpdate[] | undefined): AlwaysInfo | undefined {
+  const parts: string[] = []
+  const scopes: AlwaysScope[] = []
+  for (const s of suggestions ?? []) {
+    if ((s.type === 'addRules' || s.type === 'replaceRules') && s.behavior === 'allow') {
+      for (const r of s.rules) parts.push(r.ruleContent ? (SHELL_TOOLS.has(r.toolName) ? r.ruleContent : `${r.toolName}(${r.ruleContent})`) : r.toolName)
+    } else if (s.type === 'setMode') {
+      parts.push(s.mode === 'acceptEdits' ? 'ALL EDITS' : `${s.mode.toUpperCase()} MODE`)
+    } else if (s.type === 'addDirectories') {
+      parts.push(...s.directories)
+    } else continue
+    scopes.push(scopeOf(s.destination))
+  }
+  if (!parts.length) return undefined
+  const scope: AlwaysScope = scopes.includes('chat') ? 'chat' : scopes.includes('project') ? 'project' : 'user'
+  return { what: [...new Set(parts)].join(', '), scope }
+}
 
 /** 훅의 출력: 합친 output이 있으면 그것, 없으면 stdout·stderr. 끝부분만 */
 function hookOutput(msg: { output: string; stdout: string; stderr: string }): string | undefined {
@@ -459,14 +489,18 @@ export class AgentSession {
     canUseTool: (toolName, input, options) => {
       const requestId = randomUUID()
       return new Promise<PermissionResult>((resolve) => {
-        this.pending.set(requestId, { kind: 'tool', resolve, toolName, input, suggestions: options.suggestions, suppressAlwaysAllow: options.suppressAlwaysAllowRule ?? false })
+        // 기억할 규칙이 없으면(이어 붙인 명령 등) '항상 허용'은 한 번 허용과 같으므로 내놓지 않는다
+        const always = describeAlways(options.suggestions)
+        const suppressAlwaysAllow = (options.suppressAlwaysAllowRule ?? false) || !always
+        this.pending.set(requestId, { kind: 'tool', resolve, toolName, input, suggestions: options.suggestions, suppressAlwaysAllow })
         this.ask(requestId, options.signal, {
           toolName,
           input,
           title: options.title,
           description: options.description ?? options.decisionReason,
           defaultToNo: options.defaultToNo,
-          suppressAlwaysAllow: options.suppressAlwaysAllowRule,
+          suppressAlwaysAllow,
+          always: suppressAlwaysAllow ? undefined : always,
           agentId: options.agentID,
         })
       })

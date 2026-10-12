@@ -120,6 +120,22 @@ export interface PermissionExtra {
   dialog?: RefusalChoice
 }
 
+/** '항상 허용'의 범위. chat: 이 대화(세션)만 · project: 프로젝트 설정 · user: 사용자 설정(모든 프로젝트) */
+export type AlwaysScope = 'chat' | 'project' | 'user'
+
+export interface AlwaysInfo {
+  /** 기억하는 것: 'npm view *', 'WebFetch(domain:example.com)', 'ALL EDITS' … */
+  what: string
+  scope: AlwaysScope
+}
+
+export const ALWAYS_SCOPE_LABEL: Record<AlwaysScope, string> = { chat: 'THIS CHAT', project: 'PROJECT', user: 'ALL PROJECTS' }
+export const ALWAYS_SCOPE_TIP: Record<AlwaysScope, string> = {
+  chat: '이 대화에서만 다시 묻지 않아요. 새 대화나 홈에서 맡긴 다음 작업에서는 다시 물어요',
+  project: '이 프로젝트에서는 다시 묻지 않아요. 프로젝트 설정에 저장돼요',
+  user: '모든 프로젝트에서 다시 묻지 않아요. 사용자 설정에 저장돼요',
+}
+
 /** 거절 대화 상자의 답: 다른 모델로 다시 시도 · 지시를 고쳐 다시 보냄 · 그만 */
 export type RefusalChoice = 'retry_fallback' | 'edit_prompt' | 'cancelled'
 
@@ -159,8 +175,10 @@ export interface PermissionRequest {
   description?: string
   /** true면 Y 한 키로 승인 불가 (SDK가 요구). 클릭 또는 확인 단계 필요 */
   defaultToNo?: boolean
-  /** true면 '항상 허용'(A) 제공 불가 */
+  /** true면 '항상 허용'(A) 제공 불가. SDK가 금지했거나 CLI가 기억할 규칙을 주지 않은 경우(이어 붙인 명령 등) */
   suppressAlwaysAllow?: boolean
+  /** '항상 허용'이 기억하는 것과 범위 (SDK suggestions를 풀어 쓴 것) */
+  always?: AlwaysInfo
   /** 하위 에이전트 안에서 온 요청이면 그 에이전트 ID */
   agentId?: string
   /** toolName이 ELICITATION_TOOL일 때 */

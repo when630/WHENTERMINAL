@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { refocusAfterClick, useRefocus } from './focus'
-import { ELICITATION_TOOL, MODE_CYCLE, MODE_LABEL, openConversations, REFUSAL_TOOL, STATUS_LABEL, type AgentOption, type AskQuestion, type EffortInfo, type EffortLevel, type GitBranch, type UsageInfo, type SlashCommandInfo, type AgentMode, type PermissionDecision, type PermissionExtra, type PermissionRequest, type Project, type BackgroundTask, type AgentProgress, type RefusalChoice, type SubItem } from '@shared/types'
+import { ALWAYS_SCOPE_LABEL, ALWAYS_SCOPE_TIP, ELICITATION_TOOL, MODE_CYCLE, MODE_LABEL, openConversations, REFUSAL_TOOL, STATUS_LABEL, type AgentOption, type AskQuestion, type EffortInfo, type EffortLevel, type GitBranch, type UsageInfo, type SlashCommandInfo, type AgentMode, type PermissionDecision, type PermissionExtra, type PermissionRequest, type Project, type BackgroundTask, type AgentProgress, type RefusalChoice, type SubItem } from '@shared/types'
 import { agentInfo, artifactsOf, describeBackground, emptyConversation, isAgentTool, relPath, runningAgents, STAGES, subActivity, summarizeInput, type ArtifactLink, type ConversationMap, type TaskInfo, type ToolItem, type TranscriptItem } from './state'
 import { PANEL_TITLE, ToolPanelView, type ToolPanel } from './panels'
 import { usePromptHistory } from './drafts'
@@ -1295,7 +1295,16 @@ function PermissionBox({ req, leaving, onRespond, onEditPrompt }: { req: Permiss
       <pre>{JSON.stringify(req.input, null, 2)}</pre>
       <div className="permission-actions">
         <button type="button" onClick={() => onRespond('allow')}>ALLOW</button>
-        {!req.suppressAlwaysAllow && <button type="button" onClick={() => onRespond('always')}>ALWAYS ALLOW</button>}
+        {!req.suppressAlwaysAllow && (
+          <button type="button" onClick={() => onRespond('always')} title={req.always ? ALWAYS_SCOPE_TIP[req.always.scope] : undefined}>
+            ALWAYS ALLOW
+            {req.always && (
+              <span className="always-what">
+                <span className="always-rule" title={req.always.what}>{req.always.what}</span> · {ALWAYS_SCOPE_LABEL[req.always.scope]}
+              </span>
+            )}
+          </button>
+        )}
         <button type="button" onClick={() => onRespond('deny')}>DENY</button>
       </div>
       {req.defaultToNo && <div className="muted">이 요청은 단축키로 허락할 수 없어요. 버튼을 직접 눌러 주세요.</div>}
