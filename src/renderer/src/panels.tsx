@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Presence, PresenceList } from './motion'
 import type { AgentOption, McpServerInfo, MemoryFile, PermissionRuleSource, PermissionsInfo, RewindScope, SessionOption, SessionStatus } from '@shared/types'
 import { MODE_LABEL } from '@shared/types'
 import { relPath as relPathOf, summarizeInput as summarizeInputOf, type TranscriptItem } from './state'
@@ -87,7 +88,7 @@ function Frame({ title, sub, actions, message, onClose, children }: { title: str
           </button>
         </div>
       </header>
-      {message && <div className={`wt-msg ${message.ok ? 'ok' : 'bad'}`} role="status">{message.text}</div>}
+      <Presence as="div" show={!!message} className={`wt-msg ${message?.ok ? 'ok' : 'bad'}`} role="status">{message?.text}</Presence>
       <div className="wt-body">{children}</div>
     </section>
   )
@@ -224,19 +225,17 @@ function RewindPanel({ projectId, conversationId, items, busy, uuid, onClose, on
               </li>
             ))}
           </ul>
-          {scope !== 'chat' && preview && preview.uuid === sel && (
-            <div className="pn-preview">
-              <h5>FILES · {preview.files.length}</h5>
-              {preview.files.length === 0 && <p className="pn-note">이 시점으로 되돌려도 바뀌는 파일이 없어요.</p>}
-              {preview.files.length > 0 && (
+          <Presence as="div" show={scope !== 'chat' && !!preview && preview.uuid === sel} className="pn-preview">
+              <h5>FILES · {preview?.files.length ?? 0}</h5>
+              {preview?.files.length === 0 && <p className="pn-note">이 시점으로 되돌려도 바뀌는 파일이 없어요.</p>}
+              {(preview?.files.length ?? 0) > 0 && (
                 <ul className="wt-files">
-                  {preview.files.map((f) => (
+                  {preview!.files.map((f) => (
                     <li key={f}><span className="mono">{f}</span></li>
                   ))}
                 </ul>
               )}
-            </div>
-          )}
+          </Presence>
         </>
       )}
     </Frame>
@@ -461,14 +460,14 @@ function PermissionsPanel({ projectId, conversationId, onClose }: Props): React.
     <section className="pn-sec">
       <h5>{k.toUpperCase()} · {list.length}</h5>
       {list.length === 0 && <p className="pn-note">없어요</p>}
-      <ul className="pn-rules">
-        {list.map((r) => (
-          <li key={r}>
+      <PresenceList items={list} keyOf={(r) => r} className="pn-rules">
+        {(r, leaving) => (
+          <li className={leaving ? 'leaving' : ''}>
             <code>{r}</code>
             <button type="button" className="pn-x" onClick={() => void remove(k, r)} aria-label={`${r} 규칙 빼기`} title="이 규칙을 빼요">×</button>
           </li>
-        ))}
-      </ul>
+        )}
+      </PresenceList>
     </section>
   )
   return (
@@ -496,14 +495,14 @@ function PermissionsPanel({ projectId, conversationId, onClose }: Props): React.
           <section className="pn-sec">
             <h5>DIRECTORIES · {info.additionalDirectories.length}</h5>
             <p className="pn-note">작업 폴더 밖에서 더 읽고 쓸 폴더예요 (/add-dir). 이 대화에서 더한 폴더는 바로, 설정 파일의 것은 다음 세션부터 적용돼요.</p>
-            <ul className="pn-rules">
-              {info.additionalDirectories.map((d) => (
-                <li key={d}>
+            <PresenceList items={info.additionalDirectories} keyOf={(d) => d} className="pn-rules">
+              {(d, leaving) => (
+                <li className={leaving ? 'leaving' : ''}>
                   <code>{d}</code>
                   <button type="button" className="pn-x" onClick={() => void addDir(d, true)} aria-label={`${d} 빼기`} title="이 대화에서 뺀 폴더예요 (설정 파일의 것은 그대로)">×</button>
                 </li>
-              ))}
-            </ul>
+              )}
+            </PresenceList>
             <button type="button" className="btn" onClick={() => void addDir()}>ADD FOLDER</button>
           </section>
           <section className="pn-sec">

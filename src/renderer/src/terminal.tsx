@@ -1,13 +1,13 @@
 import { cloneElement, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactElement } from 'react'
-import { Terminal, type ILink } from '@xterm/xterm'
+import { Terminal, type ILink, type IMarker } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { SearchAddon, type ISearchOptions } from '@xterm/addon-search'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import '@xterm/xterm/css/xterm.css'
 import { DEFAULT_KEYMAP, type Keymap } from '@shared/keymap'
-import type { TerminalInfo, TerminalShell, TerminalShellOption } from '@shared/types'
+import type { ShellResult, TerminalInfo, TerminalShell, TerminalShellOption } from '@shared/types'
 import { IS_MAC, matches } from './keys'
-import { EASE, reducedMotion, usePresence } from './motion'
+import { EASE, Presence, PresenceList, reducedMotion, usePresence } from './motion'
 import { ListHead } from './ModelPicker'
 import { useKeymap } from './settings'
 
@@ -57,6 +57,17 @@ interface Entry {
   /** 지난 Enter 뒤로 친 글자 (화면에 아직 안 찍혔을 때 명령 이름 대신) */
   typed: string
   quiet?: ReturnType<typeof setTimeout>
+  /** 입력창 `!명령`으로 돌리는 중인 명령: 프롬프트로 돌아오면 출력을 모아 돌려준다 */
+  exec?: Exec
+}
+
+interface Exec {
+  command: string
+  /** 명령을 친 프롬프트 줄 (스크롤백이 밀려도 따라온다) */
+  mark: IMarker
+  promptLen: number
+  at: number
+  resolve: (r: ShellResult | null) => void
 }
 
 const CLOSED: Ui = { open: false, expanded: false, order: [], tabs: {}, seq: 1, focus: 0, find: 0, finding: false }
@@ -138,6 +149,7 @@ function wire(): void {
     if (!e) return
     e.started = false
     e.cmd = undefined
+    finishExec(e)
     e.term.write(`\r\n\x1b[2m[셸이 끝났어요 · 코드 ${code}]\x1b[0m\r\n`)
     setTab(e.conversationId, termId, { exited: code })
   })
@@ -175,6 +187,8 @@ function onInput(e: Entry, d: string): void {
   }
   const typed = (e.typed + d.slice(0, enter)).trim()
   e.typed = ''
+  // `!명령`을 돌리는 중에 사용자가 직접 Enter를 치면 출력을 가를 수 없으니 잡기를 그만둔다 (명령 자체의 Enter는 exec가 세워지기 전)
+  if (e.exec && e.cmd) dropExec(e)
   // 전체 화면 프로그램(vim·less …) 안의 Enter는 명령이 아니다
   if (e.term.buffer.active.type !== 'normal') return
   // 화면의 프롬프트 뒤 글자가 정확하다 (방향키·기록으로 고친 것까지). 아직 안 찍혔으면 친 글자로
@@ -189,10 +203,53 @@ function watchQuiet(termId: string, e: Entry): void {
     const cmd = e.cmd
     if (!cmd || e.term.buffer.active.type !== 'normal' || !PROMPT_END.test(cursorLine(e.term).trimEnd())) return
     e.cmd = undefined
+    finishExec(e)
     const ms = Date.now() - cmd.at - QUIET_MS
     if (ms >= longMs()) commandDone(termId, e, cmd.text, ms)
   }, QUIET_MS)
 }
+
+// ── 입력창 `!명령`: 실행하고 출력을 모은다 ──────────────────
+const EXEC_LINES = 400
+const EXEC_CHARS = 32_000
+
+/** 프롬프트로 돌아왔다: 명령 줄 다음부터 새 프롬프트 줄 앞까지를 출력으로 */
+function finishExec(e: Entry): void {
+  const x = e.exec
+  if (!x) return
+  e.exec = undefined
+  const buf = e.term.buffer.active
+  const from = x.mark.isDisposed ? 0 : x.mark.line
+  const to = buf.baseY + buf.cursorY
+  x.mark.dispose()
+  // 프롬프트 + 명령이 메아리친 줄(여러 줄로 접혔을 수 있다)은 건너뛴다
+  const skip = Math.max(1, Math.ceil((x.promptLen + x.command.length) / Math.max(1, e.term.cols)))
+  const lines: string[] = []
+  for (let y = from + skip; y < to; y++) lines.push(buf.getLine(y)?.translateToString(true) ?? '')
+  while (lines.length && !lines[lines.length - 1].trim()) lines.pop()
+  let truncated = false
+  if (lines.length > EXEC_LINES) {
+    lines.splice(0, lines.length - EXEC_LINES)
+    truncated = true
+  }
+  let output = lines.join('\n')
+  if (output.length > EXEC_CHARS) {
+    output = output.slice(-EXEC_CHARS)
+    truncated = true
+  }
+  x.resolve({ command: x.command, output, ms: Date.now() - x.at, truncated })
+}
+
+/** 사용자가 끼어들어 출력을 가를 수 없다: 잡기를 그만둔다 */
+function dropExec(e: Entry): void {
+  const x = e.exec
+  if (!x) return
+  e.exec = undefined
+  x.mark.dispose()
+  x.resolve(null)
+}
+
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
 
 const duration = (ms: number): string => {
   const s = Math.round(ms / 1000)
@@ -314,6 +371,7 @@ function disposeEntry(termId: string): void {
   const e = entries.get(termId)
   if (!e) return
   if (e.quiet) clearTimeout(e.quiet)
+  finishExec(e)
   e.term.dispose()
   entries.delete(termId)
 }
@@ -336,19 +394,19 @@ async function start(projectId: string, conversationId: string, termId: string, 
   }
 }
 
-/** 새 탭을 만들어 지금 탭으로 */
-function addTab(projectId: string, conversationId: string, shell?: TerminalShell): string {
+/** 새 탭을 만들어 지금 탭으로. focus=false면 포커스는 옮기지 않는다 (`!명령`은 입력창에 남는다) */
+function addTab(projectId: string, conversationId: string, shell?: TerminalShell, focus = true): string {
   const ui = getUi(conversationId)
   const termId = `${conversationId}#${ui.seq}`
-  setUi(conversationId, (u) => ({ open: true, expanded: true, order: [...u.order, termId], tabs: { ...u.tabs, [termId]: {} }, active: termId, seq: u.seq + 1, focus: u.focus + 1 }))
+  setUi(conversationId, (u) => ({ open: true, expanded: true, order: [...u.order, termId], tabs: { ...u.tabs, [termId]: {} }, active: termId, seq: u.seq + 1, focus: focus ? u.focus + 1 : u.focus }))
   void start(projectId, conversationId, termId, shell)
   return termId
 }
 
 /** 지금 탭 (없으면 만든다) */
-function activeTab(projectId: string, conversationId: string): string {
+function activeTab(projectId: string, conversationId: string, focus = true): string {
   const ui = getUi(conversationId)
-  return ui.active && ui.tabs[ui.active] ? ui.active : addTab(projectId, conversationId)
+  return ui.active && ui.tabs[ui.active] ? ui.active : addTab(projectId, conversationId, undefined, focus)
 }
 
 /** 탭을 닫는다 (셸을 끝낸다). 마지막 탭이면 서랍도 닫는다. refocus면 남은 탭의 터미널로 포커스를 옮긴다 */
@@ -587,6 +645,28 @@ export function showTerminal(conversationId: string, termId: string): void {
   setUi(conversationId, (u) => ({ open: true, expanded: true, active: termId, focus: u.focus + 1 }))
 }
 
+/**
+ * 입력창 `!명령`: 지금 터미널에서 바로 실행하고, 프롬프트로 돌아오면 출력을 돌려준다.
+ * 서랍은 펼치되 포커스는 입력창에 둔다 (다음 `!`를 바로 칠 수 있게). 앞 명령이 도는 중·프롬프트가 아니면 null
+ */
+export async function execInTerminal(projectId: string, conversationId: string, command: string): Promise<ShellResult | null> {
+  const termId = activeTab(projectId, conversationId, false)
+  setUi(conversationId, { open: true, expanded: true })
+  const e = entryOf(projectId, conversationId, termId)
+  await start(projectId, conversationId, termId)
+  // 셸이 뜨고 프롬프트가 떠야 명령을 받는다. 셸(특히 PowerShell)은 바쁜 컴퓨터에서 몇 초 걸리므로 넉넉히 기다린다
+  await Promise.race([e.ready, sleep(15_000)])
+  for (let i = 0; i < 150 && e.started && !PROMPT_END.test(cursorLine(e.term).trimEnd()); i++) await sleep(100)
+  if (e.cmd || e.exec || e.term.buffer.active.type !== 'normal' || !PROMPT_END.test(cursorLine(e.term).trimEnd())) return null
+  const text = command.replace(/\r?\n$/, '')
+  return new Promise((resolve) => {
+    // 실제 키 입력과 같은 길(onData → onInput → pty)로 넣어야 끝남 감지가 그대로 된다
+    e.term.input(text)
+    e.exec = { command: text, mark: e.term.registerMarker(0)!, promptLen: cursorLine(e.term).length, at: Date.now(), resolve }
+    e.term.input('\r')
+  })
+}
+
 /** 명령을 지금 터미널의 입력줄에 넣는다. 실행(Enter)은 사용자가 */
 export async function runInTerminal(projectId: string, conversationId: string, command: string): Promise<void> {
   const termId = activeTab(projectId, conversationId)
@@ -741,39 +821,39 @@ export function TerminalDrawer({ projectId, conversationId, onSend, onPath }: Dr
         <button type="button" className="term-title" onClick={fold} title={ui.expanded ? '접어요 (셸은 계속 돌아요)' : '펼쳐요'} aria-expanded={ui.expanded}>
           <span className={`term-sq ${tab?.exited === undefined ? '' : 'off'}`} aria-hidden="true" />
           <b>TERMINAL</b>
-          {!ui.expanded && anyDone && <span className="term-done">DONE</span>}
+          <Presence show={!ui.expanded && anyDone} scope={conversationId} className="term-done">DONE</Presence>
         </button>
-        {ui.order.length > 1 && (
-          <nav className="term-tabs" aria-label="터미널 탭">
-            {ui.order.map((t, i) => {
+        <Presence as="nav" show={ui.order.length > 1} scope={conversationId} className="term-tabs" aria-label="터미널 탭">
+          <PresenceList items={ui.order} keyOf={(t) => t} scope={conversationId} as="span" className="term-tabs-in">
+            {(t, leaving) => {
               const s = ui.tabs[t]
+              const i = ui.order.indexOf(t)
               return (
                 <button
-                  key={t}
                   type="button"
-                  className={`term-tab ${t === active ? 'on' : ''} ${s?.exited !== undefined ? 'off' : ''}`}
+                  className={`term-tab ${t === active ? 'on' : ''} ${s?.exited !== undefined ? 'off' : ''} ${leaving ? 'leaving' : ''}`}
                   aria-current={t === active}
                   onClick={() => select(t)}
                   title={`${s?.info?.shell ?? ''}${s?.done ? ' · 명령이 끝났어요' : ''}`}
                 >
-                  {String(i + 1).padStart(2, '0')} <span>{s?.info?.shell ?? '…'}</span>
-                  {s?.done && <i className="term-tab-done" aria-label="명령이 끝났어요" />}
+                  {String((i < 0 ? ui.order.length : i) + 1).padStart(2, '0')} <span>{s?.info?.shell ?? '…'}</span>
+                  <Presence as="i" show={!!s?.done} className="term-tab-done" aria-label="명령이 끝났어요" />
                 </button>
               )
-            })}
-          </nav>
-        )}
+            }}
+          </PresenceList>
+        </Presence>
         <button type="button" className="term-add" onClick={() => newTerminal(projectId, conversationId)} title="새 터미널" aria-label="새 터미널">+</button>
         <ShellPicker info={tab?.info} onPick={(shell) => (shell ? switchShell(projectId, conversationId, active, shell) : entries.get(active)?.term.focus())} />
         {/* 빈 곳을 눌러도 접고 펼친다 (버튼은 위의 TERMINAL) */}
         <div className="term-fill" onClick={fold} aria-hidden="true">
           {tab?.info && <span className="term-cwd mono">{tab.info.cwd}</span>}
-          {tab?.exited !== undefined && <span className="term-exit">EXITED {tab.exited}</span>}
+          <Presence show={tab?.exited !== undefined} scope={`${conversationId}#${active}`} className="term-exit">EXITED {tab?.exited}</Presence>
         </div>
         <div className="term-actions">
-          {tab?.exited !== undefined && (
+          <Presence show={tab?.exited !== undefined} scope={`${conversationId}#${active}`} className="term-restart">
             <button type="button" className="term-btn" onClick={restart}>RESTART</button>
-          )}
+          </Presence>
           {ui.expanded && (
             <button type="button" className={`term-btn ${ui.finding ? 'armed' : ''}`} onClick={() => openFind(conversationId)} title="출력에서 찾아요">
               FIND

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Presence } from './motion'
 import { ACTIONS, APP_ICONS, conflictsOf, DEFAULT_KEYMAP, effectiveKeymap, SCOPE_LABEL, THEMES, type ActionDef, type ActionId, type ActionScope, type Settings, type ThemeId } from '@shared/keymap'
 import type { TerminalShellOption, UpdateState } from '@shared/types'
 import { Keys } from './KeyHint'
@@ -150,7 +151,7 @@ export function SettingsScreen({ settings, activeHotkey, update, onClose, onSave
                   </span>
                   <span className="theme-name">
                     {t.name}
-                    {on && <span className="theme-on">IN USE</span>}
+                    <Presence show={on} className="theme-on">IN USE</Presence>
                   </span>
                   <span className="theme-note">{t.note}</span>
                 </button>
@@ -171,7 +172,7 @@ export function SettingsScreen({ settings, activeHotkey, update, onClose, onSave
                     <span className="nowrap">
                       <span className="disp">0{k + 1}</span> {ic.name}
                     </span>
-                    {on && <span className="theme-on">IN USE</span>}
+                    <Presence show={on} className="theme-on">IN USE</Presence>
                   </span>
                   <span className="theme-note">{ic.note}</span>
                 </button>
@@ -372,12 +373,10 @@ export function SettingsScreen({ settings, activeHotkey, update, onClose, onSave
                         </button>
                       )}
                     </span>
-                    {conflicts.length > 0 && (
-                      <span className="krow-msg">
-                        CONFLICT: {conflicts.map((c) => ACTIONS.find((x) => x.id === c)!.label).join(', ')}
-                      </span>
-                    )}
-                    {message?.id === a.id && <span className="krow-msg">{message.text}</span>}
+                    <Presence show={conflicts.length > 0} className="krow-msg">
+                      CONFLICT: {conflicts.map((c) => ACTIONS.find((x) => x.id === c)!.label).join(', ')}
+                    </Presence>
+                    <Presence show={message?.id === a.id} className="krow-msg">{message?.text}</Presence>
                   </div>
                 )
               })}
@@ -443,10 +442,10 @@ function UpdateSection({ update }: { update: UpdateState | null }): React.JSX.El
             {checked && status !== 'checking' ? ` · 마지막 확인 ${checked}` : ''}
           </span>
         </span>
-        <span className={`upd-status ${status}`} role="status">
+        <span key={label} className={`upd-status ${status} swap`} role="status">
           {label}
         </span>
-        <span className="krow-side upd-actions">
+        <span key={status} className="krow-side upd-actions swap">
           {(status === 'ready' || status === 'available') && (
             <button type="button" className="btn-pri sm" onClick={() => window.api.applyUpdate()}>
               {status === 'ready' ? 'RESTART & UPDATE' : 'DOWNLOAD'}

@@ -7,10 +7,10 @@ import { PANEL_TITLE, ToolPanelView, type ToolPanel } from './panels'
 import { usePromptHistory } from './drafts'
 import { HOME_ROW } from './keys'
 import { matchesTerms, searchableText, searchTerms } from '@shared/search'
-import { Equalizer, Roll, usePresence } from './motion'
+import { EASE, Equalizer, Presence, PresenceList, reducedMotion, Roll, usePresence, usePresenceList } from './motion'
 import { clock, useNow } from './time'
 import { SubLog, TaskDetail, type DetailTarget } from './TaskDetail'
-import { closeTerminal, forgetTerminals, pathForComposer, runInTerminal, TerminalDrawer, toggleTerminal } from './terminal'
+import { closeTerminal, execInTerminal, forgetTerminals, pathForComposer, runInTerminal, TerminalDrawer, toggleTerminal } from './terminal'
 import { Markdown } from './Markdown'
 import { AttachButton, useAttach } from './attach'
 import { WorktreePanel } from './WorktreePanel'
@@ -106,10 +106,19 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
   // 되살린 기록은 한꺼번에 들어오므로 등장 애니메이션 없이 그린다
   if ((state.restored ?? 0) > seen.current.count) seen.current.count = state.restored!
 
-  // 다른 프로젝트의 승인 대기 (우측 상단 배지)
+  // 다른 프로젝트의 승인 대기 (우측 상단 배지). 사라질 때 잠시 남아 나간다
   const otherWaiting = projects
     .map((p, i) => ({ p, i, n: p.id === project.id ? 0 : p.conversations.filter((c) => convs[c.id]?.status === 'waiting_approval').length }))
     .filter((x) => x.n > 0)
+  const otherBadges = usePresenceList(otherWaiting, (x) => x.p.id)
+  // 이 대화의 것만 잠시 남긴다 (다른 대화로 옮기면 잔상 없이)
+  const goalHeld = usePresence(state.goal ? { goal: state.goal, id: conversationId } : null)
+  const goalShown = goalHeld.item?.id === conversationId ? { item: goalHeld.item.goal, leaving: goalHeld.leaving } : { item: null, leaving: false }
+  // 탭: 화면을 연 뒤 새로 생긴 탭만 등장, 닫힌 탭은 잠시 남아 나간다
+  const liveTabs = openConversations(project)
+  const tabs = usePresenceList(liveTabs, (c) => c.id, 240, project.id)
+  const tabSeen = useRef<{ pid: string; ids: Set<string> }>({ pid: '', ids: new Set() })
+  if (tabSeen.current.pid !== project.id) tabSeen.current = { pid: project.id, ids: new Set(tabs.map((t) => t.key)) }
 
   // 열자마자 컨텍스트 사용률·모델이 보이도록, 이번 실행에서 아직 받지 않았으면 메시지 없이 읽어 온다
   const needsPeek = !state.context
@@ -273,6 +282,9 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
   const slashShown = usePresence(slashOpen ? true : null, 220)
   const fileShown = usePresence(fileOpen ? true : null, 220)
   const limitShown = usePresence(limit, 220)
+  const deniedHeld = usePresence(denied.length > 0 ? { denied, id: conversationId } : null, 220)
+  const deniedShown = deniedHeld.item?.id === conversationId ? { item: deniedHeld.item.denied, leaving: deniedHeld.leaving } : { item: null, leaving: false }
+  const awayShown = usePresence(away ? true : null, 220)
   const menuCount = slashOpen ? menuItems.length : fileItems.length
   useEffect(() => setMenuIndex(0), [slashQuery, fileQuery])
 
@@ -363,6 +375,19 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
   }
   // 오른쪽 패널에서 고른 백그라운드 작업·하위 에이전트의 세부 내용 (대화 기록 자리에 펼친다)
   const [detail, setDetail] = useState<DetailTarget | null>(null)
+  // 대화 기록 자리에 펼친 화면 (CHANGES → 명령 화면 → 세부 내용 순). 닫히면 잠시 남아 나가고, 돌아온 대화 기록은 다시 떠오른다
+  const panel = showChanges && conv?.worktree ? { changes: true as const, tool: null, detail: null, id: conversationId } : tool ? { changes: false as const, tool, detail: null, id: conversationId } : detail ? { changes: false as const, tool: null, detail, id: conversationId } : null
+  const panelHeld = usePresence(panel)
+  const panelShown = panelHeld.item?.id === conversationId ? panelHeld : { item: null, leaving: false }
+  const transcriptMounted = !panelShown.item
+  const hadPanel = useRef(!transcriptMounted)
+  useLayoutEffect(() => {
+    const was = hadPanel.current
+    hadPanel.current = !transcriptMounted
+    if (was && transcriptMounted && !reducedMotion()) scrollRef.current?.animate([{ opacity: 0, transform: 'translateY(8px)' }, { opacity: 1, transform: 'none' }], { duration: 380, easing: EASE })
+  }, [transcriptMounted])
+  const placeholderHeld = usePresence(state.items.length === 0 ? conversationId : null)
+  const placeholder = placeholderHeld.item === conversationId ? placeholderHeld : { item: null, leaving: false }
   // 아래 터미널이 열리며 기록 칸이 줄어들 때도 맨 아래를 붙잡는다
   const transcriptShown = !(showChanges && conv?.worktree) && !detail && !tool
   // 패널·세부 화면을 닫고 대화로 돌아오면 입력창으로
@@ -379,7 +404,7 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
     })
     ro.observe(el)
     return () => ro.disconnect()
-  }, [transcriptShown])
+  }, [transcriptMounted])
   useEffect(() => {
     setShowChanges(false)
     setDetail(null)
@@ -456,6 +481,7 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
     const t = setTimeout(() => setNotice(null), 6000)
     return () => clearTimeout(t)
   }, [notice])
+  const noticeShown = usePresence(notice, 220)
 
   const submit = (raw = draft): void => {
     const text = raw.trim()
@@ -507,6 +533,19 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
         case 'login': return openTool({ kind: 'status' })
         default: return void window.api.clear(project.id, conversationId)
       }
+    }
+    // `!명령`: 아래 터미널에서 바로 실행하고, 끝나면 출력을 세션에 덧붙인다 (모델 턴 없이). 구독 사용량과 무관하므로 한도 확인 앞에
+    const bang = /^!\s*([\s\S]*)$/.exec(text)
+    if (bang) {
+      setDraft('')
+      const command = bang[1].trim()
+      if (!command) return toggleTerminal(project.id, conversationId, () => inputRef.current?.focus())
+      history.push(text)
+      void execInTerminal(project.id, conversationId, command).then((r) => {
+        if (!r) return setNotice({ ok: false, text: '터미널이 명령을 받을 수 없어요 · 앞 명령이 끝나기를 기다리거나 터미널을 확인해 주세요' })
+        void window.api.shellOutput(project.id, conversationId, r)
+      })
+      return
     }
     // 한도를 다 썼는데 언제 풀리는지 모르면 한 번 더 확인. 알면 보내 두면 그때 자동으로 시작한다
     if (limit?.level === 100 && !limitHolds && !limitArmed) {
@@ -579,8 +618,8 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
           </span>
         </div>
         <div className="tb-right">
-          {otherWaiting.map(({ p, i, n }) => (
-            <span key={p.id} className="badge other">
+          {otherBadges.map(({ item: { p, n }, key, leaving }) => (
+            <span key={key} className={`badge other ${leaving ? 'leaving' : ''}`}>
               {p.name} NEEDS YOU {n}
             </span>
           ))}
@@ -591,7 +630,7 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
           )}
           <div className={`ctx ${hot ? 'hot' : ''}`} title={state.context ? `${state.context.tokens.toLocaleString()} / ${state.context.max.toLocaleString()} 토큰${autoAt ? ` · ${autoAt}%에서 자동으로 컴팩트해요` : ''}` : '첫 응답 뒤에 보여요'}>
             <span className="ctx-label">CONTEXT</span>
-            <b>{ctxPercent !== undefined ? `${ctxPercent}%` : '–'}</b>
+            <b><Roll text={ctxPercent !== undefined ? `${ctxPercent}%` : '–'} className="num" /></b>
             <span className="ctx-bar" aria-hidden="true">
               <i style={{ width: `${Math.min(100, ctxPercent ?? 0)}%` }} />
               {autoAt !== undefined && <em style={{ left: `${autoAt}%` }} />}
@@ -603,17 +642,19 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
           <button type="button" className={`tb-btn ${clearArmed ? 'armed' : ''}`} onClick={onClearRequest} title="컨텍스트를 비우고 새 세션으로 시작해요 (/clear)">
             {clearArmed ? 'AGAIN' : 'CLEAR'}
           </button>
-          {state.goal && <GoalBadge goal={state.goal} />}
-          {conv?.tag && <span className="badge tag" title="세션 태그 · /tag로 바꾸거나 /tag clear로 떼요">#{conv.tag}</span>}
+          {goalShown.item && <GoalBadge goal={goalShown.item} leaving={goalShown.leaving} />}
+          <Presence show={!!conv?.tag} className="badge tag" title="세션 태그 · /tag로 바꾸거나 /tag clear로 떼요">#{conv?.tag}</Presence>
           <span className={`badge badge-${state.status}`}>{STATUS_LABEL[state.status]}</span>
         </div>
         <div className="tb-row2">
           <nav className="tabs" aria-label="하위 대화">
-            {openConversations(project).map((c, i) => {
+            {tabs.map(({ item: c, leaving }, idx) => {
+              const n = liveTabs.indexOf(c)
+              const i = n < 0 ? idx : n
               const st = convs[c.id]?.status ?? 'idle'
               const armedHere = closeArmedId === c.id
               return (
-                <span key={c.id} className={`tab-wrap ${c.id === conversationId ? 'active' : ''} ${armedHere ? 'armed' : ''}`}>
+                <span key={c.id} className={`tab-wrap ${c.id === conversationId ? 'active' : ''} ${armedHere ? 'armed' : ''} ${leaving ? 'leaving' : tabSeen.current.ids.has(c.id) ? '' : 'enter'}`}>
                 {editingId === c.id ? (
                   <span className={`tab tab-editing ${c.id === conversationId ? 'active' : ''}`}>
                     <span className="tab-n">{String(i + 1).padStart(2, '0')}</span>
@@ -692,7 +733,9 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
       </header>
 
       <div className={`chat-body ${busy || state.status === 'queued' || background.length > 0 || artifacts.length > 0 ? 'open' : ''}`}>
-      {showChanges && conv?.worktree ? (
+      {panelShown.item ? (
+        <div className={`panel-slot ${panelShown.leaving ? 'leaving' : ''}`}>
+      {panelShown.item.changes ? (
         <WorktreePanel
           projectId={project.id}
           conversationId={conversationId}
@@ -704,10 +747,10 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
             forgetTerminals(conversationId)
           }}
         />
-      ) : tool ? (
+      ) : panelShown.item.tool ? (
         <ToolPanelView
-          key={tool.kind}
-          panel={tool}
+          key={panelShown.item.tool.kind}
+          panel={panelShown.item.tool}
           projectId={project.id}
           conversationId={conversationId}
           items={state.items}
@@ -725,10 +768,10 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
           onJumpToTool={jumpToTool}
           root={root}
         />
-      ) : detail ? (
+      ) : panelShown.item.detail ? (
         <TaskDetail
-          key={detail.kind === 'task' ? detail.taskId : detail.toolUseId}
-          target={detail}
+          key={panelShown.item.detail.kind === 'task' ? panelShown.item.detail.taskId : panelShown.item.detail.toolUseId}
+          target={panelShown.item.detail}
           state={state}
           projectId={project.id}
           conversationId={conversationId}
@@ -736,10 +779,12 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
           onClose={() => setDetail(null)}
           onStopTask={(taskId) => window.api.stopTask(project.id, conversationId, taskId)}
         />
+      ) : null}
+        </div>
       ) : (
         <main className="transcript" ref={scrollRef} onScroll={onScroll}>
-          {state.items.length === 0 && (
-            <div className="placeholder">
+          {placeholder.item && (
+            <div className={`placeholder ${placeholder.leaving ? 'leaving' : ''}`}>
               무엇을 맡길까요?
               <span className="mono">{project.path}</span>
             </div>
@@ -788,6 +833,7 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
       )}
         {(state.task || background.length > 0 || artifacts.length > 0) && (
           <StatusPanel
+            key={conversationId}
             task={state.task}
             status={state.status}
             background={background}
@@ -832,10 +878,10 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
         )}
         {fileShown.item && <FileMenu items={fileItems} index={menuIndex} loading={!files || files.q !== fileQuery} leaving={fileShown.leaving} onHover={setMenuIndex} onPick={pickFile} />}
         <div className="composer-bars">
-        {notice && (
-          <div className={`limit-warn ${notice.ok ? '' : 'full'}`} role="status">
-            <b>{notice.ok ? 'OK' : 'ERROR'}</b>
-            <span>{notice.text}</span>
+        {noticeShown.item && (
+          <div className={`limit-warn ${noticeShown.item.ok ? '' : 'full'} ${noticeShown.leaving ? 'leaving' : ''}`} role="status">
+            <b>{noticeShown.item.ok ? 'OK' : 'ERROR'}</b>
+            <span>{noticeShown.item.text}</span>
           </div>
         )}
         {limitShown.item && (
@@ -854,19 +900,19 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
             )}
           </div>
         )}
-        {denied.length > 0 && (
-          <div className="limit-warn denied" role="status">
+        {deniedShown.item && (
+          <div className={`limit-warn denied ${deniedShown.leaving ? 'leaving' : ''}`} role="status">
             <b>AWAY</b>
-            <span title={denied.map((d) => d.title ?? d.toolName).join('\n')}>
-              자리를 비운 사이 거절한 호출 {denied.length}개 · {denied.slice(0, 2).map((d) => d.title ?? d.toolName).join(' · ')}{denied.length > 2 ? ' …' : ''}
+            <span title={deniedShown.item.map((d) => d.title ?? d.toolName).join('\n')}>
+              자리를 비운 사이 거절한 호출 {deniedShown.item.length}개 · {deniedShown.item.slice(0, 2).map((d) => d.title ?? d.toolName).join(' · ')}{deniedShown.item.length > 2 ? ' …' : ''}
             </span>
             <button type="button" className="lw-btn" disabled={approving} onClick={approveDenied} title="거절했던 호출을 모두 승인하고 멈춘 곳부터 이어서 하라고 보내요">
               APPROVE ALL · CONTINUE
             </button>
           </div>
         )}
-        {away && (
-          <div className="limit-warn away" role="status">
+        {awayShown.item && (
+          <div className={`limit-warn away ${awayShown.leaving ? 'leaving' : ''}`} role="status">
             <b>AWAY</b>
             <span>확인 요청은 묻지 않고 거절해요. 거절한 호출은 보고서에 모여요</span>
           </div>
@@ -886,7 +932,7 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
             aria-expanded={menuOpen}
             rows={1}
             className={ghost ? 'ghost' : undefined}
-            placeholder={ghost ?? (busy ? '작업 중이에요 · 지금 입력하면 다음 차례로 보내요' : '메시지 입력 · / 명령 · @ 파일')}
+            placeholder={ghost ?? (busy ? '작업 중이에요 · 지금 입력하면 다음 차례로 보내요' : '메시지 입력 · / 명령 · @ 파일 · ! 셸')}
             title={ghost ? '예측한 다음 지시예요' : undefined}
             onChange={(e) => {
               // 아직 세션이 없는 대화에 글을 치기 시작하면 CLI를 미리 띄워 첫 응답을 앞당긴다
@@ -1022,18 +1068,17 @@ function StatusPanel({ task, status, background, agents, artifacts, items, subs,
   return (
     <aside className={`status-panel ${waiting ? 'waiting' : ''} ${live ? 'live' : ''}`} aria-label="작업 상태">
       {showTask && task && <TaskStatus task={task} status={status} now={now} onTools={onTools} />}
-      {agents.length > 0 && (
-        <section className="sp-sec" aria-label="하위 에이전트">
+      <Presence as="section" show={agents.length > 0} className="sp-sec" aria-label="하위 에이전트">
           <div className="sp-sec-h">
             <span className="sp-k">AGENTS</span>
-            <span className="sp-n">{agents.length}</span>
+            <span className="sp-n"><Roll text={String(agents.length)} className="num" /></span>
           </div>
-          <ul className="sp-bg">
-            {agents.map((a) => {
+          <PresenceList items={agents} keyOf={(a) => a.toolUseId} className="sp-bg">
+            {(a, leaving) => {
               const info = agentInfo(a.input)
               const target: DetailTarget = { kind: 'agent', toolUseId: a.toolUseId }
               return (
-                <li key={a.toolUseId} className={isSel(target) ? 'sel' : ''}>
+                <li className={`${isSel(target) ? 'sel' : ''} ${leaving ? 'leaving' : ''}`}>
                   <button type="button" className="sp-bg-open" onClick={() => onOpen(target)} title={`${info.description}\n누르면 이 에이전트가 하는 일을 자세히 봐요`}>
                     <span className="sp-bg-row">
                       <span className="sp-bg-sq" aria-hidden="true" />
@@ -1046,18 +1091,16 @@ function StatusPanel({ task, status, background, agents, artifacts, items, subs,
                   </button>
                 </li>
               )
-            })}
-          </ul>
-        </section>
-      )}
-      {background.length > 0 && (
-        <section className="sp-sec" aria-label="백그라운드 작업">
+            }}
+          </PresenceList>
+      </Presence>
+      <Presence as="section" show={background.length > 0} className="sp-sec" aria-label="백그라운드 작업">
           <div className="sp-sec-h">
             <span className="sp-k">BACKGROUND</span>
-            <span className="sp-n">{background.length}</span>
+            <span className="sp-n"><Roll text={String(background.length)} className="num" /></span>
           </div>
-          <ul className="sp-bg">
-            {background.map((b) => {
+          <PresenceList items={background} keyOf={(b) => b.id} className="sp-bg">
+            {(b, leaving) => {
               const d = describeBackground(b, items)
               const cmd = relPath(d.command, root)
               const desc = d.text === d.command ? cmd : d.text
@@ -1065,7 +1108,7 @@ function StatusPanel({ task, status, background, agents, artifacts, items, subs,
               const target: DetailTarget = { kind: 'task', taskId: b.id }
               const agent = d.label === 'AGENT' && b.toolUseId ? b.toolUseId : undefined
               return (
-                <li key={b.id} className={isSel(target) ? 'sel' : ''}>
+                <li className={`${isSel(target) ? 'sel' : ''} ${leaving ? 'leaving' : ''}`}>
                   <button type="button" className="sp-bg-open" onClick={() => onOpen(target)} title={`${cmd && cmd !== desc ? `${desc}\n${cmd}` : desc}\n누르면 ${agent ? '이 에이전트가 하는 일을' : '출력을'} 자세히 봐요`}>
                     <span className="sp-bg-row">
                       <span className="sp-bg-sq" aria-hidden="true" />
@@ -1080,29 +1123,26 @@ function StatusPanel({ task, status, background, agents, artifacts, items, subs,
                   </button>
                 </li>
               )
-            })}
-          </ul>
-        </section>
-      )}
-      {artifacts.length > 0 && (
-        <section className="sp-sec" aria-label="연결된 아티팩트">
+            }}
+          </PresenceList>
+      </Presence>
+      <Presence as="section" show={artifacts.length > 0} className="sp-sec" aria-label="연결된 아티팩트">
           <div className="sp-sec-h">
             <span className="sp-k">ARTIFACTS</span>
-            <span className="sp-n">{artifacts.length}</span>
+            <span className="sp-n"><Roll text={String(artifacts.length)} className="num" /></span>
           </div>
-          <ul className="sp-art">
-            {artifacts.map((a) => (
-              <li key={a.url}>
+          <PresenceList items={artifacts} keyOf={(a) => a.url} className="sp-art">
+            {(a, leaving) => (
+              <li className={leaving ? 'leaving' : ''}>
                 {/* 메인의 setWindowOpenHandler가 외부 브라우저로 연다 */}
                 <a href={a.url} target="_blank" rel="noreferrer" title={`${a.title}\n${a.url}`}>
                   <span>{a.title}</span>
                   <i aria-hidden="true">↗</i>
                 </a>
               </li>
-            ))}
-          </ul>
-        </section>
-      )}
+            )}
+          </PresenceList>
+      </Presence>
     </aside>
   )
 }
@@ -1132,20 +1172,20 @@ function TaskStatus({ task, status, now, onTools }: { task: TaskInfo; status: st
           <dt>TOOLS</dt>
           <dd>
             <button type="button" className="sp-stat-btn" onClick={onTools} disabled={task.tools === 0} title="이번 작업에서 부른 도구를 모두 봐요">
-              {task.tools}
+              <Roll text={String(task.tools)} className="num" />
             </button>
           </dd>
         </div>
         <div><dt>TIME</dt><dd>{clock(ms)}</dd></div>
-        <div><dt>FILES</dt><dd>{task.files.length}</dd></div>
+        <div><dt>FILES</dt><dd><Roll text={String(task.files.length)} className="num" /></dd></div>
       </dl>
       <Equalizer mode={waiting ? 'waiting' : status === 'running' ? 'live' : 'idle'} />
       <p className="sp-act">{waiting ? 'WAITING FOR YOU' : task.activity}</p>
-      {task.files.length > 0 && (
-        <ul className="sp-files">
-          {task.files.map((f) => <li key={f} title={f}>{f.split(/[\\/]/).pop()}</li>)}
-        </ul>
-      )}
+      <Presence as="div" show={task.files.length > 0} className="sp-files-wrap">
+        <PresenceList items={task.files} keyOf={(f) => f} className="sp-files">
+          {(f, leaving) => <li title={f} className={leaving ? 'leaving' : ''}>{f.split(/[\\/]/).pop()}</li>}
+        </PresenceList>
+      </Presence>
     </>
   )
 }
@@ -1184,16 +1224,18 @@ interface ItemProps {
 
 export function Item({ item, idx: di, n, root, enter, subs, progress, onRun, onQueueEdit, onQueueCancel, onRewind, onExpand }: ItemProps): React.JSX.Element {
   const e = enter ? ' enter' : ''
+  // 차례를 기다리던 글이 보내지면 EDIT/CANCEL은 잠시 남아 나간다
+  const acts = usePresence(item.type === 'user' && item.pending && item.queuedId ? item.queuedId : null)
   switch (item.type) {
     case 'user':
       return (
         <div className={`msg user ${item.pending ? 'pending' : ''}${e}`} data-idx={di}>
           {item.text}
-          {item.pending && item.queuedId && (
-            <span className="msg-acts">
+          {acts.item && (
+            <span className={`msg-acts ${acts.leaving ? 'leaving' : ''}`}>
               <span className="msg-wait">NEXT</span>
-              <button type="button" onClick={() => onQueueEdit?.(item.queuedId!)} title="보내지 않고 입력창으로 되돌려요">EDIT</button>
-              <button type="button" onClick={() => onQueueCancel?.(item.queuedId!)} title="이 메시지를 보내지 않아요">CANCEL</button>
+              <button type="button" onClick={() => onQueueEdit?.(acts.item!)} title="보내지 않고 입력창으로 되돌려요">EDIT</button>
+              <button type="button" onClick={() => onQueueCancel?.(acts.item!)} title="이 메시지를 보내지 않아요">CANCEL</button>
             </span>
           )}
           {!item.pending && item.uuid && onRewind && (
@@ -1332,7 +1374,7 @@ function ToolGroup({ summary, tools, enter, children }: { summary: string; tools
   return (
     <details className={`tgroup ${errors ? 'error' : ''}${enter ? ' enter' : ''}`} open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
       <summary>
-        <span className="tgroup-n">{tools.length}</span>
+        <span className="tgroup-n"><Roll text={String(tools.length)} className="num" /></span>
         <span className="tgroup-k">TOOLS</span>
         <span className="tgroup-s" title={summary}>{summary}</span>
         <span className={`tool-st ${running ? 'run' : ''}`}>{running ? 'RUNNING' : errors ? `ERROR ${errors}` : 'DONE'}</span>
@@ -1370,9 +1412,9 @@ function MemoryItem({ recall, enter, idx }: { recall: MemoryRecall; enter: boole
 }
 
 /** /goal 목표: 조건을 못 미쳐 다시 돈 횟수. 툴팁에 조건과 마지막 이유 */
-function GoalBadge({ goal }: { goal: GoalInfo }): React.JSX.Element {
+function GoalBadge({ goal, leaving }: { goal: GoalInfo; leaving: boolean }): React.JSX.Element {
   return (
-    <span className="badge goal" title={`목표 · ${goal.condition}${goal.lastReason ? `\n아직 못 미친 이유 · ${goal.lastReason}` : ''}\n/goal clear로 풀어요`}>
+    <span className={`badge goal ${leaving ? 'leaving' : ''}`} title={`목표 · ${goal.condition}${goal.lastReason ? `\n아직 못 미친 이유 · ${goal.lastReason}` : ''}\n/goal clear로 풀어요`}>
       GOAL{goal.iterations > 0 ? ` · ${goal.iterations}` : ''}
     </span>
   )

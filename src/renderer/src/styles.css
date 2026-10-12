@@ -153,7 +153,11 @@ kbd { display: inline-block; font: 500 11px/1 var(--mono); padding: 3px 5px; col
 .side-row:has(> .nav.on) .side-x { background: var(--sel-bg); color: var(--sel-fg); }
 .side-x:hover { opacity: 1; background: var(--signal) !important; color: var(--on-signal) !important; }
 .side-project.armed .side-x { opacity: 1; width: 84px; background: var(--signal); color: var(--on-signal); font: 14px/1 var(--kr); }
-.threads { display: flex; flex-direction: column; border-bottom: var(--rule); }
+/* 하위 대화 목록: 고른 프로젝트에서만 펼쳐진다 (높이가 미끄러지게 grid-template-rows). 아래 선은 내용과 함께 움직이도록 안쪽에 */
+.threads-wrap { display: grid; grid-template-rows: 0fr; transition: grid-template-rows var(--t-med) var(--ease-out); }
+.threads-wrap.open { grid-template-rows: 1fr; }
+.threads { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.threads::after { content: ''; flex: none; height: 2px; background: var(--line); }
 .thread { display: flex; align-items: center; gap: 10px; padding: 6px 18px 6px 56px; border: 0; background: transparent; color: var(--ink); font-size: 12.5px; font-weight: 600; text-align: left; }
 .thread:hover { background: var(--wash); }
 .thread.on { box-shadow: inset 6px 0 0 var(--signal); }
@@ -225,7 +229,7 @@ kbd { display: inline-block; font: 500 11px/1 var(--mono); padding: 3px 5px; col
 .odo-col { display: flex; flex-direction: column; transition: transform 0.7s var(--spring); }
 .odo-col span { height: var(--odo-h, 1.5em); line-height: var(--odo-h, 1.5em); }
 
-.ask { display: flex; flex-direction: column; border-bottom: var(--rule-thick); transition: background var(--t-fast) var(--ease-out); }
+.ask { display: flex; flex-direction: column; border-bottom: var(--rule-thick); transition: background var(--t-fast) var(--ease-out), box-shadow var(--t-fast) var(--ease-out); }
 .ask:focus-within { background: var(--wash); }
 .ask-empty { flex-direction: row; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 24px; font: 22px/1.2 var(--kr); }
 .ask-row { display: flex; align-items: center; gap: 14px; padding: 14px 24px 8px; }
@@ -540,7 +544,10 @@ kbd { display: inline-block; font: 500 11px/1 var(--mono); padding: 3px 5px; col
 /* 패널 칸이 0px로 접혀도 패널의 테두리 폭은 남아 칸 밖으로 넘친다. 가로로만 잘라 낸다 (clip은 스크롤 영역을 만들지 않는다) */
 .chat-body { flex: 1; min-height: 0; overflow-x: clip; display: grid; grid-template-columns: minmax(0, 1fr) 0px; transition: grid-template-columns 0.5s var(--ease-io) 1.6s; }
 .chat-body.open { grid-template-columns: minmax(0, 1fr) 260px; transition-delay: 0s; transition-timing-function: var(--ease-out); }
-.chat-body > .transcript, .chat-body > .wt-panel { min-width: 0; min-height: 0; }
+.chat-body > .transcript, .chat-body > .panel-slot { min-width: 0; min-height: 0; }
+/* 대화 기록 자리에 펼친 화면(세부 내용·명령 화면·CHANGES)의 자리. 닫힐 때 잠시 남아 나간다 */
+.panel-slot { display: flex; flex-direction: column; }
+.panel-slot > .wt-panel { min-height: 0; }
 .status-panel { min-width: 0; overflow: hidden; overflow-y: auto; scrollbar-width: none; display: flex; flex-direction: column; gap: 18px; border-left: var(--rule-thick); padding: 18px 0; white-space: nowrap; }
 .chat-body:not(.open) .status-panel { border-left-color: transparent; transition: border-color 0s 2.1s; }
 .status-panel > * { width: 260px; padding: 0 20px; box-sizing: border-box; }
@@ -645,9 +652,11 @@ kbd { display: inline-block; font: 500 11px/1 var(--mono); padding: 3px 5px; col
 .sub-tool .sub-out { opacity: 0.8; }
 .tool-sub { opacity: 0.6; }
 @media (max-width: 980px) { .chat-body.open { grid-template-columns: minmax(0, 1fr) 0px; } }
-.transcript { flex: 1; overflow-x: hidden; overflow-y: auto; display: flex; flex-direction: column; padding-bottom: 24px; }
+.transcript { position: relative; flex: 1; overflow-x: hidden; overflow-y: auto; display: flex; flex-direction: column; padding-bottom: 24px; }
 .transcript > * { width: 100%; }
-.placeholder { margin: auto; padding: 24px; text-align: center; font: 26px/1.3 var(--kr); color: var(--gray-2); }
+.placeholder { margin: auto; padding: 24px; text-align: center; font: 26px/1.3 var(--kr); color: var(--gray-2); animation: fade-in var(--t-slow) var(--ease-out) both; }
+/* 첫 메시지가 들어오면 자리를 비켜 주고 제자리에서 사라진다 */
+.placeholder.leaving { position: absolute; inset: 0; margin: 0; display: flex; flex-direction: column; justify-content: center; }
 .placeholder .mono { display: block; margin-top: 8px; font: 12px var(--mono); }
 .msg { white-space: pre-wrap; word-break: break-word; }
 .enter { animation: up 0.5s var(--ease-out) both; }
@@ -655,7 +664,12 @@ kbd { display: inline-block; font: 500 11px/1 var(--mono); padding: 3px 5px; col
 @keyframes up { from { opacity: 0; transform: translateY(10px); } }
 .msg.user { padding: 20px 28px 16px; border-top: var(--rule); border-bottom: var(--rule); font: 30px/1.25 var(--kr); }
 .msg.user:first-child { border-top: 0; }
-.msg.user::before { content: 'YOU'; display: block; margin-bottom: 8px; font: 600 11px/1 var(--disp); letter-spacing: 0.14em; }
+/* YOU / NEXT 라벨: 둘 다 pseudo-element로 두고 자리를 바꾸며 굴러간다 (DOM 글자에 섞이지 않게) */
+.msg.user::before, .msg.user::after { font: 600 11px/1 var(--disp); letter-spacing: 0.14em; transition: opacity var(--t-med) var(--ease), transform var(--t-med) var(--ease); }
+.msg.user::before { content: 'YOU'; display: block; margin-bottom: 8px; }
+.msg.user::after { content: 'NEXT'; position: absolute; top: 20px; left: 28px; opacity: 0; transform: translateY(100%); }
+.msg.user.pending::before { opacity: 0; transform: translateY(-100%); }
+.msg.user.pending::after { opacity: 1; transform: none; }
 .md > :first-child { margin-top: 0; }
 .md > :last-child { margin-bottom: 0; }
 .md p { margin: 0 0 0.8em; }
@@ -757,12 +771,12 @@ pre { font: 12.5px/1.65 var(--mono); background: transparent; padding: 0; overfl
 .permission-actions .always-rule { max-width: 280px; overflow: hidden; text-overflow: ellipsis; }
 .permission .muted { color: var(--on-signal); opacity: 0.85; font-size: 12.5px; font-weight: 600; }
 
-.composer { position: relative; flex: none; display: flex; align-items: flex-start; gap: 14px; padding: 8px 28px; border-top: var(--rule-thick); transition: background var(--t-fast) var(--ease-out); }
+.composer { position: relative; flex: none; display: flex; align-items: flex-start; gap: 14px; padding: 8px 28px; border-top: var(--rule-thick); transition: background var(--t-fast) var(--ease-out), box-shadow var(--t-fast) var(--ease-out); }
 .composer:focus-within { background: var(--wash); }
 .composer.dropping, .ask.dropping { background: var(--wash); box-shadow: inset 0 0 0 3px var(--signal); }
 .ask { position: relative; }
 .ask-row .attach { margin-top: 0; }
-.composer.dropping::after, .ask.dropping::after { content: '놓으면 경로를 넣어요'; position: absolute; right: 28px; top: 14px; padding: 4px 8px; background: var(--signal); color: var(--on-signal); font: 700 12px/1 var(--font); }
+.composer.dropping::after, .ask.dropping::after { content: '놓으면 경로를 넣어요'; position: absolute; right: 28px; top: 14px; padding: 4px 8px; background: var(--signal); color: var(--on-signal); font: 700 12px/1 var(--font); animation: pop-in 0.35s var(--spring) both; }
 .attach { flex: none; width: 34px; height: 34px; margin-top: 2px; padding: 6px; border: var(--rule); background: var(--paper); color: var(--ink); transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out); }
 .attach:hover { background: var(--sel-bg); color: var(--sel-fg); }
 .attach svg { width: 100%; height: 100%; }
@@ -958,9 +972,8 @@ pre.msg.notice.output { margin: 6px 0; padding: 12px 28px; max-height: 420px; ov
 pre.msg.notice.output.error { box-shadow: inset 8px 0 0 var(--signal); }
 
 /* ── 사용자 메시지: 기다리는 중 EDIT/CANCEL, 쉴 때 REWIND(올리면) ── */
-.msg.user { position: relative; }
+.msg.user { position: relative; transition: color var(--t-med) var(--ease-io); }
 .msg.user.pending { color: var(--gray); }
-.msg.user.pending::before { content: 'NEXT'; }
 .msg-acts { position: absolute; top: 14px; right: 28px; display: inline-flex; align-items: center; gap: 6px; }
 .msg-acts.hover { opacity: 0; transition: opacity var(--t-fast) var(--ease-out); }
 .msg.user:hover .msg-acts.hover, .msg-acts.hover:focus-within { opacity: 1; }
@@ -1118,3 +1131,73 @@ button.pn-row:hover:not(:disabled) .pn-sub, button.pn-row:hover:not(:disabled) .
 .sh-denied h4 { margin: 0; font: 18px/1 var(--kr); color: var(--signal); }
 .sh-denied p { margin: 0 0 4px; font-size: 13px; }
 .sh-denied .btn-pri { align-self: flex-start; margin-top: 6px; }
+
+/* ── 움직임 보강: 나타나고 사라지는 것, 상태 색이 바뀌는 것, 굴러가는 숫자 ── */
+@keyframes fade-in { from { opacity: 0; } }
+@keyframes row-in { from { opacity: 0; transform: translateY(4px); } }
+@keyframes pop-out { to { transform: scale(0); opacity: 0; } }
+/* 글자가 통째로 바뀌는 칸: key를 바꿔 다시 그리면 흐려졌다 나타난다 */
+.swap { animation: fade-in var(--t-med) var(--ease-out) both; }
+/* 굴러가는 숫자 (Roll): 한 줄짜리 고정 폭 칸 */
+.roll.num { display: inline-block; width: 2.2em; height: 1em; vertical-align: text-bottom; }
+/* 지금 글자는 흐름 안에 두어 글자 기준선이 생기게 (옆 글자와 baseline로 맞는다). 나가는 글자만 위에 겹친다 */
+.roll.num > .roll-cur { position: static; display: block; }
+.ctx b .roll.num { width: 2.6em; }
+.sp-n .roll > span, .nav-away-side .roll > span { text-align: right; }
+.nav-away-side .roll.num { width: 2.6em; }
+.pill { --odo-h: 20px; }
+.pill.leaving { animation: pop-out 0.3s var(--ease-io) both !important; }
+
+/* 대화창 상단: 상태 배지는 색이 넘어가고, 배지·CONTEXT는 생기고 사라진다 */
+.badge { transition: background var(--t-med) var(--ease-io), color var(--t-med) var(--ease-io); }
+.badge.other, .badge.goal, .badge.tag { animation: fade-in var(--t-med) var(--ease-out) both; }
+.ctx { transition: background var(--t-med) var(--ease-io), color var(--t-med) var(--ease-io); }
+.meta { transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out); }
+.tab-wrap.enter { animation: fade-in var(--t-med) var(--ease-out) both; }
+.tab-edit { animation: fade-in var(--t-fast) var(--ease-out) both; }
+/* 다음 지시 예측: placeholder 글자가 흐려졌다 나타난다 (::placeholder는 애니메이션을 못 받아 상속되는 속성으로) */
+@property --ph-a { syntax: '<number>'; inherits: true; initial-value: 1; }
+@keyframes ghost-in { from { --ph-a: 0; } }
+.composer textarea.ghost { animation: ghost-in var(--t-med) var(--ease-out) both; }
+.composer textarea.ghost::placeholder { color: color-mix(in srgb, var(--gray) calc(var(--ph-a) * 100%), transparent); }
+
+/* 대화 기록: 차례 대기 글의 EDIT/CANCEL */
+.msg-acts { animation: fade-in var(--t-med) var(--ease-out) both; }
+
+/* 상태 패널: 줄 단위로 들어오고 나간다, 끝남 표시 색 */
+.sp-bg > li, .sp-art > li, .sp-files > li { animation: row-in var(--t-med) var(--ease-out) both; }
+.td-state { transition: background var(--t-med) var(--ease-io), color var(--t-med) var(--ease-io), border-color var(--t-med) var(--ease-io); }
+
+/* 홈: 태그 줄·빈 칸 안내·띠의 칩 */
+.tagbar { animation: up var(--t-med) var(--ease-out) both; }
+.empty { animation: fade-in var(--t-slow) var(--ease-out) both; }
+.band-goal, .band-tag, .band-denied { animation: fade-in var(--t-med) var(--ease-out) both; }
+
+/* 사이드바: 프로젝트 행·업데이트 줄·한도 창이 들어오고, 상태 점 색이 넘어간다 */
+.side-project.enter, .nav-update, .uw { animation: up var(--t-med) var(--ease-out) both; }
+.usage-foot { animation: fade-in var(--t-med) var(--ease-out) both; }
+.dot { transition: background var(--t-med) var(--ease-io), border-color var(--t-med) var(--ease-io), opacity var(--t-med) var(--ease-io); }
+.minibar { animation: fade-in var(--t-med) var(--ease-out) both; }
+.thread { transition: background var(--t-fast) var(--ease-out), box-shadow var(--t-fast) var(--ease-out); }
+.side-add, .usage-refresh, .link, .tool-run, .td-prompt summary, .term-add { transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out), opacity var(--t-fast) var(--ease-out); }
+.proj, .proj kbd { transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out); }
+.search-hit { transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out); }
+
+/* 터미널: 탭 줄·DONE·EXITED·RESTART, 셸이 끝난 점 */
+.term-tabs, .term-tab, .term-done, .term-exit, .term-tab-done, .term-restart { animation: fade-in var(--t-med) var(--ease-out) both; }
+.term-restart { display: inline-flex; }
+.term-sq { transition: opacity var(--t-med) var(--ease-io); }
+
+/* 설정·명령 화면: 안내 줄, 고른 칸 밑줄, IN USE 칩, 결과 줄, 미리보기, 규칙 줄 */
+.krow-msg, .wt-msg, .pn-preview { animation: up var(--t-med) var(--ease-out) both; }
+.theme, .icon-pick { transition: background var(--t-fast) var(--ease-out), box-shadow var(--t-med) var(--ease-out); }
+.theme-on { animation: pop-in 0.35s var(--spring) both; }
+.pn-rules > li { animation: row-in var(--t-med) var(--ease-out) both; }
+
+/* 펼치는 details: 도구 줄과 같은 높이 전환 (MEMORY·플랜 본문·에이전트 PROMPT·하위 에이전트 도구 줄) */
+.memory, .plan-body, .td-prompt, .sub-tool > details { interpolate-size: allow-keywords; }
+.memory::details-content, .plan-body::details-content, .td-prompt::details-content, .sub-tool > details::details-content { height: 0; overflow: clip; transition: height 0.38s var(--ease-out), content-visibility 0.38s allow-discrete; }
+.memory[open]::details-content, .plan-body[open]::details-content, .td-prompt[open]::details-content, .sub-tool > details[open]::details-content { height: auto; }
+.sp-files-wrap { min-height: 0; display: flex; flex-direction: column; }
+.tagbar-tags { display: contents; }
+.term-tabs-in { display: contents; }

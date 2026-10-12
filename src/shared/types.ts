@@ -455,6 +455,16 @@ export interface TerminalInfo {
   pid: number
 }
 
+/** 입력창 `!명령`으로 터미널에서 돌린 명령의 결과. 출력은 세션에 모델 턴 없이 덧붙는다 */
+export interface ShellResult {
+  command: string
+  output: string
+  /** 걸린 시간 */
+  ms: number
+  /** 출력이 길어 앞부분을 잘랐다 */
+  truncated: boolean
+}
+
 /** 대화 검색 결과 하나 (Ctrl+Shift+F) */
 export interface SearchHit {
   projectId: string
@@ -669,6 +679,7 @@ export const IPC = {
   setTag: 'agent:set-tag',
   approveDenied: 'agent:approve-denied',
   command: 'agent:command',
+  shellOutput: 'agent:shell-output',
 } as const
 
 /** preload가 window.api로 노출하는 API */
@@ -688,6 +699,8 @@ export interface WhenTerminalApi {
   approveDenied(projectId: string, conversationId: string, calls: DeniedCall[]): Promise<void>
   /** CLI 명령(/goal …)을 세션에 보낸다. 작업으로 치지 않아 상태·보고서가 바뀌지 않는다. 실행 중이면 오류 이벤트 */
   command(projectId: string, conversationId: string, text: string): Promise<void>
+  /** 입력창 `!명령`으로 터미널에서 돌린 명령의 출력을 세션에 덧붙인다 (모델 턴 없이, 다음 메시지에 합쳐진다). 화면에는 출력 항목으로 */
+  shellOutput(projectId: string, conversationId: string, result: ShellResult): Promise<void>
   removeProject(projectId: string): Promise<void>
   addConversation(projectId: string): Promise<Conversation>
   /** 대화(세션)를 닫는다. 실행 중이면 중단한다. 마지막 대화였다면 빈 대화를 새로 만든다. 남은 대화 중 옮겨 갈 ID를 돌려준다 */

@@ -1,6 +1,6 @@
 import { forkSession, getSessionMessages, listSessions, resolveSettings, tagSession, type Query } from '@anthropic-ai/claude-agent-sdk'
 import { randomUUID } from 'node:crypto'
-import { cwdOf, EFFORT_LEVELS, openConversations, QUICK_ALLOWED_TOOLS, QUICK_DISALLOWED_TOOLS, QUICK_PROJECT_ID, type AccountStatus, type AgentOption, type DeniedCall, type EffortInfo, type EffortLevel, type McpServerInfo, type ModelOption, type AgentEventEnvelope, type PermissionExtra, type RewindResult, type RewindScope, type SessionOption, type SessionStatus, type TaskOutput, AgentMode, PermissionDecision, RateLimitInfo, SlashCommandInfo } from '@shared/types'
+import { cwdOf, EFFORT_LEVELS, openConversations, QUICK_ALLOWED_TOOLS, QUICK_DISALLOWED_TOOLS, QUICK_PROJECT_ID, type AccountStatus, type AgentOption, type DeniedCall, type EffortInfo, type EffortLevel, type McpServerInfo, type ModelOption, type AgentEventEnvelope, type PermissionExtra, type RewindResult, type RewindScope, type SessionOption, type SessionStatus, type ShellResult, type TaskOutput, AgentMode, PermissionDecision, RateLimitInfo, SlashCommandInfo } from '@shared/types'
 import type { LimitLevel } from '@shared/usage'
 import type { ProjectStore } from '../store'
 import { AgentSession, baseOptions, modelLabel, toContext, type BasePrefs } from './session'
@@ -119,6 +119,11 @@ export class AgentManager {
   /** CLI 명령(/goal …)을 세션에 보낸다. 작업으로 치지 않는다 */
   command(projectId: string, conversationId: string, text: string): void {
     this.getOrCreate(projectId, conversationId).command(text)
+  }
+
+  /** `!명령` 출력을 세션에 덧붙인다. 작업이 아니라 동시 실행 수·대기열과 무관 */
+  shellOutput(projectId: string, conversationId: string, result: ShellResult): void {
+    this.getOrCreate(projectId, conversationId).appendShell(result)
   }
 
   send(projectId: string, conversationId: string, text: string): void {
