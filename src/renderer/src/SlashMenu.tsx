@@ -17,6 +17,8 @@ const LOCAL: SlashCommandInfo[] = [
   { name: 'add-dir', description: '작업 폴더 밖의 폴더를 이 대화에서 더 쓸 수 있게 해요', argumentHint: '[폴더]', builtin: true },
   { name: 'memory', description: 'CLAUDE.md와 자동 메모리 파일을 열어요', argumentHint: '', builtin: true },
   { name: 'status', description: '로그인 계정·세션·모델·폴더를 봐요', argumentHint: '', aliases: ['login'], builtin: true },
+  { name: 'goal', description: '조건을 걸면 턴이 끝날 때마다 확인하고 못 미치면 계속해요. clear로 풀어요', argumentHint: '[조건 | clear]', builtin: true },
+  { name: 'tag', description: '이 대화에 태그를 붙여요. 홈에서 태그로 거를 수 있어요. clear로 떼요', argumentHint: '[태그 | clear]', builtin: true },
 ]
 
 const cache = new Map<string, SlashCommandInfo[]>()

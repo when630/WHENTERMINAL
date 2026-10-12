@@ -10,7 +10,7 @@ export type ActionId =
   | 'allow' | 'always' | 'deny'
   | 'nextConversation' | 'prevConversation' | 'closeConversation' | 'closeProject' | 'clear' | 'compact' | 'cycleMode' | 'interrupt'
   | 'panelNext' | 'panelPrev' | 'panelBack' | 'stopTask' | 'renameConversation' | 'newConversation' | 'terminal'
-  | 'terminalNew' | 'terminalNext' | 'terminalPrev' | 'terminalClose' | 'terminalFind' | 'cycleEffort' | 'rewind'
+  | 'terminalNew' | 'terminalNext' | 'terminalPrev' | 'terminalClose' | 'terminalFind' | 'cycleEffort' | 'rewind' | 'away'
 
 export type ActionScope = 'system' | 'anywhere' | 'home' | 'chat' | 'approval'
 
@@ -37,6 +37,7 @@ export const ACTIONS: ActionDef[] = [
   { id: 'openSettings', label: 'Settings', scope: 'anywhere', default: 'Ctrl+,' },
   { id: 'search', label: 'Search all conversations', scope: 'anywhere', default: 'Ctrl+Shift+F' },
   { id: 'help', label: 'Keyboard shortcuts', scope: 'anywhere', default: 'Ctrl+/' },
+  { id: 'away', label: 'Away mode on / off', scope: 'anywhere', default: 'Ctrl+Shift+A' },
   { id: 'addProject', label: 'Add project', scope: 'home', default: 'Ctrl+N' },
   { id: 'focusAsk', label: 'Focus task input', scope: 'home', default: 'I' },
   { id: 'down', label: 'Next item', scope: 'home', default: 'J' },
@@ -172,11 +173,20 @@ export interface Settings {
   openAtLogin: boolean
   /** 대화창 아래 터미널의 셸 */
   terminalShell: TerminalShell
+  /**
+   * 자리 비움(OPEN-004): 확인 요청을 묻지 않고 거절해 작업이 멈추지 않게 한다. 거절한 호출은 보고서에 모이고 돌아와서 한 번에 승인·재실행.
+   * 앱을 다시 켜도 유지된다 (밤새 돌리는 용도)
+   */
+  away: boolean
+  /** 턴이 끝나면 다음 지시를 예측해 입력창에 흐리게 띄운다 (SDK promptSuggestions, Tab으로 수락) */
+  promptSuggestions: boolean
+  /** 구독 한도가 80%를 넘으면 새 세션에 토큰 예산을 걸어 모델이 스스로 페이스를 조절하게 한다 (SDK taskBudget, 알파) */
+  budgetWhenHot: boolean
   /** 기본값과 다른 키만 저장 */
   keymap: Partial<Keymap>
 }
 
-export const DEFAULT_SETTINGS: Settings = { theme: 'poster', appIcon: 'prompt', maxConcurrent: 3, worktree: true, openAtLogin: false, terminalShell: 'auto', notify: { approval: true, done: true, terminal: true, usage: true, whenFocused: false }, keymap: {} }
+export const DEFAULT_SETTINGS: Settings = { theme: 'poster', appIcon: 'prompt', maxConcurrent: 3, worktree: true, openAtLogin: false, terminalShell: 'auto', away: false, promptSuggestions: true, budgetWhenHot: true, notify: { approval: true, done: true, terminal: true, usage: true, whenFocused: false }, keymap: {} }
 
 export function effectiveKeymap(settings: Settings): Keymap {
   return { ...DEFAULT_KEYMAP, ...settings.keymap }

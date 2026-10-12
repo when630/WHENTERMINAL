@@ -50,5 +50,9 @@ function sanitize(raw: unknown): Settings {
   const openAtLogin = typeof o.openAtLogin === 'boolean' ? o.openAtLogin : DEFAULT_SETTINGS.openAtLogin
   const appIcon = APP_ICONS.some((i) => i.id === o.appIcon) ? o.appIcon! : DEFAULT_SETTINGS.appIcon
   const terminalShell = TERMINAL_SHELLS.includes(o.terminalShell as TerminalShell) ? o.terminalShell! : DEFAULT_SETTINGS.terminalShell
-  return { theme, appIcon, notify, maxConcurrent, worktree, openAtLogin, terminalShell, keymap }
+  const bool = (v: unknown, fallback: boolean): boolean => (typeof v === 'boolean' ? v : fallback)
+  const away = bool(o.away, DEFAULT_SETTINGS.away)
+  const promptSuggestions = bool(o.promptSuggestions, DEFAULT_SETTINGS.promptSuggestions)
+  const budgetWhenHot = bool(o.budgetWhenHot, DEFAULT_SETTINGS.budgetWhenHot)
+  return { theme, appIcon, notify, maxConcurrent, worktree, openAtLogin, terminalShell, away, promptSuggestions, budgetWhenHot, keymap }
 }

@@ -11,7 +11,8 @@ test.describe('@live', () => {
     await win.locator('#ask-input').fill('notes.txt 끝에 bye 라는 줄을 하나 추가해줘')
     await win.locator('#ask-input').press('Enter')
     await expect(win.locator('.task.waiting')).toBeVisible({ timeout: 120_000 })
-    await win.locator('.task .link').click()
+    // 홈 RUNNING 띠는 더블클릭(또는 고른 뒤 O)으로 대화를 연다
+    await win.locator('.task.waiting').dblclick()
     await expect(win.locator('.permission')).toBeVisible()
     await expect(win.locator('.chat-body.open .status-panel.waiting')).toBeVisible()
     await win.waitForTimeout(800)

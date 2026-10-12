@@ -54,6 +54,30 @@ export interface TaskInfo {
   summary?: string
   unread: boolean
   archived: boolean
+  /** 자리 비움(AWAY) 모드라 묻지 않고 거절한 호출. 돌아와서 한 번에 승인하고 이어 갈 수 있다 */
+  denied?: DeniedCall[]
+}
+
+/** AWAY 모드에서 거절한 도구 호출 하나. 승인·재실행 때 같은 도구·입력이면 묻지 않고 허용한다 */
+export interface DeniedCall {
+  toolName: string
+  title?: string
+  input: Record<string, unknown>
+  at: number
+}
+
+/** /goal로 건 목표 (SDK active_goal). Stop 훅이 조건을 확인하고 못 미치면 iterations를 올린다 */
+export interface GoalInfo {
+  condition: string
+  iterations: number
+  setAt: number
+  lastReason?: string
+}
+
+/** 이번 턴에 들어간 기억 (SDK memory_recall). select는 파일 그대로, synthesize는 요약 문단 */
+export interface MemoryRecall {
+  mode: 'select' | 'synthesize'
+  memories: { path: string; scope: 'personal' | 'team' | 'organization'; content?: string }[]
 }
 
 /** 끝난 작업의 보고서. 재시작해도 보고함에 남도록 대화와 함께 저장 */
@@ -86,6 +110,8 @@ export interface Conversation {
   worktree?: { path: string; branch: string }
   /** 작업 폴더 밖에서 더 읽고 쓸 수 있는 폴더 (/add-dir) */
   additionalDirectories?: string[]
+  /** 세션 태그 (/tag). 홈 카드를 태그로 거른다. SDK tagSession으로 세션 기록에도 남긴다 */
+  tag?: string
 }
 
 /** 대화가 실제로 작업하는 폴더 */
@@ -525,8 +551,20 @@ export type AgentEvent =
   | { kind: 'history'; items: HistoryItem[] }
   /** 화면 기록을 통째로 바꾼다 (되감기·세션 이어 열기·포크 뒤) */
   | { kind: 'replace'; items: HistoryItem[] }
-  /** 대기열 순번 (1부터) */
-  | { kind: 'queue'; position: number }
+  /** 대기열 순번 (1부터). until이 있으면 구독 한도가 풀리는 그 시각까지 기다린다 */
+  | { kind: 'queue'; position: number; until?: number }
+  /** 다음 지시 예측 (SDK prompt_suggestion). null이면 지운다 */
+  | { kind: 'suggestion'; text: string | null }
+  /** /goal 목표의 상태. null이면 목표가 풀렸다 */
+  | { kind: 'goal'; goal: GoalInfo | null }
+  /** 도구 호출 묶음의 한 줄 요약 (SDK tool_use_summary). 화면에서는 그 호출들을 이 줄 아래로 접는다 */
+  | { kind: 'tool_summary'; summary: string; toolUseIds: string[] }
+  /** 이번 턴에 들어간 기억 */
+  | { kind: 'memory'; recall: MemoryRecall }
+  /** AWAY 모드라 묻지 않고 거절했다 */
+  | { kind: 'away_denied'; call: DeniedCall }
+  /** 한도가 높아 이 세션에 토큰 예산을 걸었다 */
+  | { kind: 'budget'; tokens: number }
   /** 살아 있는 백그라운드 작업 전체 (바꿔치기) */
   | { kind: 'background'; tasks: BackgroundTask[] }
   /** 하위 에이전트의 글·도구 호출. parent는 그 에이전트를 띄운 Agent 도구 호출 */
@@ -628,6 +666,9 @@ export const IPC = {
   loginCommand: 'agent:login-command',
   prewarm: 'agent:prewarm',
   quickProject: 'quick:project',
+  setTag: 'agent:set-tag',
+  approveDenied: 'agent:approve-denied',
+  command: 'agent:command',
 } as const
 
 /** preload가 window.api로 노출하는 API */
@@ -641,6 +682,12 @@ export interface WhenTerminalApi {
   prewarm(): Promise<void>
   /** 질문 창(QUICK_PROJECT_ID)의 숨은 프로젝트. 대화 하나를 이어 쓴다 */
   quickProject(): Promise<Project>
+  /** 세션 태그를 붙이거나(null이면) 뗀다. 세션이 있으면 세션 기록에도 남긴다 */
+  setTag(projectId: string, conversationId: string, tag: string | null): Promise<void>
+  /** AWAY 모드에서 거절한 호출을 한 번에 승인하고 이어서 하라고 보낸다. 같은 도구·입력이 다시 오면 묻지 않고 허용한다 */
+  approveDenied(projectId: string, conversationId: string, calls: DeniedCall[]): Promise<void>
+  /** CLI 명령(/goal …)을 세션에 보낸다. 작업으로 치지 않아 상태·보고서가 바뀌지 않는다. 실행 중이면 오류 이벤트 */
+  command(projectId: string, conversationId: string, text: string): Promise<void>
   removeProject(projectId: string): Promise<void>
   addConversation(projectId: string): Promise<Conversation>
   /** 대화(세션)를 닫는다. 실행 중이면 중단한다. 마지막 대화였다면 빈 대화를 새로 만든다. 남은 대화 중 옮겨 갈 ID를 돌려준다 */

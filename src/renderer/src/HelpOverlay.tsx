@@ -1,6 +1,7 @@
 import { ACTIONS, type ActionId, type ActionScope } from '@shared/keymap'
 import { Keys } from './KeyHint'
 import { useKeymap } from './settings'
+import { IS_MAC } from './keys'
 
 /** 도움말을 연 화면. 그 화면의 묶음을 맨 앞에 둔다 */
 export type HelpContext = 'home' | 'chat' | 'settings'
@@ -22,7 +23,7 @@ const GROUPS: Group[] = [
     id: 'anywhere',
     title: 'ANYWHERE',
     note: '어느 화면에서든',
-    actions: ['help', 'search', 'goHome', 'dispatch', 'quickAsk', 'openSettings'],
+    actions: ['help', 'search', 'goHome', 'dispatch', 'quickAsk', 'away', 'openSettings'],
     fixed: [
       ['alt A S D F G H J K L', 'Go to project 1–9'],
       ['ctrl 1…9', 'Go to project (alt.)'],
@@ -50,6 +51,7 @@ const GROUPS: Group[] = [
       ['ctrl C', 'Interrupt (no text selected)'],
       ['enter', 'Send'],
       ['shift enter', 'New line'],
+      ['tab', 'Accept suggested prompt (empty input)'],
       ['up', 'Previous prompt (empty input or first line)'],
       ['down', 'Next prompt'],
       ['1…4', 'Pick an option (question box)'],
@@ -62,7 +64,7 @@ const GROUPS: Group[] = [
     actions: ['terminal', 'terminalNew', 'terminalNext', 'terminalPrev', 'terminalClose', 'terminalFind'],
     fixed: [
       ['ctrl shift C', 'Copy (or Ctrl+C with a selection)'],
-      ['ctrl shift V', 'Paste'],
+      IS_MAC ? ['ctrl shift V', 'Paste (or ⌘V)'] : ['ctrl V', 'Paste (or Ctrl+Shift+V)'],
       ['ctrl Click', 'Open link · Insert file path'],
       ['enter', 'Find: next result'],
       ['shift enter', 'Find: previous result'],
@@ -92,6 +94,8 @@ const GROUPS: Group[] = [
       ['/agents', 'Subagent types'],
       ['/permissions', 'Rules · directories · hooks'],
       ['/add-dir', 'Allow another folder'],
+      ['/goal', 'Keep working until a condition is met'],
+      ['/tag', 'Tag this chat (filter on home)'],
       ['/memory', 'Open CLAUDE.md files'],
       ['/status', 'Account · session · login'],
       ['/', 'All commands and skills'],

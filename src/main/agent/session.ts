@@ -1,6 +1,6 @@
 import { query, type SlashCommand, type ElicitationRequest, type ElicitationResult, type Options, type PermissionResult, type PermissionUpdate, type Query, type SDKMessage, type UserDialogRequest, type UserDialogResult } from '@anthropic-ai/claude-agent-sdk'
 import { randomUUID } from 'node:crypto'
-import { ELICITATION_TOOL, isAgentMode, REFUSAL_TOOL, type AlwaysInfo, type AlwaysScope, type EffortLevel, type AgentEvent, type AgentMode, type AgentStatus, type BackgroundTask, type ContextInfo, type PermissionDecision, type PermissionExtra, type PermissionRequest, type RateLimitInfo } from '@shared/types'
+import { ELICITATION_TOOL, isAgentMode, REFUSAL_TOOL, type AlwaysInfo, type AlwaysScope, type DeniedCall, type EffortLevel, type AgentEvent, type AgentMode, type AgentStatus, type BackgroundTask, type ContextInfo, type GoalInfo, type PermissionDecision, type PermissionExtra, type PermissionRequest, type RateLimitInfo } from '@shared/types'
 import { MessageQueue } from './message-queue'
 import { claudeExecutable } from '../executable'
 import { outputPathIn, rememberTaskOutput } from './task-output'
@@ -9,7 +9,7 @@ import type { SessionCallbacks, SpareHandle } from './spare'
 
 /** 사람의 답을 기다리는 것: 도구 승인 · MCP 입력 요청 · CLI 대화 상자. 화면에는 모두 승인창으로 */
 type Pending =
-  | { kind: 'tool'; resolve: (r: PermissionResult) => void; toolName: string; input: Record<string, unknown>; suggestions?: PermissionUpdate[]; suppressAlwaysAllow: boolean }
+  | { kind: 'tool'; resolve: (r: PermissionResult) => void; toolName: string; input: Record<string, unknown>; title?: string; suggestions?: PermissionUpdate[]; suppressAlwaysAllow: boolean }
   | { kind: 'elicit'; resolve: (r: ElicitationResult | null) => void }
   | { kind: 'dialog'; resolve: (r: UserDialogResult | null) => void }
 
@@ -40,9 +40,37 @@ export interface AgentSessionOptions {
   takeSpare?: () => SpareHandle | null
   /** 도구 제한 (질문 창). 띄울 때 정해지므로 미리 띄운 CLI는 쓰지 않는다 */
   tools?: { disallowed: string[]; allowed: string[] }
+  /** 세션마다 같은 옵션 중 설정에 따라 달라지는 것 */
+  prefs: () => BasePrefs
+  /** 자리 비움(AWAY) 모드인지. 켜져 있으면 사람에게 묻는 대신 거절하고 기록한다 */
+  away: () => boolean
+  /** 새로 띄울 때 걸 토큰 예산. null이면 없음 (구독 한도가 높을 때만) */
+  budget: () => number | null
   emit: (event: AgentEvent) => void
   onSessionId: (sessionId: string) => void
   onRateLimit: (info: RateLimitInfo) => void
+}
+
+/** baseOptions 중 설정에서 오는 것. 미리 띄운 CLI는 띄울 때의 값으로 고정된다 */
+export interface BasePrefs {
+  promptSuggestions: boolean
+}
+
+/** AWAY 모드에서 도구 승인을 거절하며 모델에게 주는 말. 멈추지 말고 할 수 있는 만큼 하고 무엇이 막혔는지 적게 한다 */
+const AWAY_DENY = '사용자가 자리를 비워(AWAY 모드) 지금은 승인할 수 없음. 이 호출 없이 할 수 있는 만큼 진행하고, 꼭 필요했다면 무엇을 승인받아야 하는지 마지막 답변에 적고 끝낼 것'
+const AWAY_DENY_BY_TOOL: Record<string, string> = {
+  AskUserQuestion: '사용자가 자리를 비워(AWAY 모드) 답할 수 없음. 합리적인 기본값을 골라 진행하고 무엇을 가정했는지 마지막 답변에 적을 것',
+  ExitPlanMode: '사용자가 자리를 비워(AWAY 모드) 계획을 승인할 수 없음. 계획을 마지막 답변에 정리하고 끝낼 것',
+}
+
+/** 같은 도구·입력인지 비교하는 키 (키 순서가 달라도 같게) */
+function callKey(toolName: string, input: unknown): string {
+  const stable = (v: unknown): unknown => {
+    if (Array.isArray(v)) return v.map(stable)
+    if (v && typeof v === 'object') return Object.fromEntries(Object.keys(v as object).sort().map((k) => [k, stable((v as Record<string, unknown>)[k])]))
+    return v
+  }
+  return `${toolName}\n${JSON.stringify(stable(input))}`
 }
 
 /** 구독 인증 강제: API 키 환경변수는 구독보다 우선하므로 자식 프로세스에 넘기지 않는다. */
@@ -58,9 +86,13 @@ export function subscriptionEnv(): Record<string, string | undefined> {
 /**
  * 세션마다 같은 SDK 옵션. 미리 띄우는 CLI(prewarm)도 이걸로 띄워야 claim할 수 있다 (폴더·모드·모델·effort는 claim 때 넘긴다)
  */
-export function baseOptions(cb: SessionCallbacks): Options {
+export function baseOptions(cb: SessionCallbacks, prefs: BasePrefs): Options {
   return {
     env: subscriptionEnv(),
+    // 턴이 끝나면 다음 지시를 예측해 준다 (result 뒤에 prompt_suggestion). 부모 프롬프트 캐시를 타서 거의 공짜
+    promptSuggestions: prefs.promptSuggestions,
+    // 하위 에이전트가 지금 무엇을 하는지 30초마다 한 줄 요약 (task_progress.summary)
+    agentProgressSummaries: true,
     canUseTool: cb.canUseTool,
     // MCP 서버가 사람에게 묻는 것(폼·브라우저 인증)과 CLI 대화 상자(거절 뒤 다른 모델로 재시도)를 승인창으로 받는다
     onElicitation: cb.onElicitation,
@@ -179,6 +211,13 @@ export class AgentSession {
   private disposed = false
   /** Esc로 끊은 턴의 result가 아직 오지 않았다. 그 사이 새 메시지를 보냈으면 늦게 온 result가 새 작업을 끝내지 않게 걸러 낸다 */
   private interrupted = false
+  /**
+   * /goal 같은 CLI 명령을 보냈다. 조용히 끝나면 result는 작업 완료가 아니다.
+   * 명령이 모델 턴을 열면(모델이 바로 일을 시작) 그때 작업으로 올린다 (promoteCommand)
+   */
+  private quietCommand: string | null = null
+  /** AWAY에서 거절했다가 사용자가 승인한 호출. 같은 도구·입력이 다시 오면 한 번 묻지 않고 허용한다 */
+  private preapproved = new Set<string>()
 
   constructor(private readonly opts: AgentSessionOptions) {
     this.mode = opts.mode
@@ -256,9 +295,53 @@ export class AgentSession {
 
   private dispatch(text: string, uuid: string): void {
     if (!this.q) this.start()
+    this.quietCommand = null
     this.setStatus('running')
     this.inflight.push({ text, uuid })
     this.queue!.push(text, uuid)
+  }
+
+  /**
+   * CLI 명령(/goal …)을 세션에 보낸다. 작업이 아니므로 상태·보고서를 바꾸지 않는다.
+   * 실행 중이면 거절 (턴 사이에 끼면 지금 턴에 섞인다)
+   */
+  command(text: string): void {
+    if (this.isBusy() || this.manualCompact || this.status === 'queued') return this.emit({ kind: 'error', message: '작업이 끝난 뒤에 보낼 수 있어요' })
+    if (!this.q) this.start()
+    this.quietCommand = text
+    this.queue!.push(text)
+  }
+
+  /** 명령이 모델 턴을 열었다: 그 명령을 작업으로 올려 화면·상태·보고서가 따라가게 한다 */
+  private promoteCommand(): void {
+    const text = this.quietCommand
+    if (!text) return
+    this.quietCommand = null
+    this.emit({ kind: 'user', text })
+    this.setStatus('running')
+  }
+
+  /** AWAY에서 거절한 호출을 승인한다. 같은 호출이 다시 오면 묻지 않고 허용 (한 번씩) */
+  preapprove(calls: DeniedCall[]): void {
+    for (const c of calls) this.preapproved.add(callKey(c.toolName, c.input))
+  }
+
+  /** AWAY 모드를 켰다: 이미 기다리던 확인 요청도 묻지 않고 거절해 작업이 이어지게 한다 */
+  applyAway(): void {
+    for (const [requestId, p] of this.pending) {
+      if (p.kind === 'tool') this.denyAway(p.toolName, p.input, p.title, (r) => p.resolve(r))
+      else if (p.kind === 'elicit') p.resolve({ action: 'decline' })
+      else p.resolve({ behavior: 'cancelled' })
+      this.pending.delete(requestId)
+      this.emit({ kind: 'permission_resolved', requestId })
+    }
+    if (this.status === 'waiting_approval') this.setStatus('running')
+  }
+
+  /** 묻지 않고 거절하면서 보고서에 남긴다 */
+  private denyAway(toolName: string, input: Record<string, unknown>, title: string | undefined, resolve: (r: PermissionResult) => void): void {
+    this.emit({ kind: 'away_denied', call: { toolName, title, input, at: Date.now() } })
+    resolve({ behavior: 'deny', message: AWAY_DENY_BY_TOOL[toolName] ?? AWAY_DENY })
   }
 
   /** 들고 있던 메시지를 하나 보낸다. 작업은 이때 시작한다 */
@@ -417,17 +500,19 @@ export class AgentSession {
 
   private start(): void {
     this.queue = new MessageQueue()
+    // 구독 한도가 높으면 토큰 예산을 건다. 띄울 때만 줄 수 있는 옵션이라(claim 불가) 이때는 새로 띄운다
+    const budget = this.opts.budget()
     // 이어 여는 세션은 claim할 수 없다. 새 세션이고 미리 띄운 CLI가 있으면 그걸 쓴다
-    const spare = this.sessionId || this.opts.tools ? null : (this.opts.takeSpare?.() ?? null)
+    const spare = this.sessionId || this.opts.tools || budget ? null : (this.opts.takeSpare?.() ?? null)
     if (spare) this.startFromSpare(spare)
-    else this.startCold()
+    else this.startCold(budget)
   }
 
-  private startCold(): void {
+  private startCold(budget: number | null = null): void {
     this.q = query({
       prompt: this.queue!,
       options: {
-        ...baseOptions(this.callbacks),
+        ...baseOptions(this.callbacks, this.opts.prefs()),
         cwd: this.opts.cwd,
         permissionMode: this.mode,
         resume: this.sessionId,
@@ -435,8 +520,11 @@ export class AgentSession {
         effort: this.opts.effort,
         additionalDirectories: this.additionalDirectories(),
         ...(this.opts.tools ? { disallowedTools: this.opts.tools.disallowed, allowedTools: this.opts.tools.allowed } : {}),
+        // 모델이 남은 예산을 알고 도구 사용을 조절해 그 안에서 마무리한다 (알파 API)
+        ...(budget ? { taskBudget: { total: budget } } : {}),
       },
     })
+    if (budget) this.emit({ kind: 'budget', tokens: budget })
     void this.consume(this.q)
   }
 
@@ -492,10 +580,15 @@ export class AgentSession {
     canUseTool: (toolName, input, options) => {
       const requestId = randomUUID()
       return new Promise<PermissionResult>((resolve) => {
+        // AWAY에서 거절했다가 승인한 호출이 다시 왔다: 이번 한 번은 묻지 않는다
+        const key = callKey(toolName, input)
+        if (this.preapproved.delete(key)) return resolve({ behavior: 'allow' })
+        // 자리 비움: 묻는 대신 거절하고 보고서에 남긴다. 작업은 멈추지 않는다
+        if (this.opts.away()) return this.denyAway(toolName, input, options.title, resolve)
         // 기억할 규칙이 없으면(이어 붙인 명령 등) '항상 허용'은 한 번 허용과 같으므로 내놓지 않는다
         const always = describeAlways(options.suggestions)
         const suppressAlwaysAllow = (options.suppressAlwaysAllowRule ?? false) || !always
-        this.pending.set(requestId, { kind: 'tool', resolve, toolName, input, suggestions: options.suggestions, suppressAlwaysAllow })
+        this.pending.set(requestId, { kind: 'tool', resolve, toolName, input, title: options.title, suggestions: options.suggestions, suppressAlwaysAllow })
         this.ask(requestId, options.signal, {
           toolName,
           input,
@@ -509,6 +602,11 @@ export class AgentSession {
       })
     },
     onElicitation: (request: ElicitationRequest, { signal }) => {
+      // 자리 비움: 답할 사람이 없으니 거절
+      if (this.opts.away()) {
+        this.emit({ kind: 'away_denied', call: { toolName: ELICITATION_TOOL, title: request.title ?? `${request.serverName} 서버의 입력 요청`, input: { message: request.message }, at: Date.now() } })
+        return Promise.resolve<ElicitationResult>({ action: 'decline' })
+      }
       const requestId = randomUUID()
       return new Promise<ElicitationResult | null>((resolve) => {
         this.pending.set(requestId, { kind: 'elicit', resolve })
@@ -532,8 +630,8 @@ export class AgentSession {
       })
     },
     onUserDialog: (request: UserDialogRequest, { signal }) => {
-      // 모르는 종류는 cancelled로 답해야 CLI가 기본 동작을 한다
-      if (request.dialogKind !== REFUSAL_DIALOG) return Promise.resolve<UserDialogResult>({ behavior: 'cancelled' })
+      // 모르는 종류는 cancelled로 답해야 CLI가 기본 동작을 한다. 자리 비움일 때도 같다
+      if (request.dialogKind !== REFUSAL_DIALOG || this.opts.away()) return Promise.resolve<UserDialogResult>({ behavior: 'cancelled' })
       const p = request.payload as { originalModel?: string; fallbackModel?: string; apiRefusalCategory?: string | null; guidanceText?: string }
       const requestId = randomUUID()
       return new Promise<UserDialogResult | null>((resolve) => {
@@ -592,6 +690,7 @@ export class AgentSession {
         this.queue = null
         this.claiming = false
         this.inflight = []
+        this.quietCommand = null
         // 백그라운드 작업은 CLI 프로세스와 함께 끝난다
         this.setBackground([])
         this.interrupted = false
@@ -607,9 +706,23 @@ export class AgentSession {
   }
 
   private handle(msg: SDKMessage): void {
+    // /goal의 상태는 SDK 메시지 유니온 밖에서 온다 (전송 계층이 그대로 넘긴다)
+    if ((msg as { type: string }).type === 'active_goal') {
+      const v = (msg as unknown as { value: { condition: string; iterations: number; set_at: number; last_reason?: string } | null }).value
+      this.emit({ kind: 'goal', goal: v ? { condition: v.condition, iterations: v.iterations, setAt: v.set_at, lastReason: v.last_reason } : null })
+      return
+    }
     switch (msg.type) {
+      case 'prompt_suggestion':
+        this.emit({ kind: 'suggestion', text: msg.suggestion.trim() || null })
+        break
+      case 'tool_use_summary':
+        if (msg.preceding_tool_use_ids.length) this.emit({ kind: 'tool_summary', summary: msg.summary, toolUseIds: msg.preceding_tool_use_ids })
+        break
       case 'system':
-        if (msg.subtype === 'init') {
+        if (msg.subtype === 'memory_recall') {
+          if (msg.memories.length) this.emit({ kind: 'memory', recall: { mode: msg.mode, memories: msg.memories.map((m) => ({ path: m.path, scope: m.scope, content: m.content })) } })
+        } else if (msg.subtype === 'init') {
           if (msg.session_id !== this.sessionId) {
             this.sessionId = msg.session_id
             this.opts.onSessionId(msg.session_id)
@@ -695,6 +808,8 @@ export class AgentSession {
         }
         break
       case 'stream_event':
+        // 명령(/goal)이 모델 턴을 열었다
+        if (this.quietCommand && msg.parent_tool_use_id === null && msg.event.type === 'message_start') this.promoteCommand()
         if (msg.parent_tool_use_id === null && msg.event.type === 'content_block_delta') {
           if (msg.event.delta.type === 'text_delta') this.emit({ kind: 'text_delta', text: msg.event.delta.text })
           else if (msg.event.delta.type === 'thinking_delta') this.emit({ kind: 'thinking_delta', text: msg.event.delta.thinking })
@@ -716,6 +831,8 @@ export class AgentSession {
           }
           break
         }
+        // 스트리밍 시작을 놓쳤어도 답이 오면 작업으로 올린다
+        if (this.quietCommand) this.promoteCommand()
         for (const block of msg.message.content) {
           if (block.type === 'text') this.emit({ kind: 'assistant_text', text: block.text })
           else if (block.type === 'thinking') this.emit({ kind: 'thinking', text: block.thinking })
@@ -759,6 +876,13 @@ export class AgentSession {
         if (this.claiming && msg.subtype !== 'success' && msg.errors?.some((e) => e.startsWith('not_claimed'))) break
         this.inflight = []
         void this.refreshContext()
+        if (this.quietCommand) {
+          // /goal 같은 명령의 결과: 작업이 아니다
+          this.quietCommand = null
+          if (msg.subtype !== 'success' || msg.is_error) this.emit({ kind: 'error', message: `명령을 실행하지 못했어요: ${msg.subtype}` })
+          this.sendHeld()
+          break
+        }
         if (this.manualCompact) {
           // /compact의 결과: 작업이 끝난 것이 아니므로 상태·보고서는 그대로 둔다
           if (msg.subtype !== 'success' || msg.is_error) this.emit({ kind: 'error', message: '컴팩트하지 못했어요' })

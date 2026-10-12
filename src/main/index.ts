@@ -2,7 +2,8 @@ import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage,
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { cwdOf, IPC, MAX_PROJECTS, type Conversation, type ModelOption, type StoredTask, type UsageInfo, type AgentEventEnvelope, type AgentMode, type PermissionDecision, type PermissionExtra, type PermissionRuleSource, type RateLimitInfo, type RewindScope, type TerminalShell, type EffortLevel } from '@shared/types'
+import { cwdOf, IPC, MAX_PROJECTS, type Conversation, type DeniedCall, type ModelOption, type StoredTask, type UsageInfo, type AgentEventEnvelope, type AgentMode, type PermissionDecision, type PermissionExtra, type PermissionRuleSource, type RateLimitInfo, type RewindScope, type TerminalShell, type EffortLevel } from '@shared/types'
+import { limitAllowed, worstLimit } from '@shared/usage'
 import { newConversationId, ProjectStore } from './store'
 import { memoryFiles, permissionsInfo, setPermissionRule } from './agent/config'
 import { exportMarkdown } from './agent/history'
@@ -116,6 +117,8 @@ function bootstrap(): void {
     win?.setBackgroundColor(themeBackground(saved))
     if (saved.openAtLogin !== before.openAtLogin) applyLoginItem(saved)
     if (saved.appIcon !== before.appIcon) applyAppIcon(saved)
+    // AWAY를 켰으면 기다리던 확인 요청부터 거절해 작업이 이어지게
+    if (saved.away !== before.away) manager.setAway(saved.away)
     // 동시 실행 수를 늘렸으면 기다리던 대화를 바로 시작
     manager.drain()
     send(IPC.settingsChanged, saved)
@@ -131,7 +134,13 @@ function bootstrap(): void {
   const USAGE_STALE_MS = 5 * 60_000
   const usageAlerts = new UsageAlerts()
   const alertUsage = (u: UsageInfo | null): void => {
-    if (u) for (const a of usageAlerts.check(u)) notifier.usage(a.id, a.title, a.body)
+    if (!u) return
+    for (const a of usageAlerts.check(u)) notifier.usage(a.id, a.title, a.body)
+    // 한도를 다 썼으면 대기열을 초기화 시각까지 잡아 두고, 80%를 넘으면 새 세션에 예산을 건다 (OPEN-006)
+    const worst = worstLimit(u)
+    // 추가 사용량이 있으면 100%여도 서버가 허용할 수 있다. 허용한다고 알려 온 창은 보류하지 않는다
+    const hold = worst?.level === 100 && !limitAllowed(worst.window)
+    manager.setLimit(worst?.level ?? 0, hold ? worst.window.resetsAt : null)
   }
   const refreshUsage = (): Promise<UsageInfo | null> => {
     usageInflight ??= fetchUsage(manager.liveQuery())
@@ -199,9 +208,14 @@ function bootstrap(): void {
       if (usage) send(IPC.usage, usage)
       alertUsage(usage)
     },
-    () => settingsStore.get().maxConcurrent,
+    () => {
+      const s = settingsStore.get()
+      return { maxConcurrent: s.maxConcurrent, away: s.away, budgetWhenHot: s.budgetWhenHot, promptSuggestions: s.promptSuggestions }
+    },
     // 제목이 바뀌면 (임시 제목·자동 제목) 탭·사이드바를 다시 그린다
     () => projectsChanged(),
+    // 한도 보류가 풀렸다: 사용량을 다시 읽어 화면도 맞춘다
+    () => void refreshUsage(),
   )
   ipcMain.handle(IPC.getUsage, (_e, refresh?: boolean) =>
     refresh || !usage || Date.now() - usage.fetchedAt > USAGE_STALE_MS ? refreshUsage() : usage,
@@ -444,6 +458,12 @@ function bootstrap(): void {
   ipcMain.handle(IPC.loginCommand, () => loginCommand())
   ipcMain.handle(IPC.prewarm, () => manager.prewarm())
   ipcMain.handle(IPC.quickProject, () => store.quick())
+  ipcMain.handle(IPC.setTag, async (_e, projectId: string, conversationId: string, tag: string | null) => {
+    await manager.setTag(projectId, conversationId, tag)
+    projectsChanged()
+  })
+  ipcMain.handle(IPC.approveDenied, (_e, projectId: string, conversationId: string, calls: DeniedCall[]) => manager.approveDenied(projectId, conversationId, calls))
+  ipcMain.handle(IPC.command, (_e, projectId: string, conversationId: string, text: string) => manager.command(projectId, conversationId, text))
 
   // Windows: 기본 메뉴의 Alt 니모닉(Alt+F 파일, Alt+H 도움말 …)이 Alt+홈 줄 프로젝트 이동과 겹치므로 메뉴를 없앤다.
   // 메뉴가 없어도 입력창의 복사·붙여넣기는 그대로 동작한다.

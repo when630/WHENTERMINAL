@@ -170,10 +170,18 @@ export function App(): React.JSX.Element {
     if (focusInput && view.screen === 'home') inputRef.current?.focus()
   }, [focusInput, view.screen])
 
-  const { running, reports } = useMemo(() => collectTasks(projects, convs), [projects, convs])
+  const all = useMemo(() => collectTasks(projects, convs), [projects, convs])
+  // 홈 카드 태그 필터 (/tag). 키 이동도 거른 목록 기준이라 App에서 거른다
+  const [tagFilter, setTagFilter] = useState<string | null>(null)
+  const tags = useMemo(() => [...new Set([...all.running, ...all.reports].map((r) => r.tag).filter((t): t is string => !!t))].sort(), [all])
+  const activeTag = tagFilter && tags.includes(tagFilter) ? tagFilter : null
+  const { running, reports } = useMemo(
+    () => (activeTag ? { running: all.running.filter((r) => r.tag === activeTag), reports: all.reports.filter((r) => r.tag === activeTag) } : all),
+    [all, activeTag],
+  )
   const background = useMemo(() => collectBackground(projects, convs), [projects, convs])
   const flat = useMemo(() => [...running, ...reports], [running, reports])
-  const unreadTotal = reports.filter((r) => r.task.unread).length
+  const unreadTotal = all.reports.filter((r) => r.task.unread).length
 
   // 대화를 열면서 바로 펼칠 명령 화면 (홈 보고서의 TOOLS)
   const [openPanel, setOpenPanel] = useState<{ conversationId: string; panel: ToolPanel; nonce: number } | null>(null)
@@ -192,7 +200,7 @@ export function App(): React.JSX.Element {
   openChatRef.current = openChat
 
   // Dock 배지·트레이: 확인 대기 수 + 새 보고 수
-  const waitingTotal = running.filter((r) => r.state.permissions.length > 0).length
+  const waitingTotal = all.running.filter((r) => r.state.permissions.length > 0).length
   useEffect(() => window.api.setBadge(waitingTotal, unreadTotal), [waitingTotal, unreadTotal])
 
   const openProject = useCallback(
@@ -301,6 +309,12 @@ export function App(): React.JSX.Element {
   const openSettingsRef = useRef(openSettings)
   openSettingsRef.current = openSettings
 
+  /** 자리 비움: 켜면 확인 요청을 묻지 않고 거절해 작업이 멈추지 않는다 (메인이 기다리던 요청도 바로 정리) */
+  const toggleAway = (): void => {
+    void window.api.setSettings({ ...settings, away: !settings.away }).then((r) => setSettings(r.settings))
+    showFlash(settings.away ? 'AWAY OFF · 다시 확인 요청을 물어요' : 'AWAY ON · 확인 요청은 묻지 않고 거절해요')
+  }
+
   const decisionOf = (e: KeyboardEvent): PermissionDecision | null =>
     matches(e, km.allow) ? 'allow' : matches(e, km.always) ? 'always' : matches(e, km.deny) ? 'deny' : null
 
@@ -343,6 +357,8 @@ export function App(): React.JSX.Element {
       })
     }
     if (quickOpen) return
+    // 자리 비움(AWAY) 켜고 끄기: 어디서든
+    if (is('away')) return take(toggleAway)
     if (is('help')) {
       return take(() => {
         setSearchOpen(false)
@@ -521,9 +537,11 @@ export function App(): React.JSX.Element {
         flash={flashShown.item ? { text: flashShown.item, leaving: flashShown.leaving } : null}
         armedProjectId={armed?.kind === 'project' ? armed.id : null}
         onRemoveProjectRequest={requestRemoveProject}
+        away={settings.away}
+        onToggleAway={toggleAway}
       />
       <div className="content">
-        <Ticker running={running} reports={reports} background={background} />
+        <Ticker running={all.running} reports={all.reports} background={background} />
         <div className="stage" key={view.screen === 'chat' ? `chat:${view.projectId}` : view.screen}>
           {view.screen === 'settings' ? (
             <SettingsScreen settings={settings} activeHotkey={hotkey} update={update} onClose={closeSettings} onSaved={(next, hk) => { setSettings(next); if (hk !== undefined) setHotkey(hk) }} />
@@ -546,6 +564,8 @@ export function App(): React.JSX.Element {
               panelRef={chatPanelRef}
               jump={jump?.conversationId === view.conversationId ? jump : null}
               openPanel={openPanel?.conversationId === view.conversationId ? openPanel : null}
+              away={settings.away}
+              suggestions={settings.promptSuggestions}
             />
           ) : (
             <Home
@@ -570,6 +590,20 @@ export function App(): React.JSX.Element {
               onNewTaskFor={newTaskFor}
               onRespond={respond}
               onAddProject={addProject}
+              tags={tags}
+              tag={activeTag}
+              onTag={(t) => {
+                setTagFilter(t)
+                setSelectedId(null)
+              }}
+              onApproveDenied={(r) => {
+                const calls = r.task.denied ?? []
+                if (!calls.length) return
+                // 승인한 호출은 보고서에서 지우고 이어서 하라고 보낸다
+                patchTask(r.conversationId, { denied: undefined, unread: false })
+                setOpenReportId(null)
+                void window.api.approveDenied(r.project.id, r.conversationId, calls)
+              }}
             />
           )}
         </div>

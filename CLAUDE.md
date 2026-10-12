@@ -64,7 +64,7 @@
   - 명령 끝남: 셸 통합 없이 Enter로 시작(`onInput`) → 출력이 0.8초 잠잠하고 커서 줄이 프롬프트(`PROMPT_END`)면 끝. 10초 넘게 돌았고 그 탭을 보고 있지 않으면 탭에 표시(`done`)하고 `notifyTerminal` → 알림을 누르면 그 탭(`navigate`의 `terminal`)
   - 키맵 `terminal`(기본 `Ctrl+T`): 닫힘·접힘이면 펼치고 터미널로, 펼쳐져 있으면 입력창 → 터미널, 터미널에서 누르면 접고 입력창으로. 접어도 셸은 돈다. 높이는 끌어서(localStorage)
   - 열기·접기·펼치기·닫기 움직임(`useDrawerMotion`): 서랍 높이만 한 번 움직이고, 그동안 `.term-body` 높이를 고정해 xterm이 프레임마다 fit하지 않게 한다. 접히는 동안(`folding`)은 펼친 모습 그대로, 닫히는 동안(`leaving`)은 마지막 화면을 붙잡아 둔다. 대화를 옮겨 바뀐 것은 움직이지 않는다
-  - 터미널에 포커스가 있으면(`[data-terminal]`) App은 앱을 오가는 키(terminal·terminalClose·goHome·help·search·탭 이동·새 탭·설정·⌥A~L)만 받고 나머지(Esc·Ctrl+C·Ctrl+L …)는 셸로. 선택이 있을 때 Ctrl+C·Ctrl+Shift+C 복사, Ctrl+Shift+V 붙여넣기
+  - 터미널에 포커스가 있으면(`[data-terminal]`) App은 앱을 오가는 키(terminal·terminalClose·goHome·help·search·탭 이동·새 탭·설정·⌥A~L)만 받고 나머지(Esc·Ctrl+C·Ctrl+L …)는 셸로. 선택이 있을 때 Ctrl+C·Ctrl+Shift+C 복사, Ctrl+V·Ctrl+Shift+V 붙여넣기(macOS는 Ctrl+Shift+V·⌘V. 처리한 키는 `preventDefault`까지 해야 Chromium 붙여넣기 이벤트로 두 번 들어가지 않는다)
   - Bash·PowerShell 도구 줄의 RUN IN TERMINAL: 명령을 입력줄에 넣기만 한다(실행은 사용자 Enter). SEND TO CLAUDE: 선택한 출력을 입력창에 코드 블록으로
   - 대화·프로젝트 닫기, 작업 공간 버리기 전에 셸을 끝낸다 (셸이 작업 공간 폴더를 잡고 있으면 지울 수 없다). 셸은 설정 `terminalShell`(AUTO는 pwsh → PowerShell, macOS는 $SHELL), 환경 변수는 사용자 것 그대로
   - 셸 고르기: 서랍 머리의 셸 이름(`ShellPicker`)을 누르면 이 컴퓨터에 있는 셸(`availableShells`: pwsh·PowerShell·Git Bash·cmd·WSL / zsh·bash·fish, WSL은 레지스트리 `Lxss`로 확인)이 펼쳐진다. 고르면 지금 셸을 끝내고 새로 띄우며, 다음 터미널의 기본값(`terminalShell`)으로도 저장한다
@@ -96,6 +96,12 @@
 - 답변은 `Markdown.tsx`(react-markdown, 원시 HTML 비허용). 링크는 메인이 외부 브라우저로만 연다 (`setWindowOpenHandler`, `will-navigate` 차단)
 - 알림(`main/notify.ts`): 확인 요청·작업 끝남·터미널 명령 끝남·한도 경고(설정 `notify`의 approval·done·terminal·usage). 누르면 `IPC.navigate`로 그 대화로. 배지는 렌더러가 `setBadge`로 보낸다
 - 대기열(OPEN-003): `AgentManager.send`가 `maxConcurrent`를 넘으면 `queued`로 두고, 상태가 끝나면 `drain()`. 확인 대기도 자리를 차지한다
+  - 한도 보류(OPEN-006): 사용량이 바뀔 때마다 메인이 `manager.setLimit`. 5시간·주간 창이 100%이고 서버가 허용이라고 하지 않았으면(`limitAllowed`, 추가 사용량) 새 작업을 초기화 시각+5초까지 `atCapacity`로 잡아 두고 그때 `drain()`. `queue` 이벤트의 `until`로 작업 줄에 `LIMIT · 09:00 재개`. 입력창은 이때 Enter 두 번 확인을 건너뛴다
+  - 토큰 예산(설정 `budgetWhenHot`): 한도 80/95%면 새로 띄우는 세션에 `taskBudget`(`BUDGET_BY_LEVEL`, 알파 API). 띄울 때만 줄 수 있어 이때는 미리 띄운 CLI를 쓰지 않는다. `budget` 이벤트 → 구분선
+- 자리 비움(AWAY, OPEN-004, 설정 `away`·키맵 `away` 기본 `Ctrl+Shift+A`·사이드바 AWAY): `canUseTool`·`onElicitation`·`onUserDialog`가 묻지 않고 거절하고 `away_denied` 이벤트 → `TaskInfo.denied`(보고서에 저장). 켜는 순간 기다리던 요청도 `applyAway`로 거절. 질문 창은 제외. 보고서·대화창의 APPROVE ALL · CONTINUE → `approveDenied`: 같은 도구·입력(`callKey`)을 한 번씩 묻지 않고 허용하도록 등록하고 이어서 하라는 메시지를 보낸다
+- SDK가 주는 부가 정보 (`baseOptions`): `promptSuggestions`(설정, `prompt_suggestion` → `ConversationState.suggestion` → 입력창이 비었을 때 placeholder로 흐리게, Tab으로 받음) · `agentProgressSummaries`(하위 에이전트 한 줄 요약 → `task_progress.summary`) · `tool_use_summary`(→ `summary` 항목, 그릴 때 `foldSummaries`가 그 도구들을 `ToolGroup`으로 접는다. 상태는 평평하게 두므로 검색 점프는 순번이 아니라 `data-idx`) · `memory_recall`(→ 접힌 `MEMORY` 항목)
+- 목표(`/goal 조건`, CLI 명령): `command` IPC → 세션 `command()`가 작업으로 치지 않고 보낸다(`quietCommand`). 모델 턴이 열리면(`message_start`·답) `promoteCommand`로 작업으로 올린다. 상태는 SDK 메시지 유니온 밖의 `active_goal` → `goal` 이벤트 → 상단 `GOAL · n` 배지·홈 카드, 못 미침·달성은 구분선
+- 태그(`/tag 이름`, `/tag clear`): `Conversation.tag` + SDK `tagSession`. 홈 TAGS 줄로 거른다(App이 거른 목록으로 키 이동, 배지·전광판은 전체)
 - 작업 공간(OPEN-002, `main/worktree.ts`): 탭 +로 만든 대화만 `userData/worktrees`에 git worktree(`wt/<id>`). 세션·기록·peek의 폴더는 `cwdOf()`. 닫을 때 깨끗하면 정리
 - 앱 아이콘: 원본 `build/icons/*.svg` → `npm run icons`(Electron 오프스크린 렌더, Archivo 글꼴)로 `resources/icons/*.png`와 `build/icons/preview.png`. 기본·설치 파일 아이콘은 `prompt`. 설정에서 고르면 메인이 Dock(macOS)·창 아이콘을 바로 바꾼다. 패키징한 앱은 `extraResources`의 `Resources/icons`
 - 패키징: electron-builder(`package.json`의 `build`). SDK의 OS별 CLI 바이너리는 `asarUnpack`으로 풀고, 패키징한 앱에서는 `claudeExecutable()` 경로를 `pathToClaudeCodeExecutable`로 넘긴다. 렌더러에서만 쓰는 패키지는 devDependencies에 둘 것 (번들에 들어가므로)

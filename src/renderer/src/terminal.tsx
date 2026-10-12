@@ -6,7 +6,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import '@xterm/xterm/css/xterm.css'
 import { DEFAULT_KEYMAP, type Keymap } from '@shared/keymap'
 import type { TerminalInfo, TerminalShell, TerminalShellOption } from '@shared/types'
-import { matches } from './keys'
+import { IS_MAC, matches } from './keys'
 import { EASE, reducedMotion, usePresence } from './motion'
 import { ListHead } from './ModelPicker'
 import { useKeymap } from './settings'
@@ -283,14 +283,19 @@ function entryOf(projectId: string, conversationId: string, termId: string): Ent
   term.onResize(({ cols, rows }) => window.api.terminalResize(termId, cols, rows))
   term.attachCustomKeyEventHandler((e) => {
     if (e.type !== 'keydown') return true
-    // 복사·붙여넣기: 선택이 있을 때 Ctrl+C는 복사 (없으면 셸로 ^C), Ctrl+Shift+C/V
-    const copy = (e.ctrlKey && e.shiftKey && e.code === 'KeyC') || (e.ctrlKey && !e.shiftKey && !e.altKey && e.code === 'KeyC' && term.hasSelection())
+    // 복사·붙여넣기: 선택이 있을 때 Ctrl+C는 복사 (없으면 셸로 ^C), Ctrl+Shift+C/V.
+    // 직접 처리한 키는 브라우저 기본 동작도 막는다. 안 막으면 Chromium이 붙여넣기 이벤트를 또 내서 xterm이 한 번 더 붙여넣는다
+    const copy = (e.ctrlKey && e.shiftKey && !e.altKey && e.code === 'KeyC') || (e.ctrlKey && !e.shiftKey && !e.altKey && e.code === 'KeyC' && term.hasSelection())
     if (copy) {
+      e.preventDefault()
       void navigator.clipboard.writeText(term.getSelection()).catch(() => {})
       term.clearSelection()
       return false
     }
-    if (e.ctrlKey && e.shiftKey && e.code === 'KeyV') {
+    // Ctrl+Shift+V, 그리고 Windows·Linux는 Ctrl+V도 (Windows Terminal·VS Code처럼). macOS의 Ctrl+V는 셸의 ^V로 두고 ⌘V는 편집 메뉴가 붙여넣는다
+    const paste = e.ctrlKey && !e.altKey && !e.metaKey && e.code === 'KeyV' && (e.shiftKey || !IS_MAC)
+    if (paste) {
+      e.preventDefault()
       void navigator.clipboard.readText().then((t) => t && term.paste(t)).catch(() => {})
       return false
     }
