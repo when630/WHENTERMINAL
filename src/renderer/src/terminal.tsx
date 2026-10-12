@@ -654,9 +654,9 @@ export async function execInTerminal(projectId: string, conversationId: string, 
   setUi(conversationId, { open: true, expanded: true })
   const e = entryOf(projectId, conversationId, termId)
   await start(projectId, conversationId, termId)
-  await Promise.race([e.ready, sleep(3000)])
-  // 프롬프트가 떠야 명령을 받는다 (길어야 3초 기다린다)
-  for (let i = 0; i < 30 && !PROMPT_END.test(cursorLine(e.term).trimEnd()); i++) await sleep(100)
+  // 셸이 뜨고 프롬프트가 떠야 명령을 받는다. 셸(특히 PowerShell)은 바쁜 컴퓨터에서 몇 초 걸리므로 넉넉히 기다린다
+  await Promise.race([e.ready, sleep(15_000)])
+  for (let i = 0; i < 150 && e.started && !PROMPT_END.test(cursorLine(e.term).trimEnd()); i++) await sleep(100)
   if (e.cmd || e.exec || e.term.buffer.active.type !== 'normal' || !PROMPT_END.test(cursorLine(e.term).trimEnd())) return null
   const text = command.replace(/\r?\n$/, '')
   return new Promise((resolve) => {
