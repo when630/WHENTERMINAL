@@ -94,6 +94,9 @@ export const cwdOf = (p: Project, c: Conversation | undefined): string => c?.wor
 /** 탭·목록에 보이는 대화 (닫힌 대화 제외) */
 export const openConversations = (p: Project): Conversation[] => p.conversations.filter((c) => !c.closedAt)
 
+/** 프로젝트 수 상한. 홈 열의 키(A S D F G H J K L)와 Ctrl+1~9가 9개라 그 안에서만 받는다 (OPEN-007) */
+export const MAX_PROJECTS = 9
+
 export interface Project {
   id: string
   name: string
@@ -111,6 +114,41 @@ export interface PermissionExtra {
   planMode?: AgentMode
   /** 거절 이유 (계획을 더 다듬어 달라는 등). 모델에게 전달된다 */
   message?: string
+  /** MCP 서버의 입력 요청(elicitation)에 대한 답. accept면 content에 폼 값 */
+  elicitation?: { action: 'accept' | 'decline' | 'cancel'; content?: Record<string, string | number | boolean | string[]> }
+  /** 모델이 답을 거절했을 때의 선택 (CLI refusal_fallback_prompt 대화 상자) */
+  dialog?: RefusalChoice
+}
+
+/** 거절 대화 상자의 답: 다른 모델로 다시 시도 · 지시를 고쳐 다시 보냄 · 그만 */
+export type RefusalChoice = 'retry_fallback' | 'edit_prompt' | 'cancelled'
+
+/** 앱이 만든 승인 요청의 도구 이름. 도구 호출이 아니라 CLI·MCP가 사람에게 묻는 것 */
+export const ELICITATION_TOOL = 'McpElicitation'
+export const REFUSAL_TOOL = 'RefusalFallback'
+
+/** Y/A/N 한 키로 답할 수 없는 요청 (답을 골라야 한다) */
+export const needsChoice = (toolName: string): boolean =>
+  toolName === 'AskUserQuestion' || toolName === 'ExitPlanMode' || toolName === ELICITATION_TOOL || toolName === REFUSAL_TOOL
+
+/** MCP 서버가 사람에게 묻는 것 (SDK onElicitation): 폼 값을 받거나 브라우저에서 인증하고 오기 */
+export interface ElicitationInfo {
+  serverName: string
+  message: string
+  mode: 'form' | 'url'
+  url?: string
+  /** form: 받을 값의 JSON Schema (properties·required) */
+  schema?: Record<string, unknown>
+  title?: string
+  description?: string
+}
+
+/** 모델이 답을 거절해 CLI가 다른 모델로 다시 시도할지 묻는 것 (SDK onUserDialog의 refusal_fallback_prompt) */
+export interface RefusalInfo {
+  originalModel: string
+  fallbackModel: string
+  category?: string
+  guidance?: string
 }
 
 export interface PermissionRequest {
@@ -125,6 +163,10 @@ export interface PermissionRequest {
   suppressAlwaysAllow?: boolean
   /** 하위 에이전트 안에서 온 요청이면 그 에이전트 ID */
   agentId?: string
+  /** toolName이 ELICITATION_TOOL일 때 */
+  elicitation?: ElicitationInfo
+  /** toolName이 REFUSAL_TOOL일 때 */
+  refusal?: RefusalInfo
 }
 
 /** AskUserQuestion 도구의 질문 하나 (SDK AskUserQuestionInput) */
@@ -463,6 +505,10 @@ export type AgentEvent =
   | { kind: 'task_note'; text: string }
   /** toolUseId는 이 작업을 띄운 도구 호출 */
   | { kind: 'task_progress'; toolUseId: string; progress: AgentProgress }
+  /** 설정의 훅(PreToolUse·PostToolUse·Stop …)이 돌기 시작·진행·끝남. output은 지금까지의 출력 */
+  | { kind: 'hook'; hookId: string; name: string; event: string; phase: 'start' | 'progress' | 'done'; output?: string; outcome?: HookOutcome; exitCode?: number }
+
+export type HookOutcome = 'success' | 'error' | 'cancelled'
 
 export interface AgentEventEnvelope {
   projectId: string
@@ -549,6 +595,7 @@ export const IPC = {
   sessionStatus: 'agent:session-status',
   accountStatus: 'agent:account-status',
   loginCommand: 'agent:login-command',
+  prewarm: 'agent:prewarm',
 } as const
 
 /** preload가 window.api로 노출하는 API */
@@ -556,8 +603,10 @@ export interface WhenTerminalApi {
   /** 실제로 등록된 전역 호출 단축키 (예: 'Ctrl+Space'). 모두 실패하면 null */
   getHotkey(): Promise<string | null>
   listProjects(): Promise<Project[]>
-  /** 폴더 선택 대화상자를 띄워 프로젝트 추가. 취소 시 null */
+  /** 폴더 선택 대화상자를 띄워 프로젝트 추가. 취소하거나 MAX_PROJECTS를 넘으면 null */
   addProject(): Promise<Project | null>
+  /** 새 대화의 첫 메시지를 바로 보낼 수 있게 CLI를 미리 띄워 둔다 (홈·빈 대화에 글을 치기 시작할 때). 이미 있으면 아무것도 안 함 */
+  prewarm(): Promise<void>
   removeProject(projectId: string): Promise<void>
   addConversation(projectId: string): Promise<Conversation>
   /** 대화(세션)를 닫는다. 실행 중이면 중단한다. 마지막 대화였다면 빈 대화를 새로 만든다. 남은 대화 중 옮겨 갈 ID를 돌려준다 */

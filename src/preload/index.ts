@@ -44,6 +44,7 @@ const api: WhenTerminalApi = {
   sessionStatus: (projectId, conversationId) => ipcRenderer.invoke(IPC.sessionStatus, projectId, conversationId),
   accountStatus: (refresh) => ipcRenderer.invoke(IPC.accountStatus, refresh),
   loginCommand: () => ipcRenderer.invoke(IPC.loginCommand),
+  prewarm: () => ipcRenderer.invoke(IPC.prewarm),
   compact: (projectId, conversationId, instructions) => ipcRenderer.invoke(IPC.compact, projectId, conversationId, instructions),
   clear: (projectId, conversationId) => ipcRenderer.invoke(IPC.clear, projectId, conversationId),
   listCommands: (projectId) => ipcRenderer.invoke(IPC.listCommands, projectId),

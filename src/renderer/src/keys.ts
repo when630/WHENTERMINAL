@@ -5,7 +5,7 @@
 export const IS_MAC = /Mac/i.test(navigator.platform)
 export const ALT_LABEL = IS_MAC ? '⌥' : 'Alt'
 
-/** 프로젝트 1~9에 대응하는 홈 줄 키. Alt+A = 1번, Alt+S = 2번 … Alt+L = 9번 */
+/** 프로젝트 1~9에 대응하는 홈 줄 키. Alt+A = 1번, Alt+S = 2번 … Alt+L = 9번. 길이가 `MAX_PROJECTS`(types.ts)와 같아야 한다 */
 export const HOME_ROW = ['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L'] as const
 
 /**

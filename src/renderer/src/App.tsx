@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { MODE_CYCLE, openConversations, type AgentMode, type StoredTask, type PermissionDecision, type PermissionExtra, type Project, type UpdateState, type UsageInfo } from '@shared/types'
+import { MAX_PROJECTS, MODE_CYCLE, needsChoice, openConversations, type AgentMode, type StoredTask, type PermissionDecision, type PermissionExtra, type Project, type UpdateState, type UsageInfo } from '@shared/types'
 import { applyEvent, collectBackground, collectTasks, mostUrgentConversation, type ConversationMap, type TaskInfo, type TaskRef } from './state'
 import { Home, type DispatchOrigin } from './Home'
 import { Chat, type PanelControl } from './Chat'
@@ -53,6 +53,21 @@ export function App(): React.JSX.Element {
     openChat(hit.projectId, hit.conversationId)
     setJump({ conversationId: hit.conversationId, query, ordinal: hit.ordinal, nonce: Date.now() })
   }
+
+  // 사이드바의 짧은 안내 (프로젝트 상한 등). 3초 뒤 사라진다
+  const [flash, setFlash] = useState<string | null>(null)
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const flashShown = usePresence(flash, 300)
+  const showFlash = useCallback((text: string) => {
+    setFlash(text)
+    if (flashTimer.current) clearTimeout(flashTimer.current)
+    flashTimer.current = setTimeout(() => setFlash(null), 3000)
+  }, [])
+  // 프로젝트는 홈 열의 키 수(9개)까지만 (OPEN-007). 메인도 같은 상한을 지킨다
+  const addProject = useCallback(() => {
+    if (projects.length >= MAX_PROJECTS) return showFlash(`프로젝트는 ${MAX_PROJECTS}개까지예요. 하나를 닫고 추가해 주세요.`)
+    void window.api.addProject()
+  }, [projects.length, showFlash])
 
   useTooltips()
   // 테마: 처음에는 바로, 이후 바뀔 때는 부드럽게
@@ -355,7 +370,7 @@ export function App(): React.JSX.Element {
     }
 
     if (view.screen === 'home') {
-      if (is('addProject')) return take(() => void window.api.addProject())
+      if (is('addProject')) return take(addProject)
       if (typing) {
         if (isEscape(e, code)) take(() => (e.target as HTMLElement).blur())
         return
@@ -400,7 +415,7 @@ export function App(): React.JSX.Element {
       if (decision) {
         const t = sel && sel.state.permissions[0] ? sel : running.find((r) => r.state.permissions[0])
         const req = t?.state.permissions[0]
-        if (!t || !req || req.toolName === 'AskUserQuestion' || req.toolName === 'ExitPlanMode') return
+        if (!t || !req || needsChoice(req.toolName)) return
         e.preventDefault()
         if (decision !== 'deny' && req.defaultToNo) return // 한 키 승인 금지 요청은 클릭으로
         if (decision === 'always' && req.suppressAlwaysAllow) return
@@ -450,8 +465,8 @@ export function App(): React.JSX.Element {
     if (e.key === 'Escape' || is('interrupt') || isInterruptCopy(e, code)) return take(() => void window.api.interrupt(projectId, conversationId))
     const pending = convs[conversationId]?.permissions[0]
     const decision = decisionOf(e)
-    // 질문·플랜 승인은 한 키로 답할 수 없다 (답을 골라야 한다)
-    if (pending && !typing && decision && pending.toolName !== 'AskUserQuestion' && pending.toolName !== 'ExitPlanMode') {
+    // 질문·플랜 승인·MCP 입력·거절 대화 상자는 한 키로 답할 수 없다 (답을 골라야 한다)
+    if (pending && !typing && decision && !needsChoice(pending.toolName)) {
       e.preventDefault()
       if (decision !== 'deny' && pending.defaultToNo) return
       if (decision === 'always' && pending.suppressAlwaysAllow) return
@@ -486,7 +501,8 @@ export function App(): React.JSX.Element {
         settingsOpen={view.screen === 'settings'}
         onOpenProject={openProject}
         onOpenConversation={openChat}
-        onAddProject={() => void window.api.addProject()}
+        onAddProject={addProject}
+        flash={flashShown.item ? { text: flashShown.item, leaving: flashShown.leaving } : null}
         armedProjectId={armed?.kind === 'project' ? armed.id : null}
         onRemoveProjectRequest={requestRemoveProject}
       />
@@ -537,7 +553,7 @@ export function App(): React.JSX.Element {
               onArchive={archive}
               onNewTaskFor={newTaskFor}
               onRespond={respond}
-              onAddProject={() => void window.api.addProject()}
+              onAddProject={addProject}
             />
           )}
         </div>

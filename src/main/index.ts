@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage,
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { cwdOf, IPC, type Conversation, type ModelOption, type StoredTask, type UsageInfo, type AgentEventEnvelope, type AgentMode, type PermissionDecision, type PermissionExtra, type PermissionRuleSource, type RateLimitInfo, type RewindScope, type TerminalShell, type EffortLevel } from '@shared/types'
+import { cwdOf, IPC, MAX_PROJECTS, type Conversation, type ModelOption, type StoredTask, type UsageInfo, type AgentEventEnvelope, type AgentMode, type PermissionDecision, type PermissionExtra, type PermissionRuleSource, type RateLimitInfo, type RewindScope, type TerminalShell, type EffortLevel } from '@shared/types'
 import { newConversationId, ProjectStore } from './store'
 import { memoryFiles, permissionsInfo, setPermissionRule } from './agent/config'
 import { exportMarkdown } from './agent/history'
@@ -212,6 +212,8 @@ function bootstrap(): void {
   ipcMain.handle(IPC.getHotkey, () => activeHotkey?.replace('Control', 'Ctrl') ?? null)
   ipcMain.handle(IPC.listProjects, () => store.list())
   ipcMain.handle(IPC.addProject, async () => {
+    // 홈 열의 키가 9개라 그 이상은 받지 않는다 (렌더러가 먼저 안내한다)
+    if (store.list().length >= MAX_PROJECTS) return null
     const res = await dialog.showOpenDialog(win!, { title: '프로젝트 폴더 선택', properties: ['openDirectory'] })
     if (res.canceled || res.filePaths.length === 0) return null
     const project = store.addProject(res.filePaths[0])
@@ -440,6 +442,7 @@ function bootstrap(): void {
   ipcMain.handle(IPC.sessionStatus, (_e, projectId: string, conversationId: string) => manager.sessionStatus(projectId, conversationId))
   ipcMain.handle(IPC.accountStatus, (_e, refresh?: boolean) => manager.accountStatus(refresh))
   ipcMain.handle(IPC.loginCommand, () => loginCommand())
+  ipcMain.handle(IPC.prewarm, () => manager.prewarm())
 
   // Windows: 기본 메뉴의 Alt 니모닉(Alt+F 파일, Alt+H 도움말 …)이 Alt+홈 줄 프로젝트 이동과 겹치므로 메뉴를 없앤다.
   // 메뉴가 없어도 입력창의 복사·붙여넣기는 그대로 동작한다.

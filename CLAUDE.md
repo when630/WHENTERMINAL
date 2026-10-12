@@ -14,6 +14,8 @@
   - 파일 3개를 함께 돌린다(`workers: 3`, 파일 안의 테스트는 차례로). 일부만: `npm run test:e2e -- terminal`(파일 이름), `-- -g "검색"`(테스트 이름)
   - 끝난 앱은 정상 종료를 기다리지 않고 프로세스 트리째 끝낸다(`quit`). 시간을 기다리는 동작은 테스트에서 줄여 쓴다(예: 터미널 명령 끝남 기준 `window.__termLongMs`)
 - `npm run test:session` — `AgentSession` 통합 테스트 (권한 요청→허용→파일 생성). 구독 사용량을 조금 씀
+- `npm run test:spare` — CLI 미리 띄우기 통합 테스트 (스페어 claim으로 답 받기, 프로젝트 설정 `model` 때문에 claim이 거절되면 `query()` 폴백). 짧은 모델 호출 2번
+  - 두 테스트는 Electron 없이 node로 돌리므로 esbuild `--alias:electron=./scripts/electron-stub.ts`로 `app.isPackaged`만 대역을 끼운다
 
 ## 구조
 
@@ -27,6 +29,8 @@
   - 브랜치: 대화창 위 경로 줄에 `BRANCH 이름`(*는 커밋 안 한 변경). `branchOf(cwdOf)`(worktree.ts)를 대화를 열 때·상태가 바뀔 때·창 focus·30초마다 읽는다
   - 입력 초안(`drafts.ts` `useDraft`): 대화마다(`대화 ID`)·홈 작업 지시창은 프로젝트마다(`home:프로젝트 ID`) localStorage에. 보내면 지운다. 없어진 대화의 초안은 앱을 켤 때 `pruneDrafts`
   - 대화창을 열면 메시지 없이 `peek`으로 컨텍스트 사용률·모델을 읽는다 (저장된 세션을 이어 연 CLI 또는 빈 CLI에서 `getContextUsage` 후 바로 닫음, 0.3~0.7초)
+  - CLI 미리 띄우기(`agent/spare.ts` `SpareKeeper`, SDK `prewarm` 알파 API): 홈 작업 지시창·세션 없는 대화의 입력창에 글을 치기 시작하면 `IPC.prewarm` → 스페어 CLI 하나를 주차해 둔다(10분 안 쓰면 닫음, 주차 중 약 250MB). 새 세션(이어 열기 아님)의 첫 메시지는 `takeSpare`로 가져가 `claim`(폴더·모드·모델·`settings.effortLevel`). 세션마다 같은 옵션은 `baseOptions()` 한 곳에 (prewarm 때 고정되므로 여기에 넣지 않은 옵션은 claim할 수 없다). claim이 거절되면(`claimed` reject, `not_claimed` 결과) `query()`로 다시 띄우고 `inflight` 메시지를 다시 보낸다. 콜백(`canUseTool` 등)은 `SessionCallbacks` 묶음을 `bind`로 세션에 연결
+  - Esc(interrupt)는 지금 턴만 끊는다. 백그라운드 셸·모니터는 남고 `stopTask`로 하나씩 멈춘다 (`perTaskStopAffordance: true`. 선언하지 않으면 CLI가 interrupt 때 모두 죽인다)
   - 컨텍스트 사용률은 응답이 끝날 때마다 `getContextUsage({ detail: 'summary' })`로 받아 `Conversation.contextPercent`에 저장
   - 컴팩트는 같은 세션에 `/compact`를 보낸다. 이때 오는 result는 작업 완료가 아니므로 상태·보고서를 바꾸지 않는다 (`manualCompact`)
   - 대화 닫기는 세션을 끝내고(실행 중이면 중단) 대화를 목록에서 뺀다. 마지막 대화면 빈 대화를 새로 만든다. `Ctrl+W` 두 번·탭 × 두 번, `/close`는 바로 닫음. 확인 로직은 클리어와 같은 `confirmTwice`(App.tsx)
@@ -45,7 +49,7 @@
 - `canUseTool` 옵션의 `defaultToNo`(한 키 승인 금지)와 `suppressAlwaysAllowRule`(항상 허용 금지)을 UI에서 반드시 지킨다
 - 대화창에서 `Esc`는 실행 중단 전용. 나가기(홈)는 `Ctrl+H` (기획서 초안의 ``Ctrl+` ``에서 변경)
 - 사용자는 40% 배열 키보드를 쓴다. 단축키는 알파벳 + Ctrl/Alt/Shift만으로 되게 하고, 숫자·방향키·F키·백틱은 보조로만 둔다 (`src/renderer/src/keys.ts`)
-  - 프로젝트 이동: `Alt+A S D F G H J K L` = 1~9 (보조: `Ctrl+1~9`, 홈에서 `1~9`)
+  - 프로젝트 이동: `Alt+A S D F G H J K L` = 1~9 (보조: `Ctrl+1~9`, 홈에서 `1~9`). 그래서 프로젝트는 `MAX_PROJECTS`(9)개까지만: 넘으면 렌더러가 사이드바 `flash`로 안내하고 메인 `addProject`도 null (OPEN-007)
   - 홈 카드 선택: `H J K L` (보조: 방향키), 열기 `O`/`Enter`
   - 중단: `Esc` / `Ctrl+[` / 선택 글자 없을 때 `Ctrl+C`
   - 패널 세부 내용: `Ctrl+J`/`Ctrl+Shift+J` 패널 순서(AGENTS → BACKGROUND)대로 펼치고 마지막 다음은 대화 기록, `Ctrl+B` 돌아가기, `Ctrl+Shift+X` 펼친 작업 멈춤. App이 Chat의 `panelRef`(`PanelControl`)로 다룬다
@@ -111,7 +115,9 @@
   - `/permissions`: 규칙·추가 폴더·훅은 `resolveSettings`로 읽고, 규칙 추가·삭제는 CLI와 같은 설정 파일에 직접 쓴다(`agent/config.ts`, 다음 세션부터). `/add-dir`은 `Conversation.additionalDirectories` → 세션 옵션 `additionalDirectories`, 살아 있으면 `applyFlagSettings({ permissions: { additionalDirectories } })`
   - `/mcp`: `mcpServerStatus`·`reconnectMcpServer`·`toggleMcpServer`. OAuth 로그인은 CLI에서만 되므로 터미널에 CLI를 띄우라고 안내. `/status`·`/login`: `accountInfo()`, 로그인은 터미널 입력줄에 `claude auth login`(번들 바이너리 경로, `executable.ts`의 `loginCommand`)
 - 승인창(`PermissionBox`)의 특수 도구: `AskUserQuestion`은 `QuestionBox`(선택지·직접 적기·숫자 키, 답은 `respondPermission`의 `extra.answers` → SDK `updatedInput: { questions, answers }`), `ExitPlanMode`는 `PlanBox`(YES · AUTO EDITS / YES · ASK EACH / KEEP PLANNING, 고른 모드는 `extra.planMode` → CLI가 플랜 모드를 빠져나온 status 뒤에 `setPermissionMode`). 둘은 Y/A/N 한 키로 답할 수 없다
+  - 도구가 아닌 물음도 같은 승인창으로 온다 (`session.ts`의 `Pending` kind, 요청의 `toolName`은 `ELICITATION_TOOL`/`REFUSAL_TOOL`): MCP 서버의 입력 요청(SDK `onElicitation`)은 `ElicitationBox`(form이면 `requestedSchema`대로 폼 → `extra.elicitation { action, content }`, url이면 OPEN IN BROWSER 뒤 DONE), 모델이 답을 거절했을 때 CLI 대화 상자(`onUserDialog`, `supportedDialogKinds: ['refusal_fallback_prompt']`)는 `RefusalBox`(RETRY WITH 모델 / EDIT PROMPT / CANCEL → `extra.dialog`, EDIT PROMPT는 지시를 입력창으로 돌려줌). 모르는 `dialogKind`는 `cancelled`로 답한다. 한 키로 답할 수 없는 요청인지는 `needsChoice()` 한 곳에서
 - CLI가 화면에만 보이는 것들도 받는다: `local_command_output`(/context 등 출력, `notice` mono) · `informational`(notice 이상) · `notification` · `api_retry`(`retry` → 작업 줄 `RETRY n/m`) · `permission_denied`(자동 모드 거절) · `tool_progress`(도구 줄 `RUNNING 12s`) · `auth_status`. 생각은 `thinking`/`thinking_delta` 이벤트 → 접힌 `Thinking` 항목
+  - 설정의 훅(PreToolUse·PostToolUse·Stop …)이 도는 것도 보인다 (`includeHookEvents`, `hook_started/progress/response` → `hook` 이벤트 → 대화 기록의 `hook` 항목 `HOOK 이벤트 · 이름 · RUNNING/OK/ERROR`, 펼치면 출력). 기록 파일에는 남지 않아 되살린 대화에는 없다
 - 도구 결과는 앞 4000자만 보내고(`truncated`), 펼쳐서 SHOW ALL을 누르면 `toolResult`가 세션 기록에서 전문을 읽는다
 - 차례를 기다리는 메시지(`queuedId`): 자리 대기열(manager `waiting`)과 세션이 들고 있는 것(`held`) 모두 EDIT(입력창으로 되돌림)·CANCEL(`dropQueued`)
 - 입력창 ↑↓: 보낸 글 기록(`usePromptHistory`, localStorage `wt-hist:`). 입력이 비었거나 첫/끝 줄일 때만. `@`는 파일·폴더(끝에 `/`)·`@agent-이름`(`supportedAgents`)

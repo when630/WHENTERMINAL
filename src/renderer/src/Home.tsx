@@ -177,7 +177,11 @@ function Dispatch(props: Props & { scrollRef: RefObject<HTMLDivElement | null> }
           ref={props.inputRef}
           value={text}
           placeholder="무엇을 맡길까요?"
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => {
+            // 글을 치기 시작하면 CLI를 미리 띄워 둔다 (작업마다 새 대화라 첫 응답이 기동을 기다리지 않게)
+            if (!text && e.target.value) void window.api.prewarm()
+            setText(e.target.value)
+          }}
           onPaste={attach.onPaste}
           onKeyDown={(e) => {
             if (e.key === 'Tab') {

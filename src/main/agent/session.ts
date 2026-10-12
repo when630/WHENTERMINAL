@@ -1,18 +1,23 @@
-import { query, type SlashCommand, type CanUseTool, type PermissionResult, type PermissionUpdate, type Query, type SDKMessage } from '@anthropic-ai/claude-agent-sdk'
+import { query, type SlashCommand, type ElicitationRequest, type ElicitationResult, type Options, type PermissionResult, type PermissionUpdate, type Query, type SDKMessage, type UserDialogRequest, type UserDialogResult } from '@anthropic-ai/claude-agent-sdk'
 import { randomUUID } from 'node:crypto'
-import { isAgentMode, type EffortLevel, type AgentEvent, type AgentMode, type AgentStatus, type BackgroundTask, type ContextInfo, type PermissionDecision, type PermissionExtra, type RateLimitInfo } from '@shared/types'
+import { ELICITATION_TOOL, isAgentMode, REFUSAL_TOOL, type EffortLevel, type AgentEvent, type AgentMode, type AgentStatus, type BackgroundTask, type ContextInfo, type PermissionDecision, type PermissionExtra, type PermissionRequest, type RateLimitInfo } from '@shared/types'
 import { MessageQueue } from './message-queue'
 import { claudeExecutable } from '../executable'
 import { outputPathIn, rememberTaskOutput } from './task-output'
 import { taskLine } from './history'
+import type { SessionCallbacks, SpareHandle } from './spare'
 
-interface PendingPermission {
-  resolve: (r: PermissionResult) => void
-  toolName: string
-  input: Record<string, unknown>
-  suggestions?: PermissionUpdate[]
-  suppressAlwaysAllow: boolean
-}
+/** 사람의 답을 기다리는 것: 도구 승인 · MCP 입력 요청 · CLI 대화 상자. 화면에는 모두 승인창으로 */
+type Pending =
+  | { kind: 'tool'; resolve: (r: PermissionResult) => void; toolName: string; input: Record<string, unknown>; suggestions?: PermissionUpdate[]; suppressAlwaysAllow: boolean }
+  | { kind: 'elicit'; resolve: (r: ElicitationResult | null) => void }
+  | { kind: 'dialog'; resolve: (r: UserDialogResult | null) => void }
+
+/** 앱이 그릴 수 있는 CLI 대화 상자. 선언하지 않은 종류는 CLI가 대화 상자 없이 처리한다 */
+const REFUSAL_DIALOG = 'refusal_fallback_prompt'
+
+/** 훅 출력은 이만큼만 화면으로 */
+const HOOK_OUTPUT_LIMIT = 4000
 
 /** 차례를 기다리는 메시지. id로 고치거나 뺀다 */
 interface HeldMessage {
@@ -31,6 +36,8 @@ export interface AgentSessionOptions {
   additionalDirectories?: string[]
   /** 이전에 저장한 SDK 세션 ID. 있으면 이어서 시작 */
   resumeSessionId?: string
+  /** 미리 띄워 둔 CLI가 있으면 가져온다 (새 세션일 때만 쓴다) */
+  takeSpare?: () => SpareHandle | null
   emit: (event: AgentEvent) => void
   onSessionId: (sessionId: string) => void
   onRateLimit: (info: RateLimitInfo) => void
@@ -46,6 +53,33 @@ export function subscriptionEnv(): Record<string, string | undefined> {
   return env
 }
 
+/**
+ * 세션마다 같은 SDK 옵션. 미리 띄우는 CLI(prewarm)도 이걸로 띄워야 claim할 수 있다 (폴더·모드·모델·effort는 claim 때 넘긴다)
+ */
+export function baseOptions(cb: SessionCallbacks): Options {
+  return {
+    env: subscriptionEnv(),
+    canUseTool: cb.canUseTool,
+    // MCP 서버가 사람에게 묻는 것(폼·브라우저 인증)과 CLI 대화 상자(거절 뒤 다른 모델로 재시도)를 승인창으로 받는다
+    onElicitation: cb.onElicitation,
+    onUserDialog: cb.onUserDialog,
+    supportedDialogKinds: [REFUSAL_DIALOG],
+    includePartialMessages: true,
+    // 하위 에이전트의 글도 받아 대화창에서 무엇을 하는지 보여 준다 (기본은 도구 호출만)
+    forwardSubagentText: true,
+    // CLI와 동일하게 사용자/프로젝트/로컬 설정과 CLAUDE.md를 읽는다
+    settingSources: ['user', 'project', 'local'],
+    systemPrompt: { type: 'preset', preset: 'claude_code' },
+    // 파일 되감기(/rewind)의 기준점을 남긴다
+    enableFileCheckpointing: true,
+    // Esc(interrupt)는 지금 턴만 끊는다. 백그라운드 작업은 stopTask로 하나씩 (선언하지 않으면 CLI가 모두 죽인다)
+    perTaskStopAffordance: true,
+    // 설정의 훅이 도는 것을 화면에 보인다 (hook_started·hook_progress·hook_response)
+    includeHookEvents: true,
+    pathToClaudeCodeExecutable: claudeExecutable(),
+  }
+}
+
 const TOOL_RESULT_PREVIEW_LIMIT = 4000
 /** 하위 에이전트의 도구 결과는 수가 많아 더 짧게 */
 const SUB_RESULT_PREVIEW_LIMIT = 1500
@@ -55,6 +89,13 @@ const resultText = (block: ToolResultBlock): string =>
   typeof block.content === 'string' ? block.content : (block.content ?? []).map((c) => (c.type === 'text' ? c.text : `[${c.type}]`)).join('\n')
 
 type ContextUsage = Awaited<ReturnType<Query['getContextUsage']>>
+
+/** 훅의 출력: 합친 output이 있으면 그것, 없으면 stdout·stderr. 끝부분만 */
+function hookOutput(msg: { output: string; stdout: string; stderr: string }): string | undefined {
+  const text = (msg.output || [msg.stdout, msg.stderr].filter(Boolean).join('\n')).replace(/\s+$/, '')
+  if (!text) return undefined
+  return text.length > HOOK_OUTPUT_LIMIT ? `…${text.slice(-HOOK_OUTPUT_LIMIT)}` : text
+}
 
 export function toContext(u: ContextUsage): ContextInfo {
   return {
@@ -78,7 +119,11 @@ export function modelLabel(id: string): string {
 export class AgentSession {
   private q: Query | null = null
   private queue: MessageQueue | null = null
-  private pending = new Map<string, PendingPermission>()
+  private pending = new Map<string, Pending>()
+  /** 미리 띄운 CLI를 claim하고 아직 답을 못 받았다. 거절되면 query()로 다시 띄우고 inflight를 다시 보낸다 */
+  private claiming = false
+  /** 이번 턴에 보낸 메시지 (claim이 거절되면 새 프로세스로 다시 보낸다) */
+  private inflight: { text: string; uuid: string }[] = []
   private sessionId?: string
   private status: AgentStatus = 'idle'
   private mode: AgentMode
@@ -180,6 +225,7 @@ export class AgentSession {
   private dispatch(text: string, uuid: string): void {
     if (!this.q) this.start()
     this.setStatus('running')
+    this.inflight.push({ text, uuid })
     this.queue!.push(text, uuid)
   }
 
@@ -213,13 +259,15 @@ export class AgentSession {
     this.queue!.push(instructions?.trim() ? `/compact ${instructions.trim()}` : '/compact')
   }
 
-  /** Esc는 다 멈춘다: 지금 턴과, 차례를 기다리던 메시지까지 */
+  /** Esc: 지금 턴과 차례를 기다리던 메시지를 멈춘다. 백그라운드 셸·모니터는 남는다 (perTaskStopAffordance, stopTask로 하나씩) */
   async interrupt(): Promise<void> {
     const dropped = this.held.splice(0)
     for (const h of dropped) this.emit({ kind: 'unqueued', queuedId: h.id })
     if (dropped.length) this.emit({ kind: 'task_note', text: `CANCELLED · 차례를 기다리던 메시지 ${dropped.length}개를 보내지 않았어요` })
     if (!this.q || (this.status !== 'running' && this.status !== 'waiting_approval')) return
     this.interrupted = true
+    // 끊은 메시지는 claim이 거절되더라도 다시 보내지 않는다
+    this.inflight = []
     this.denyAllPending('사용자가 중단함')
     // 응답을 기다리는 사이에 끊긴 턴의 result가 먼저 와도 오류로 보이지 않게 먼저 바꾼다
     this.setStatus('stopped')
@@ -259,7 +307,13 @@ export class AgentSession {
     const p = this.pending.get(requestId)
     if (!p) return
     this.pending.delete(requestId)
-    if (decision === 'deny') {
+    if (p.kind === 'elicit') {
+      // MCP 입력 요청: 폼 값은 accept와 함께. 버튼 없이 N으로 닫으면 decline
+      const e = extra.elicitation
+      p.resolve(e ? { action: e.action, content: e.action === 'accept' ? e.content : undefined } : { action: decision === 'deny' ? 'decline' : 'accept' })
+    } else if (p.kind === 'dialog') {
+      p.resolve({ behavior: 'completed', result: decision === 'deny' ? 'cancelled' : (extra.dialog ?? 'cancelled') })
+    } else if (decision === 'deny') {
       p.resolve({ behavior: 'deny', message: extra.message ?? '사용자가 거절함' })
     } else {
       const always = decision === 'always' && !p.suppressAlwaysAllow
@@ -300,6 +354,8 @@ export class AgentSession {
     this.q?.close()
     this.q = null
     this.queue = null
+    this.claiming = false
+    this.inflight = []
     this.setBackground([])
     this.sessionId = sessionId
     this.model = undefined
@@ -329,52 +385,82 @@ export class AgentSession {
 
   private start(): void {
     this.queue = new MessageQueue()
+    // 이어 여는 세션은 claim할 수 없다. 새 세션이고 미리 띄운 CLI가 있으면 그걸 쓴다
+    const spare = this.sessionId ? null : (this.opts.takeSpare?.() ?? null)
+    if (spare) this.startFromSpare(spare)
+    else this.startCold()
+  }
+
+  private startCold(): void {
     this.q = query({
-      prompt: this.queue,
+      prompt: this.queue!,
       options: {
+        ...baseOptions(this.callbacks),
         cwd: this.opts.cwd,
-        env: subscriptionEnv(),
         permissionMode: this.mode,
-        canUseTool: this.canUseTool,
-        includePartialMessages: true,
-        // 하위 에이전트의 글도 받아 대화창에서 무엇을 하는지 보여 준다 (기본은 도구 호출만)
-        forwardSubagentText: true,
-        // CLI와 동일하게 사용자/프로젝트/로컬 설정과 CLAUDE.md를 읽는다
-        settingSources: ['user', 'project', 'local'],
-        systemPrompt: { type: 'preset', preset: 'claude_code' },
         resume: this.sessionId,
         model: this.opts.model,
         effort: this.opts.effort,
-        additionalDirectories: this.opts.additionalDirectories?.length ? this.opts.additionalDirectories : undefined,
-        // 파일 되감기(/rewind)의 기준점을 남긴다
-        enableFileCheckpointing: true,
-        pathToClaudeCodeExecutable: claudeExecutable(),
+        additionalDirectories: this.additionalDirectories(),
       },
     })
     void this.consume(this.q)
   }
 
-  private canUseTool: CanUseTool = (toolName, input, options) => {
-    const requestId = randomUUID()
-    return new Promise<PermissionResult>((resolve) => {
-      this.pending.set(requestId, {
-        resolve,
-        toolName,
-        input,
-        suggestions: options.suggestions,
-        suppressAlwaysAllow: options.suppressAlwaysAllowRule ?? false,
-      })
-      options.signal.addEventListener('abort', () => {
-        if (!this.pending.delete(requestId)) return
-        this.emit({ kind: 'permission_resolved', requestId })
-        if (this.pending.size === 0 && this.status === 'waiting_approval') this.setStatus('running')
-      })
-      // 상태를 먼저 바꿔야 요청 이벤트 처리 중 즉시 응답이 와도 'running'으로 정상 복귀한다
-      this.setStatus('waiting_approval')
-      this.emit({
-        kind: 'permission_request',
-        request: {
-          requestId,
+  /**
+   * 미리 띄운 CLI에 이 대화를 붙인다. 거절되면(프로젝트 설정의 model·env, 모드 불가 등) 그 프로세스는 스스로 끝나고
+   * 보냈던 메시지는 새로 띄운 프로세스로 다시 보낸다. option_not_applied는 모델·effort만 안 먹은 것이라 그대로 간다
+   */
+  private startFromSpare(h: SpareHandle): void {
+    h.bind(this.callbacks)
+    const effort = this.opts.effort
+    const q = h.spare.claim({
+      prompt: this.queue!,
+      options: {
+        cwd: this.opts.cwd,
+        permissionMode: this.mode,
+        model: this.opts.model,
+        additionalDirectories: this.additionalDirectories(),
+        settings: effort ? { effortLevel: effort } : undefined,
+      },
+    })
+    this.q = q
+    this.claiming = true
+    void this.consume(q)
+    h.spare.claimed.then(
+      () => {
+        if (this.q === q) this.claiming = false
+      },
+      (err) => {
+        if (this.q !== q) return
+        this.claiming = false
+        const message = err instanceof Error ? err.message : String(err)
+        if (message.startsWith('option_not_applied')) {
+          console.warn('미리 띄운 CLI가 일부 옵션을 받지 않음', message)
+          return
+        }
+        console.warn('미리 띄운 CLI를 쓰지 못해 새로 띄움', message)
+        this.queue?.close()
+        q.close()
+        const resend = this.inflight.splice(0)
+        this.queue = new MessageQueue()
+        this.startCold()
+        for (const m of resend) this.queue.push(m.text, m.uuid)
+      },
+    )
+  }
+
+  private additionalDirectories(): string[] | undefined {
+    return this.opts.additionalDirectories?.length ? this.opts.additionalDirectories : undefined
+  }
+
+  /** CLI가 사람에게 묻는 것들. 미리 띄운 CLI에도 같은 묶음을 bind한다 */
+  private readonly callbacks: SessionCallbacks = {
+    canUseTool: (toolName, input, options) => {
+      const requestId = randomUUID()
+      return new Promise<PermissionResult>((resolve) => {
+        this.pending.set(requestId, { kind: 'tool', resolve, toolName, input, suggestions: options.suggestions, suppressAlwaysAllow: options.suppressAlwaysAllowRule ?? false })
+        this.ask(requestId, options.signal, {
           toolName,
           input,
           title: options.title,
@@ -382,9 +468,60 @@ export class AgentSession {
           defaultToNo: options.defaultToNo,
           suppressAlwaysAllow: options.suppressAlwaysAllowRule,
           agentId: options.agentID,
-        },
+        })
       })
+    },
+    onElicitation: (request: ElicitationRequest, { signal }) => {
+      const requestId = randomUUID()
+      return new Promise<ElicitationResult | null>((resolve) => {
+        this.pending.set(requestId, { kind: 'elicit', resolve })
+        this.ask(requestId, signal, {
+          toolName: ELICITATION_TOOL,
+          input: {},
+          title: request.title,
+          description: request.description,
+          defaultToNo: true,
+          suppressAlwaysAllow: true,
+          elicitation: {
+            serverName: request.serverName,
+            message: request.message,
+            mode: request.mode ?? 'form',
+            url: request.url,
+            schema: request.requestedSchema,
+            title: request.title,
+            description: request.description,
+          },
+        })
+      })
+    },
+    onUserDialog: (request: UserDialogRequest, { signal }) => {
+      // 모르는 종류는 cancelled로 답해야 CLI가 기본 동작을 한다
+      if (request.dialogKind !== REFUSAL_DIALOG) return Promise.resolve<UserDialogResult>({ behavior: 'cancelled' })
+      const p = request.payload as { originalModel?: string; fallbackModel?: string; apiRefusalCategory?: string | null; guidanceText?: string }
+      const requestId = randomUUID()
+      return new Promise<UserDialogResult | null>((resolve) => {
+        this.pending.set(requestId, { kind: 'dialog', resolve })
+        this.ask(requestId, signal, {
+          toolName: REFUSAL_TOOL,
+          input: {},
+          defaultToNo: true,
+          suppressAlwaysAllow: true,
+          refusal: { originalModel: p.originalModel ?? '', fallbackModel: p.fallbackModel ?? '', category: p.apiRefusalCategory ?? undefined, guidance: p.guidanceText },
+        })
+      })
+    },
+  }
+
+  /** 승인창을 띄운다. CLI가 요청을 거두면(signal) 창도 닫는다 */
+  private ask(requestId: string, signal: AbortSignal, request: Omit<PermissionRequest, 'requestId'>): void {
+    signal.addEventListener('abort', () => {
+      if (!this.pending.delete(requestId)) return
+      this.emit({ kind: 'permission_resolved', requestId })
+      if (this.pending.size === 0 && this.status === 'waiting_approval') this.setStatus('running')
     })
+    // 상태를 먼저 바꿔야 요청 이벤트 처리 중 즉시 응답이 와도 'running'으로 정상 복귀한다
+    this.setStatus('waiting_approval')
+    this.emit({ kind: 'permission_request', request: { requestId, ...request } })
   }
 
   /** CLI가 화면에만 보이는 안내: 명령 출력·훅 경고·알림. 사람이 봐야 할 것은 warn */
@@ -416,6 +553,8 @@ export class AgentSession {
         this.queue?.close()
         this.q = null
         this.queue = null
+        this.claiming = false
+        this.inflight = []
         // 백그라운드 작업은 CLI 프로세스와 함께 끝난다
         this.setBackground([])
         this.interrupted = false
@@ -486,6 +625,12 @@ export class AgentSession {
         } else if (msg.subtype === 'permission_denied') {
           // 자동 모드의 분류기·규칙이 거절한 것. 사람이 알아야 다음 지시를 바꿀 수 있다
           this.notice(`DENIED · ${msg.tool_name}${msg.decision_reason ? ` · ${msg.decision_reason}` : ''}`, 'warn')
+        } else if (msg.subtype === 'hook_started') {
+          this.emit({ kind: 'hook', hookId: msg.hook_id, name: msg.hook_name, event: msg.hook_event, phase: 'start' })
+        } else if (msg.subtype === 'hook_progress') {
+          this.emit({ kind: 'hook', hookId: msg.hook_id, name: msg.hook_name, event: msg.hook_event, phase: 'progress', output: hookOutput(msg) })
+        } else if (msg.subtype === 'hook_response') {
+          this.emit({ kind: 'hook', hookId: msg.hook_id, name: msg.hook_name, event: msg.hook_event, phase: 'done', output: hookOutput(msg), outcome: msg.outcome, exitCode: msg.exit_code })
         } else if (msg.subtype === 'task_progress') {
           const toolUseId = msg.tool_use_id ?? this.taskTools.get(msg.task_id)
           if (toolUseId) {
@@ -573,6 +718,9 @@ export class AgentSession {
         break
       }
       case 'result':
+        // 미리 띄운 CLI가 claim을 거절하면 보냈던 메시지에 not_claimed 오류 결과가 온다. 새 프로세스로 다시 보내므로 작업 끝으로 치지 않는다
+        if (this.claiming && msg.subtype !== 'success' && msg.errors?.some((e) => e.startsWith('not_claimed'))) break
+        this.inflight = []
         void this.refreshContext()
         if (this.manualCompact) {
           // /compact의 결과: 작업이 끝난 것이 아니므로 상태·보고서는 그대로 둔다
@@ -630,7 +778,9 @@ export class AgentSession {
 
   private denyAllPending(message: string): void {
     for (const [requestId, p] of this.pending) {
-      p.resolve({ behavior: 'deny', message, interrupt: true })
+      if (p.kind === 'tool') p.resolve({ behavior: 'deny', message, interrupt: true })
+      else if (p.kind === 'elicit') p.resolve({ action: 'cancel' })
+      else p.resolve({ behavior: 'cancelled' })
       this.emit({ kind: 'permission_resolved', requestId })
     }
     this.pending.clear()
