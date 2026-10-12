@@ -100,6 +100,7 @@ const GROUPS: Group[] = [
       ['/status', 'Account · session · login'],
       ['/', 'All commands and skills'],
       ['@', 'Insert a file, folder or @agent-name'],
+      ['!', 'Run a shell command in the terminal; the output goes to Claude'],
     ],
   },
 ]

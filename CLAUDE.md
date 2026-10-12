@@ -119,6 +119,7 @@
 - 단축키 안내는 도움말(`HelpOverlay.tsx`, `help` 기본 `Ctrl+/`, 사이드바 HELP 줄)과 설정의 키맵에만 모은다. 범위별 묶음(지금 화면이 맨 앞)·고정 키·입력창 명령. 새 동작을 ACTIONS에 넣으면 `GROUPS`에도 넣을 것. 열려 있는 동안 App은 Esc(닫기) 말고 키를 받지 않는다
   - 화면 안의 버튼·라벨·메뉴 머리줄·전광판·확인 문구·툴팁(`title`)에는 단축키를 적지 않는다. 프로젝트의 홈 열 글자(A S D…)는 프로젝트 표시라 그대로 둔다
 - 단축키 표시(도움말·설정)는 `<Keys keys="ctrl shift L" />`(`KeyHint.tsx`)를 쓴다. macOS는 수정·특수 키를 아이콘으로, Windows는 글자와 +로(`Ctrl+Shift+L`) 표시한다. 파일 이름이 `keys.ts`와 대소문자만 다르면 macOS에서 충돌하므로 `KeyHint`
+- `!명령`(Chat.tsx `submit`): 아래 터미널의 지금 셸에서 바로 실행(`execInTerminal`, xterm `term.input`으로 실제 키 입력과 같은 길이라 끝남 감지가 그대로)하고, 프롬프트로 돌아오면 명령 줄 다음부터의 출력(끝 400줄·32KB)을 `IPC.shellOutput` → 세션 `appendShell`로 보낸다. CLI의 bash 모드 꼴(`<bash-input>`·`<bash-stdout>`)로 `shouldQuery: false` 메시지를 큐에 넣어 모델 턴 없이 기록에 붙이고 다음 메시지에 합쳐지게 한다. CLI가 바쁘거나 떠 있지 않으면 `pendingShell`에 두었다가 다음 `dispatch` 앞에 흘려보낸다. 화면·되살린 기록(`shellNote`)에는 `! 명령` 출력 항목(`notice` mono). 서랍은 펼치되 포커스는 입력창에. 빈 `!`는 터미널 열기. 질문 창은 터미널이 없어 제외. 이렇게 붙인 메시지보다 앞으로는 되감기 포크가 거절된다(SDK)
 - 슬래시 명령 후보: 입력창에 `/`를 치면 `SlashMenu`. 목록은 살아 있는 세션의 `supportedCommands()`, 없으면 메시지 없이 CLI만 띄워 받아 프로젝트 폴더별로 5분 캐시 (`src/main/agent/commands.ts`). 앱이 직접 처리하는 명령은 `SlashMenu.tsx`의 `LOCAL`과 `Chat.tsx`의 `submit`에 같이 적는다
   - 명령 화면(`panels.tsx`, `ToolPanel`): `/rewind` `/resume` `/mcp` `/agents` `/permissions`(=`/hooks`) `/memory` `/status`(=`/login`)는 대화 기록 자리에 펼친다. 상태 패널의 TOOLS 수·홈 보고서의 TOOLS SHOW를 누르면 `tools`(이번 작업의 도구 호출 목록, 행을 누르면 `jumpToTool`로 기록의 그 호출을 펼친다. 홈에서는 `App.openChat(…, panel)` → Chat `openPanel`) (CHANGES·TaskDetail과 같은 자리, `Chat`의 `tool` 상태). `/fork [이름]` `/export` `/add-dir [폴더]`는 바로 실행
   - 되감기(`/rewind`, 키맵 `rewind`, 사용자 메시지에 올리면 REWIND): 세션 옵션 `enableFileCheckpointing`과 보낼 때 붙인 `uuid`(MessageQueue.push)가 기준점. CODE는 `rewindFiles`, CHAT은 그 메시지 앞까지 `forkSession(upToMessageId)`로 포크해 세션을 바꿔 끼운다(`switchSession` → `replace` 이벤트). 되감은 메시지 글은 입력창으로 돌려준다
@@ -142,7 +143,8 @@
   - 빨강은 사람이 봐야 할 것(승인 대기·오류)에만 쓴다. 실행 중은 검정, 완료는 외곽선 글자
   - 큰 글자는 Archivo 900(라틴·숫자)과 Black Han Sans(한글), 본문은 Pretendard, 코드는 Geist Mono. 모두 npm 패키지로 번들한다 (오프라인 동작)
   - 움직임 토큰(`--ease-out` 나타남, `--ease-io` 상태 전환, `--spring` 숫자)과 시간(`--t-fast/med/slow`)을 쓴다. 깜빡임은 `steps()` 대신 부드러운 맥동으로, 주기는 `--pulse`(살아 있음)·`--pulse-urgent`(사람이 봐야 함) 둘만
-  - 사라지는 요소는 `usePresence`(motion.tsx)로 잠시 붙잡아 `leaving` 클래스로 나가게 한다. 대화 기록은 연 뒤에 새로 들어온 항목만 `enter`로 등장
+  - 사라지는 요소는 `usePresence`(motion.tsx)로 잠시 붙잡아 `leaving` 클래스로 나가게 한다. 요소 하나는 `<Presence show>`, 목록의 줄은 `usePresenceList`/`<PresenceList>`(빠진 줄을 원래 자리에 잠시 남긴다). 대화·프로젝트를 옮기면 이전 것의 잔상이 새 화면에 남으므로 `scope`(대화 ID 등)를 주거나 붙잡은 값에 ID를 넣어 걸러낸다. 대화 기록은 연 뒤에 새로 들어온 항목만 `enter`로 등장
+  - 글자가 통째로 바뀌는 칸은 `key`를 바꿔 `.swap`(흐려졌다 나타남), 숫자는 `<Roll className="num">`(굴러감)·`<Odo>`(한 자리). 펼치는 `details`는 `::details-content` 높이 전환을 같이 둔다
   - 반복 애니메이션은 transform·opacity만 움직인다 (배경 위치 등 다시 그리기 유발 금지). 전광판은 rAF로 일정 속도
   - 글꼴 조각이 data URI로 인라인되므로 CSP에 `font-src 'self' data:`가 필요하다
   - 스크롤바는 styles.css 맨 위 `::-webkit-scrollbar` 디자인 하나로 통일한다. 스크롤 요소에 `scrollbar-width: thin`·`scrollbar-color`를 쓰면 Chromium이 그 디자인을 무시하고 OS 기본 막대를 그리므로 쓰지 말 것(숨길 때 `none`만). 좁은 곳은 그 선택자에 `::-webkit-scrollbar { width: 8px }`

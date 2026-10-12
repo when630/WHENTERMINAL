@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage,
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { cwdOf, IPC, MAX_PROJECTS, type Conversation, type DeniedCall, type ModelOption, type StoredTask, type UsageInfo, type AgentEventEnvelope, type AgentMode, type PermissionDecision, type PermissionExtra, type PermissionRuleSource, type RateLimitInfo, type RewindScope, type TerminalShell, type EffortLevel } from '@shared/types'
+import { cwdOf, IPC, MAX_PROJECTS, type Conversation, type DeniedCall, type ModelOption, type StoredTask, type UsageInfo, type AgentEventEnvelope, type AgentMode, type PermissionDecision, type PermissionExtra, type PermissionRuleSource, type RateLimitInfo, type RewindScope, type ShellResult, type TerminalShell, type EffortLevel } from '@shared/types'
 import { limitAllowed, worstLimit } from '@shared/usage'
 import { newConversationId, ProjectStore } from './store'
 import { memoryFiles, permissionsInfo, setPermissionRule } from './agent/config'
@@ -464,6 +464,7 @@ function bootstrap(): void {
   })
   ipcMain.handle(IPC.approveDenied, (_e, projectId: string, conversationId: string, calls: DeniedCall[]) => manager.approveDenied(projectId, conversationId, calls))
   ipcMain.handle(IPC.command, (_e, projectId: string, conversationId: string, text: string) => manager.command(projectId, conversationId, text))
+  ipcMain.handle(IPC.shellOutput, (_e, projectId: string, conversationId: string, result: ShellResult) => manager.shellOutput(projectId, conversationId, result))
 
   // Windows: 기본 메뉴의 Alt 니모닉(Alt+F 파일, Alt+H 도움말 …)이 Alt+홈 줄 프로젝트 이동과 겹치므로 메뉴를 없앤다.
   // 메뉴가 없어도 입력창의 복사·붙여넣기는 그대로 동작한다.

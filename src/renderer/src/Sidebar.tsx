@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { useSpin } from './motion'
+import { Odo, Presence, Roll, usePresence, usePresenceList, useSpin } from './motion'
 import { openConversations, type Project, type UpdateState, type UsageInfo, type UsageWindow } from '@shared/types'
 import { STATUS_LABEL } from '@shared/types'
 import { formatReset, limitLevel } from '@shared/usage'
@@ -35,6 +35,10 @@ interface Props {
 
 export function Sidebar(props: Props): React.JSX.Element {
   const { projects, convs, activeProjectId, activeConversationId, unreadTotal, usage } = props
+  // 프로젝트 행: 앱을 켠 뒤 더한 것만 등장, 닫은 것은 잠시 남아 나간다
+  const rows = usePresenceList(projects, (p) => p.id)
+  const seen = useRef<Set<string> | null>(null)
+  if (!seen.current) seen.current = new Set(projects.map((p) => p.id))
   return (
     <nav className="side" aria-label="프로젝트">
       <div className="brand">
@@ -44,7 +48,7 @@ export function Sidebar(props: Props): React.JSX.Element {
 
       <button type="button" className={`nav nav-home ${activeProjectId === null && !props.settingsOpen ? 'on' : ''}`} onClick={props.onHome}>
         <span className="nav-name">HOME</span>
-        {unreadTotal > 0 && <span className="pill">{unreadTotal}</span>}
+        <Presence show={unreadTotal > 0} className="pill"><Odo n={unreadTotal} /></Presence>
       </button>
 
       <div className="side-label">
@@ -54,19 +58,21 @@ export function Sidebar(props: Props): React.JSX.Element {
         </button>
       </div>
 
-      {projects.map((p, i) => {
+      {rows.map(({ item: p, leaving }) => {
+        const i = projects.indexOf(p)
         const status = projectStatus(p, convs)
         const on = p.id === activeProjectId
         const unread = p.conversations.filter((c) => convs[c.id]?.task?.unread).length
         const live = p.conversations.map((c) => convs[c.id]).find((s) => s && isActive(s.status) && s.task)
         const progress = live?.task ? Math.min(1, (live.task.stage + 0.5) / STAGES.length) : 0
+        const threadsOpen = on && openConversations(p).length > 1
         return (
-          <div key={p.id} className={`side-project ${props.armedProjectId === p.id ? 'armed' : ''}`}>
+          <div key={p.id} className={`side-project ${props.armedProjectId === p.id ? 'armed' : ''} ${leaving ? 'leaving' : seen.current!.has(p.id) ? '' : 'enter'}`}>
             <div className="side-row">
             <button type="button" className={`nav ${on ? 'on' : ''}`} onClick={() => props.onOpenProject(i)} title={p.path}>
               <span className="nav-key">{HOME_ROW[i] ?? ''}</span>
               <span className="nav-name">{p.name}</span>
-              {unread > 0 && <span className="pill">{unread}</span>}
+              <Presence show={unread > 0} className="pill"><Odo n={unread} /></Presence>
               {live ? (
                 <span className={`minibar ${status === 'waiting_approval' ? 'wait' : ''}`} role="img" aria-label={`${STATUS_LABEL[status]} · 진행 ${Math.round(progress * 100)}%`}>
                   <i style={{ width: `${Math.round(progress * 100)}%` }} />
@@ -85,7 +91,8 @@ export function Sidebar(props: Props): React.JSX.Element {
               {props.armedProjectId === p.id ? 'CLOSE?' : '×'}
             </button>
             </div>
-            {on && openConversations(p).length > 1 && (
+            {/* 하위 대화 목록은 늘 그려 두고 높이만 여닫는다. 접혀 있으면 inert로 키·포커스에서 뺀다 */}
+            <div className={`threads-wrap ${threadsOpen ? 'open' : ''}`} inert={!threadsOpen}>
               <div className="threads">
                 {openConversations(p).map((c) => {
                   const st = convs[c.id]?.status ?? 'idle'
@@ -103,7 +110,7 @@ export function Sidebar(props: Props): React.JSX.Element {
                   )
                 })}
               </div>
-            )}
+            </div>
           </div>
         )
       })}
@@ -127,7 +134,7 @@ export function Sidebar(props: Props): React.JSX.Element {
         title={props.away ? '확인 요청을 묻지 않고 거절하는 중이에요. 거절한 호출은 보고서에 모여요' : '자리를 비울 때 켜요. 확인 요청 때문에 작업이 멈추지 않아요'}
       >
         <span className="nav-name">AWAY</span>
-        <span className="nav-away-side">{props.away ? 'ON' : 'OFF'}</span>
+        <span className="nav-away-side"><Roll text={props.away ? 'ON' : 'OFF'} className="num" /></span>
       </button>
 
       <button type="button" className={`nav nav-help ${props.helpOpen ? 'on' : ''}`} onClick={props.onHelp} title="모든 단축키를 모아 봐요">
@@ -151,8 +158,11 @@ function CtxPct({ percent }: { percent?: number }): React.JSX.Element | null {
 /** 구독 한도: 5시간 · 주간 · 모델별 주간. 80% 이상이거나 한도 경고가 오면 빨강 */
 /** 새 버전이 있을 때만 SETTINGS 위에 나온다. 받아 뒀으면 눌러서 재시작·설치, 안내만 하는 경우는 릴리즈 페이지로 */
 function UpdateRow({ update }: { update: UpdateState }): React.JSX.Element | null {
-  const { status, latest, percent } = update
-  if (status !== 'available' && status !== 'downloading' && status !== 'ready') return null
+  const visible = update.status === 'available' || update.status === 'downloading' || update.status === 'ready'
+  // 줄이 빠질 때 잠시 남아 나간다
+  const shown = usePresence(visible ? update : null)
+  if (!shown.item) return null
+  const { status, latest, percent } = shown.item
   const side = status === 'ready' ? 'RESTART' : status === 'downloading' ? `${percent ?? 0}%` : 'GET'
   const title =
     status === 'ready'
@@ -161,9 +171,9 @@ function UpdateRow({ update }: { update: UpdateState }): React.JSX.Element | nul
         ? '새 버전을 받고 있어요'
         : '릴리즈 페이지에서 새 버전을 받아요'
   return (
-    <button type="button" className={`nav nav-update ${status}`} disabled={status === 'downloading'} onClick={() => window.api.applyUpdate()} title={title}>
+    <button type="button" className={`nav nav-update ${status} ${shown.leaving ? 'leaving' : ''}`} disabled={status === 'downloading'} onClick={() => window.api.applyUpdate()} title={title}>
       <span className="nav-name">UPDATE v{latest}</span>
-      <span className="nav-update-side">{side}</span>
+      <span key={status} className="nav-update-side swap">{side}</span>
     </button>
   )
 }
@@ -188,11 +198,11 @@ function Usage({ usage, onRefresh }: { usage: UsageInfo | null; onRefresh: () =>
           </svg>
         </button>
       </div>
-      {!usage && <div className="usage-foot">불러오는 중…</div>}
-      {usage && !usage.available && <div className="usage-foot">API 키로 인증 중이라 구독 한도가 없어요</div>}
-      {usage?.available && usage.windows.length === 0 && <div className="usage-foot">한도 정보가 없어요</div>}
+      {!usage && <div key="loading" className="usage-foot">불러오는 중…</div>}
+      {usage && !usage.available && <div key="noauth" className="usage-foot">API 키로 인증 중이라 구독 한도가 없어요</div>}
+      {usage?.available && usage.windows.length === 0 && <div key="none" className="usage-foot">한도 정보가 없어요</div>}
       {usage?.windows.map((w, i) => <UsageRow key={w.id} w={w} big={i === 0} />)}
-      {usage?.error && <div className="usage-foot err">{usage.error}</div>}
+      <Presence as="div" show={!!usage?.error} className="usage-foot err">{usage?.error}</Presence>
     </div>
   )
 }

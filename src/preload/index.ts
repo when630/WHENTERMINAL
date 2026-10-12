@@ -49,6 +49,7 @@ const api: WhenTerminalApi = {
   setTag: (projectId, conversationId, tag) => ipcRenderer.invoke(IPC.setTag, projectId, conversationId, tag),
   approveDenied: (projectId, conversationId, calls) => ipcRenderer.invoke(IPC.approveDenied, projectId, conversationId, calls),
   command: (projectId, conversationId, text) => ipcRenderer.invoke(IPC.command, projectId, conversationId, text),
+  shellOutput: (projectId, conversationId, result) => ipcRenderer.invoke(IPC.shellOutput, projectId, conversationId, result),
   compact: (projectId, conversationId, instructions) => ipcRenderer.invoke(IPC.compact, projectId, conversationId, instructions),
   clear: (projectId, conversationId) => ipcRenderer.invoke(IPC.clear, projectId, conversationId),
   listCommands: (projectId) => ipcRenderer.invoke(IPC.listCommands, projectId),

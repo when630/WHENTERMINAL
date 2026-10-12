@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObje
 import { ALWAYS_SCOPE_LABEL, ALWAYS_SCOPE_TIP, ELICITATION_TOOL, needsChoice, type PermissionDecision, type PermissionRequest, type Project } from '@shared/types'
 import { refocusAfterClick, useRefocus } from './focus'
 import { HOME_ROW } from './keys'
-import { boxIn, EASE, Odo, reducedMotion, Roll, useLayoutMotion } from './motion'
+import { boxIn, EASE, Odo, Presence, PresenceList, reducedMotion, Roll, useLayoutMotion, usePresenceList } from './motion'
 import { STAGES, type TaskRef } from './state'
 import { elapsed, useNow } from './time'
 import { Markdown } from './Markdown'
@@ -55,6 +55,9 @@ export function Home(props: Props): React.JSX.Element {
 
   const unread = reports.filter((r) => r.task.unread).length
   const waiting = running.filter((r) => r.state.permissions.length > 0).length
+  // 카드가 빠질 때 잠시 남아 나간다. 진행 띠가 보고서로(또는 그 반대로) 바뀌는 건 같은 layout id의 변형이라 붙잡지 않는다
+  const runningRows = usePresenceList(running, (r) => r.conversationId).filter((x) => !x.leaving || !reports.some((r) => r.conversationId === x.key))
+  const reportRows = usePresenceList(reports, (r) => r.conversationId).filter((x) => !x.leaving || !running.some((r) => r.conversationId === x.key))
   const openReport = reports.find((r) => r.conversationId === props.openReportId) ?? null
   // 포커스는 늘 작업 지시창으로: 홈에 오면, 보고서를 닫으면, 덮개를 닫으면 (focus.ts). 카드를 키로 고르려면 Esc로 빠져나온다
   const focusAsk = useCallback((): void => {
@@ -94,26 +97,26 @@ export function Home(props: Props): React.JSX.Element {
 
         <Dispatch {...props} scrollRef={scrollRef} />
 
-        {props.tags.length > 0 && (
-          <div className="tagbar" role="radiogroup" aria-label="태그로 거르기">
-            <span className="tagbar-k">TAGS</span>
-            <button type="button" role="radio" aria-checked={!props.tag} className={!props.tag ? 'on' : ''} onClick={() => props.onTag(null)}>ALL</button>
-            {props.tags.map((t) => (
-              <button key={t} type="button" role="radio" aria-checked={props.tag === t} className={props.tag === t ? 'on' : ''} onClick={() => props.onTag(props.tag === t ? null : t)}>
+        <Presence as="div" show={props.tags.length > 0} className="tagbar" role="radiogroup" aria-label="태그로 거르기">
+          <span className="tagbar-k">TAGS</span>
+          <button type="button" role="radio" aria-checked={!props.tag} className={!props.tag ? 'on' : ''} onClick={() => props.onTag(null)}>ALL</button>
+          <PresenceList items={props.tags} keyOf={(t) => t} as="span" className="tagbar-tags">
+            {(t, leaving) => (
+              <button type="button" role="radio" aria-checked={props.tag === t} className={`${props.tag === t ? 'on' : ''} ${leaving ? 'leaving' : ''}`} onClick={() => props.onTag(props.tag === t ? null : t)}>
                 #{t}
               </button>
-            ))}
-          </div>
-        )}
+            )}
+          </PresenceList>
+        </Presence>
 
         <div className="cols">
           <section className="col col-run" aria-label="진행 중">
             <h2 className="col-h">
               RUNNING <span className="disp">{running.length}</span>
             </h2>
-            {running.length === 0 && <div className="empty">맡긴 작업이 모두 끝났어요. 위에서 새 작업을 맡겨 보세요.</div>}
-            {running.map((r) => (
-              <TaskCard key={r.conversationId} r={r} now={now} selected={r.conversationId === selectedId} onSelect={props.onSelect} onOpen={props.onOpenTask} onRespond={props.onRespond} />
+            <Presence as="div" show={runningRows.length === 0} className="empty">맡긴 작업이 모두 끝났어요. 위에서 새 작업을 맡겨 보세요.</Presence>
+            {runningRows.map(({ item: r, leaving }) => (
+              <TaskCard key={r.conversationId} r={r} now={now} selected={r.conversationId === selectedId} leaving={leaving} onSelect={props.onSelect} onOpen={props.onOpenTask} onRespond={props.onRespond} />
             ))}
           </section>
 
@@ -121,9 +124,9 @@ export function Home(props: Props): React.JSX.Element {
             <h2 className="col-h">
               REPORTS <span className="disp">{reports.length}</span>
             </h2>
-            {reports.length === 0 && <div className="empty">끝난 작업의 보고서가 여기에 쌓여요.</div>}
-            {reports.map((r) => (
-              <ReportCard key={r.conversationId} r={r} now={now} selected={r.conversationId === selectedId} hidden={r.conversationId === props.openReportId} onOpen={props.onOpenReport} />
+            <Presence as="div" show={reportRows.length === 0} className="empty">끝난 작업의 보고서가 여기에 쌓여요.</Presence>
+            {reportRows.map(({ item: r, leaving }) => (
+              <ReportCard key={r.conversationId} r={r} now={now} selected={r.conversationId === selectedId} hidden={r.conversationId === props.openReportId} leaving={leaving} onOpen={props.onOpenReport} />
             ))}
           </section>
         </div>
@@ -229,10 +232,11 @@ function Dispatch(props: Props & { scrollRef: RefObject<HTMLDivElement | null> }
   )
 }
 
-function TaskCard({ r, now, selected, onSelect, onOpen, onRespond }: {
+function TaskCard({ r, now, selected, leaving, onSelect, onOpen, onRespond }: {
   r: TaskRef
   now: number
   selected: boolean
+  leaving: boolean
   onSelect: (id: string) => void
   onOpen: (r: TaskRef) => void
   onRespond: Props['onRespond']
@@ -247,7 +251,7 @@ function TaskCard({ r, now, selected, onSelect, onOpen, onRespond }: {
   }
   return (
     <article
-      className={`task ${selected ? 'selected' : ''} ${pending ? 'waiting' : ''}`}
+      className={`task ${selected ? 'selected' : ''} ${pending ? 'waiting' : ''} ${leaving ? 'leaving' : ''}`}
       data-layout-id={r.conversationId}
       data-layout-kind="task"
       onClick={() => onSelect(r.conversationId)}
@@ -261,9 +265,9 @@ function TaskCard({ r, now, selected, onSelect, onOpen, onRespond }: {
               <span>{r.project.name}</span>
               <span className="mono">{mmss(now - task.startedAt)}</span>
               {state.context && <span className="mono">CONTEXT {state.context.percent}%</span>}
-              {state.goal && <span className="band-goal" title={state.goal.condition}>GOAL{state.goal.iterations > 0 ? ` · ${state.goal.iterations}` : ''}</span>}
-              {r.tag && <span className="band-tag">#{r.tag}</span>}
-              {(task.denied?.length ?? 0) > 0 && <span className="band-denied">AWAY DENIED {task.denied!.length}</span>}
+              <Presence show={!!state.goal} className="band-goal" title={state.goal?.condition}>GOAL{(state.goal?.iterations ?? 0) > 0 ? ` · ${state.goal!.iterations}` : ''}</Presence>
+              <Presence show={!!r.tag} className="band-tag">#{r.tag}</Presence>
+              <Presence show={(task.denied?.length ?? 0) > 0} className="band-denied">AWAY DENIED {task.denied?.length ?? 0}</Presence>
             </div>
             <div className="band-title" title={task.instruction}>{task.instruction}</div>
             <div className="act">
@@ -317,18 +321,19 @@ function TaskCard({ r, now, selected, onSelect, onOpen, onRespond }: {
 
 const RESULT_LABEL: Record<string, string> = { done: 'DONE', error: 'ERROR', stopped: 'STOPPED' }
 
-function ReportCard({ r, now, selected, hidden, onOpen }: {
+function ReportCard({ r, now, selected, hidden, leaving, onOpen }: {
   r: TaskRef
   now: number
   selected: boolean
   hidden: boolean
+  leaving: boolean
   onOpen: (id: string) => void
 }): React.JSX.Element {
   const { task, state } = r
   return (
     <button
       type="button"
-      className={`rep ${task.unread ? 'unread' : ''} ${selected ? 'selected' : ''}`}
+      className={`rep ${task.unread ? 'unread' : ''} ${selected ? 'selected' : ''} ${leaving ? 'leaving' : ''}`}
       style={hidden ? { visibility: 'hidden' } : undefined}
       data-layout-id={r.conversationId}
       data-layout-kind="report"

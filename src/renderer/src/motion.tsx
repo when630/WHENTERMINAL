@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
+import { createElement, Fragment, useEffect, useLayoutEffect, useRef, useState, type HTMLAttributes, type ReactNode, type RefObject } from 'react'
 
 // 화면 움직임 도구 모음. 효과(빛·입자)는 쓰지 않고, 요소가 자리를 옮기고 모양을 바꾸는 움직임만 다룬다.
 
@@ -111,6 +111,62 @@ export function usePresence<T>(value: T | null | undefined, ms = 240): { item: T
   }, [current, ms])
   const leaving = current === null && !released && kept.current !== null && !reducedMotion()
   return { item: current ?? (leaving ? kept.current : null), leaving }
+}
+
+/**
+ * 목록용 usePresence: 빠진 항목을 잠시(ms) 원래 자리에 붙잡아 두어 leaving 클래스로 내보낼 수 있게 한다.
+ * 같은 키가 다시 들어오면 바로 산다. 줄마다 key로 그리고 leaving이면 'leaving' 클래스를 붙이면 된다
+ */
+export function usePresenceList<T>(items: T[], keyOf: (item: T) => string, ms = 240, scope = ''): { item: T; key: string; leaving: boolean }[] {
+  const gone = useRef(new Map<string, { item: T; index: number; at: number }>())
+  const prev = useRef<{ key: string; item: T }[]>([])
+  const lastScope = useRef(scope)
+  // 다른 대화·프로젝트의 목록으로 바뀐 것이면 빠진 항목을 붙잡지 않는다 (잔상이 새 화면에 남지 않게)
+  if (lastScope.current !== scope) {
+    lastScope.current = scope
+    prev.current = []
+    gone.current.clear()
+  }
+  const [, bump] = useState(0)
+  const now = performance.now()
+  const live = new Set(items.map(keyOf))
+  if (!reducedMotion()) {
+    prev.current.forEach((p, index) => {
+      if (!live.has(p.key) && !gone.current.has(p.key)) gone.current.set(p.key, { item: p.item, index, at: now })
+    })
+  }
+  for (const [key, g] of gone.current) if (live.has(key) || now - g.at >= ms) gone.current.delete(key)
+  prev.current = items.map((item) => ({ key: keyOf(item), item }))
+  const out = prev.current.map((p) => ({ item: p.item, key: p.key, leaving: false }))
+  // 빠진 항목은 원래 있던 자리에 (앞에서부터 넣어야 자리가 맞는다)
+  for (const [key, g] of [...gone.current.entries()].sort((a, b) => a[1].index - b[1].index)) out.splice(Math.min(g.index, out.length), 0, { item: g.item, key, leaving: true })
+  // 마지막으로 빠진 항목이 놓일 때 한 번 다시 그린다
+  const until = gone.current.size ? Math.max(...[...gone.current.values()].map((g) => g.at)) + ms : 0
+  useEffect(() => {
+    if (!until) return
+    const t = setTimeout(() => bump((n) => n + 1), Math.max(0, until - performance.now()) + 1)
+    return () => clearTimeout(t)
+  }, [until])
+  return out
+}
+
+type Tag = 'span' | 'div' | 'section' | 'nav' | 'p' | 'i' | 'ul' | 'ol' | 'li'
+
+/**
+ * show가 false가 돼도 잠시 마지막 내용을 'leaving' 클래스로 남기는 감싸개 (usePresence를 요소 하나에 바로).
+ * 나가는 동안 className·children은 마지막 모습 그대로, 그 밖의 속성은 지금 값
+ */
+export function Presence({ show, ms = 240, as = 'span', className = '', scope = '', children, ...rest }: { show: boolean; ms?: number; as?: Tag; className?: string; scope?: string; children?: ReactNode } & HTMLAttributes<HTMLElement>): React.JSX.Element | null {
+  const p = usePresence(show ? { children, className, scope } : null, ms)
+  // scope(대화 ID 등)가 바뀌어 사라진 것은 잔상 없이 바로 뺀다
+  if (!p.item || p.item.scope !== scope) return null
+  return createElement(as, { ...rest, className: `${p.item.className}${p.leaving ? ' leaving' : ''}` }, p.item.children)
+}
+
+/** 목록 감싸개: 줄이 빠지면 잠시 남겨 leaving으로 그린다. children이 줄 하나를 그린다 (key는 여기서 붙인다) */
+export function PresenceList<T>({ items, keyOf, as = 'ul', className, ms, scope, children, ...rest }: { items: T[]; keyOf: (item: T) => string; as?: Tag; className?: string; ms?: number; scope?: string; children: (item: T, leaving: boolean) => ReactNode } & Omit<HTMLAttributes<HTMLElement>, 'children'>): React.JSX.Element {
+  const rows = usePresenceList(items, keyOf, ms, scope)
+  return createElement(as, { ...rest, className }, rows.map((r) => createElement(Fragment, { key: r.key }, children(r.item, r.leaving))))
 }
 
 /** 바뀔 때 위로 굴러가며 교체되는 글자 */

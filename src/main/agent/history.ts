@@ -22,6 +22,16 @@ export function taskNote(text: string): string | null {
   return taskLine(tag('status'), tag('summary'), tag('event'))
 }
 
+/**
+ * 입력창 `!명령`으로 돌린 명령의 기록(<bash-input>…<bash-stdout>…). 사람이 쓴 글이 아니라 출력 항목으로 되살린다.
+ * 아니면 null
+ */
+export function shellNote(text: string): { command: string; output: string } | null {
+  if (!/^\s*<bash-input>/.test(text)) return null
+  const tag = (name: string): string => new RegExp(`<${name}>([\\s\\S]*?)</${name}>`).exec(text)?.[1] ?? ''
+  return { command: tag('bash-input').trim(), output: [tag('bash-stdout'), tag('bash-stderr')].filter((s) => s.trim()).join('\n').replace(/\s+$/, '') }
+}
+
 /** 작업 알림 한 줄: 'TASK DONE · 요약 · 이벤트' */
 export const taskLine = (status?: string, summary?: string, event?: string): string =>
   [(status && TASK_STATUS[status]) || 'TASK', summary, event].filter(Boolean).join(' · ')
@@ -53,7 +63,9 @@ export async function readHistory(sessionId: string, dir: string): Promise<Histo
     if (m.type === 'user') {
       if (typeof content === 'string') {
         const note = taskNote(content)
+        const shell = shellNote(content)
         if (note) items.push({ type: 'divider', text: note })
+        else if (shell) items.push({ type: 'notice', text: `! ${shell.command}\n${shell.output || '(출력 없음)'}`, tone: 'info', mono: true })
         else if (content.trim() && !INTERNAL.test(content)) items.push({ type: 'user', text: content, uuid: m.uuid })
         continue
       }
@@ -68,7 +80,8 @@ export async function readHistory(sessionId: string, dir: string): Promise<Histo
           }
         } else if (b.type === 'text' && b.text?.trim() && !INTERNAL.test(b.text)) {
           const note = taskNote(b.text)
-          items.push(note ? { type: 'divider', text: note } : { type: 'user', text: b.text, uuid: m.uuid })
+          const shell = shellNote(b.text)
+          items.push(note ? { type: 'divider', text: note } : shell ? { type: 'notice', text: `! ${shell.command}\n${shell.output || '(출력 없음)'}`, tone: 'info', mono: true } : { type: 'user', text: b.text, uuid: m.uuid })
         }
       }
       continue
@@ -118,7 +131,9 @@ export async function exportMarkdown(sessionId: string, dir: string, title: stri
     const content = (m.message as { content?: unknown } | undefined)?.content
     if (m.type === 'user') {
       const text = typeof content === 'string' ? content : Array.isArray(content) ? (content as Block[]).filter((b) => b.type === 'text').map((b) => b.text ?? '').join('\n') : ''
-      if (text.trim() && !INTERNAL.test(text) && !taskNote(text)) out.push('## YOU', '', text.trim(), '')
+      const shell = shellNote(text)
+      if (shell) out.push(`## SHELL · ${shell.command}`, '', '```', shell.output, '```', '')
+      else if (text.trim() && !INTERNAL.test(text) && !taskNote(text)) out.push('## YOU', '', text.trim(), '')
     } else if (m.type === 'assistant') {
       for (const b of (Array.isArray(content) ? content : []) as Block[]) {
         if (b.type === 'text' && b.text?.trim()) out.push('## CLAUDE', '', b.text.trim(), '')

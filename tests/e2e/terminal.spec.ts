@@ -255,3 +255,41 @@ test('아래 터미널: 붙여넣기는 Ctrl+V·Ctrl+Shift+V 모두 한 번만',
     await win.keyboard.press('Control+c')
   }
 })
+
+test('입력창 !명령: 터미널에서 바로 실행하고 출력을 메인으로 (모델은 부르지 않음), 빈 !는 터미널로', async ({ app, win }) => {
+  test.setTimeout(90_000)
+  // 보내기와 출력 전달을 가로채 기록만 한다
+  await app.evaluate(({ ipcMain }) => {
+    const g = globalThis as unknown as { sent: string[]; shell: { command: string; output: string }[] }
+    g.sent = []
+    g.shell = []
+    ipcMain.removeHandler('agent:send')
+    ipcMain.handle('agent:send', (_e, _p: string, _c: string, text: string) => void g.sent.push(text))
+    ipcMain.removeHandler('agent:shell-output')
+    ipcMain.handle('agent:shell-output', (_e, _p: string, _c: string, r: { command: string; output: string }) => void g.shell.push(r))
+  })
+  const shell = (): Promise<{ command: string; output: string }[]> => app.evaluate(() => (globalThis as unknown as { shell: { command: string; output: string }[] }).shell)
+  await win.keyboard.press('Alt+a')
+  const term = win.locator('.term')
+  const rows = term.locator('.xterm-rows')
+  const input = win.locator('#composer-input')
+  await input.fill('!echo bang-mode')
+  await input.press('Enter')
+  await expect(input).toHaveValue('')
+  // 서랍이 펼쳐지고 명령이 돈다 (친 줄 + 출력). 포커스는 입력창에 그대로
+  await expect(term).toHaveClass(/open/)
+  await expect.poll(async () => ((await rows.innerText()).match(/bang-mode/g) ?? []).length, { timeout: 30_000 }).toBeGreaterThanOrEqual(2)
+  await expect(input).toBeFocused()
+  // 프롬프트로 돌아오면 출력(메아리 줄은 빼고)이 메인으로 간다. 모델은 부르지 않는다
+  await expect.poll(shell, { timeout: 30_000 }).toHaveLength(1)
+  const [r] = await shell()
+  expect(r.command).toBe('echo bang-mode')
+  expect(r.output).toMatch(/bang-mode/)
+  expect(r.output).not.toMatch(/echo bang-mode/)
+  expect(await app.evaluate(() => (globalThis as unknown as { sent: string[] }).sent)).toEqual([])
+  // 빈 !는 터미널을 열고 포커스를 옮긴다
+  await input.fill('!')
+  await input.press('Enter')
+  await expect(input).toHaveValue('')
+  await expect.poll(() => win.evaluate(() => !!document.activeElement?.closest('[data-terminal]'))).toBe(true)
+})

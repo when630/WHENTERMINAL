@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Presence } from './motion'
 import type { WorktreeChanges } from '@shared/types'
 
 interface Props {
@@ -94,7 +95,7 @@ export function WorktreePanel({ projectId, conversationId, refreshKey, onClose, 
           </button>
         </div>
       </header>
-      {message && <div className={`wt-msg ${message.ok ? 'ok' : 'bad'}`} role="status">{message.text}</div>}
+      <Presence as="div" show={!!message} className={`wt-msg ${message?.ok ? 'ok' : 'bad'}`} role="status">{message?.text}</Presence>
       <div className="wt-body">
         {data === undefined && <div className="empty">변경을 읽는 중…</div>}
         {data === null && <div className="empty">작업 공간이 없는 대화예요.</div>}

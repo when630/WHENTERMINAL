@@ -1,6 +1,6 @@
 import { query, type SlashCommand, type ElicitationRequest, type ElicitationResult, type Options, type PermissionResult, type PermissionUpdate, type Query, type SDKMessage, type UserDialogRequest, type UserDialogResult } from '@anthropic-ai/claude-agent-sdk'
 import { randomUUID } from 'node:crypto'
-import { ELICITATION_TOOL, isAgentMode, REFUSAL_TOOL, type AlwaysInfo, type AlwaysScope, type DeniedCall, type EffortLevel, type AgentEvent, type AgentMode, type AgentStatus, type BackgroundTask, type ContextInfo, type GoalInfo, type PermissionDecision, type PermissionExtra, type PermissionRequest, type RateLimitInfo } from '@shared/types'
+import { ELICITATION_TOOL, isAgentMode, REFUSAL_TOOL, type AlwaysInfo, type AlwaysScope, type DeniedCall, type EffortLevel, type AgentEvent, type AgentMode, type AgentStatus, type BackgroundTask, type ContextInfo, type GoalInfo, type PermissionDecision, type PermissionExtra, type PermissionRequest, type RateLimitInfo, type ShellResult } from '@shared/types'
 import { MessageQueue } from './message-queue'
 import { claudeExecutable } from '../executable'
 import { outputPathIn, rememberTaskOutput } from './task-output'
@@ -202,6 +202,8 @@ export class AgentSession {
    * 앱이 들고 있다가 턴이 끝나면 하나씩 보낸다. 메시지 하나 = 작업 하나
    */
   private held: HeldMessage[] = []
+  /** `!명령` 출력 중 아직 세션에 붙이지 못한 것 (CLI가 바쁘거나 떠 있지 않을 때). 다음 메시지 앞에 흘려보낸다 */
+  private pendingShell: string[] = []
   /** ExitPlanMode를 승인한 뒤 바꿀 모드. CLI가 플랜 모드를 빠져나온 직후(status)에 적용한다 */
   private afterPlan: AgentMode | null = null
   private afterPlanTimer: ReturnType<typeof setTimeout> | null = null
@@ -298,7 +300,26 @@ export class AgentSession {
     this.quietCommand = null
     this.setStatus('running')
     this.inflight.push({ text, uuid })
+    this.flushShell()
     this.queue!.push(text, uuid)
+  }
+
+  /** 붙이지 못했던 `!명령` 출력을 지금 큐에 (모델 턴 없이). 실제 메시지 앞에 넣어야 그 메시지에 합쳐진다 */
+  private flushShell(): void {
+    if (!this.queue) return
+    for (const text of this.pendingShell.splice(0)) this.queue.push(text, undefined, { shouldQuery: false })
+  }
+
+  /**
+   * 입력창 `!명령`으로 터미널에서 돌린 명령의 출력을 세션에 덧붙인다. CLI의 bash 모드와 같은 꼴(<bash-input>·<bash-stdout>)이라
+   * 모델이 알아본다. 모델 턴을 열지 않으므로 상태·보고서는 그대로. CLI가 한가하면 바로, 아니면 다음 메시지 앞에
+   */
+  appendShell(r: ShellResult): void {
+    const output = r.output.replace(/\s+$/, '')
+    const text = `<bash-input>${r.command}</bash-input>\n<bash-stdout>${r.truncated ? '… (앞부분은 잘랐어요)\n' : ''}${output}</bash-stdout>`
+    this.emit({ kind: 'notice', text: `! ${r.command}\n${output || '(출력 없음)'}`, tone: 'info', mono: true })
+    if (this.q && this.queue && !this.isBusy() && !this.manualCompact && this.status !== 'queued') this.queue.push(text, undefined, { shouldQuery: false })
+    else this.pendingShell.push(text)
   }
 
   /**
