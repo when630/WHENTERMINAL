@@ -121,7 +121,7 @@ function Dispatch(props: Props & { scrollRef: RefObject<HTMLDivElement | null> }
   const [text, setText] = useDraft(`home:${p?.id ?? ''}`)
   const target = props.continueTarget
   const altEnter = useRef(false)
-  const attach = useAttach({ inputRef: props.inputRef, value: text, setValue: setText, root: p?.path ?? '' })
+  const attach = useAttach({ inputRef: props.inputRef, setValue: setText, scope: `home:${p?.id ?? ''}`, root: p?.path ?? '' })
   if (props.projects.length === 0) {
     return (
       <div className="ask ask-empty">

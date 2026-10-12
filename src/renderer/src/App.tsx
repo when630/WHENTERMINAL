@@ -13,7 +13,7 @@ import { HelpOverlay } from './HelpOverlay'
 import { SearchOverlay } from './SearchOverlay'
 import type { SearchHit } from '@shared/types'
 import { usePresence } from './motion'
-import { newTerminal, showTerminal, stepTerminal } from './terminal'
+import { forgetTerminals, newTerminal, showTerminal, stepTerminal } from './terminal'
 import { pruneDrafts } from './drafts'
 import { useTooltips } from './tooltip'
 
@@ -117,9 +117,12 @@ export function App(): React.JSX.Element {
     for (const p of projects) {
       for (const c of p.conversations) {
         const s = convs[c.id]
-        const t = s?.task
-        if (!s || !t?.finishedAt || s.status === 'running' || s.status === 'waiting_approval') continue
-        const stored: StoredTask = { ...t, status: s.status }
+        if (!s) continue
+        const t = s.task
+        const busy = s.status === 'running' || s.status === 'waiting_approval'
+        // 지금 작업이 아직 돌면, 그 작업에 밀려난 앞 작업의 보고서를 저장한다
+        const stored: StoredTask | undefined = t?.finishedAt && !busy ? { ...t, status: s.status } : s.finishedTask
+        if (!stored) continue
         const key = JSON.stringify(stored)
         if (savedTasks.current.get(c.id) === key) continue
         // 시작할 때 되살린 값과 같으면 저장할 필요가 없다
@@ -234,6 +237,7 @@ export function App(): React.JSX.Element {
   /** 대화를 닫고, 보고 있던 대화였다면 옆 대화로 옮겨 간다 */
   const closeConversation = useCallback(async (projectId: string, conversationId: string) => {
     const next = await window.api.closeConversation(projectId, conversationId)
+    forgetTerminals(conversationId)
     // 보고서가 보고함에 남을 수 있으므로 상태는 지우지 않는다. 실행 중이었다면 중단으로 바꾼다
     setConvs((prev) => {
       const s = prev[conversationId]
@@ -251,6 +255,7 @@ export function App(): React.JSX.Element {
   const removeProject = useCallback(async (projectId: string) => {
     const ids = new Set(projects.find((p) => p.id === projectId)?.conversations.map((c) => c.id) ?? [])
     await window.api.removeProject(projectId)
+    ids.forEach(forgetTerminals)
     setConvs((prev) => Object.fromEntries(Object.entries(prev).filter(([id]) => !ids.has(id))))
     setOpenReportId(null)
     setView((v) => (v.screen === 'chat' && v.projectId === projectId ? { screen: 'home' } : v))

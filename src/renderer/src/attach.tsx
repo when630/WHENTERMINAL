@@ -1,4 +1,4 @@
-import { useState, type RefObject } from 'react'
+import { useRef, useState, type RefObject } from 'react'
 
 // 첨부는 경로로: 끌어다 놓기·이미지 붙여넣기·첨부 버튼으로 고른 파일의 경로를 입력칸 커서 자리에 넣는다.
 // 에이전트는 경로를 보고 Read로 읽는다 (이미지도 읽을 수 있다).
@@ -32,14 +32,15 @@ async function pathsFromPaste(files: File[]): Promise<string[]> {
 
 interface Options {
   inputRef: RefObject<HTMLInputElement | HTMLTextAreaElement | null>
-  value: string
   setValue: (v: string) => void
+  /** 이 입력칸의 주인 (대화 ID 등). 붙여넣은 이미지를 저장하는 사이에 바뀌면 넣지 않는다 (다른 대화의 초안을 덮지 않게) */
+  scope: string
   /** 경로를 상대 경로로 줄일 기준 폴더 */
   root: string
   onCaret?: (pos: number) => void
 }
 
-export function useAttach({ inputRef, value, setValue, root, onCaret }: Options): {
+export function useAttach({ inputRef, setValue, scope, root, onCaret }: Options): {
   dropping: boolean
   dropProps: Pick<React.HTMLAttributes<HTMLElement>, 'onDragOver' | 'onDragLeave' | 'onDrop'>
   onPaste: (e: React.ClipboardEvent) => void
@@ -47,20 +48,30 @@ export function useAttach({ inputRef, value, setValue, root, onCaret }: Options)
   insertPaths: (paths: string[]) => void
 } {
   const [dropping, setDropping] = useState(false)
+  const scopeRef = useRef(scope)
+  scopeRef.current = scope
 
   const insertPaths = (paths: string[]): void => {
     if (!paths.length) return
     const el = inputRef.current
-    const at = el?.selectionStart ?? value.length
+    if (!el) return
+    // 파일을 고르거나 저장하는 동안 더 친 글이 있을 수 있으므로 렌더 때의 값이 아니라 입력칸의 지금 값에 넣는다
+    const value = el.value
+    const at = el.selectionStart ?? value.length
     const before = value.slice(0, at)
     const piece = `${before && !/\s$/.test(before) ? ' ' : ''}${refsFor(paths, root)} `
     const pos = at + piece.length
     setValue(before + piece + value.slice(at))
     onCaret?.(pos)
     requestAnimationFrame(() => {
-      el?.focus()
-      el?.setSelectionRange(pos, pos)
+      el.focus()
+      el.setSelectionRange(pos, pos)
     })
+  }
+  /** 기다리는 일(파일 고르기·이미지 저장) 뒤에 넣는다. 그 사이 다른 대화로 옮겼으면 버린다 */
+  const insertLater = (paths: Promise<string[]>): void => {
+    const from = scopeRef.current
+    void paths.then((list) => scopeRef.current === from && insertPaths(list))
   }
 
   return {
@@ -86,9 +97,9 @@ export function useAttach({ inputRef, value, setValue, root, onCaret }: Options)
       const files = [...e.clipboardData.files]
       if (!files.length) return
       e.preventDefault()
-      void pathsFromPaste(files).then(insertPaths)
+      insertLater(pathsFromPaste(files))
     },
-    pick: () => void window.api.pickFiles().then(insertPaths),
+    pick: () => insertLater(window.api.pickFiles()),
   }
 }
 

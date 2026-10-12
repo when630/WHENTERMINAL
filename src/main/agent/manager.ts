@@ -9,7 +9,7 @@ import { readTaskOutput } from './task-output'
 import { draftTitle, saveSessionTitle, sessionTitle } from './title'
 import { removeWorktreeIfClean } from '../worktree'
 
-/** 대화별 AgentSession을 만들고 보관한다. 동시 실행 제한(OPEN-003)은 여기에 붙일 예정. */
+/** 대화별 AgentSession을 만들고 보관한다. 동시 실행 제한(OPEN-003)과 대기열도 여기서 */
 export class AgentManager {
   private sessions = new Map<string, AgentSession>()
 
@@ -113,6 +113,14 @@ export class AgentManager {
       seen.add(w.conversationId)
       this.broadcast({ projectId: w.projectId, conversationId: w.conversationId, event: { kind: 'queue', position: i + 1 } })
     })
+  }
+
+  /** 세션을 끝내고 대기열에서 뺀다. 실행 중이던 자리가 비었을 수 있으니 다음 차례를 시작한다 (끝낸 세션은 status를 내지 않는다) */
+  private endSession(conversationId: string): void {
+    this.dropWaiting(conversationId)
+    this.sessions.get(conversationId)?.dispose()
+    this.sessions.delete(conversationId)
+    queueMicrotask(() => this.drain())
   }
 
   private dropWaiting(conversationId: string): boolean {
@@ -254,9 +262,7 @@ export class AgentManager {
 
   /** 대화를 닫는다: 세션을 끝내고(진행 중이면 중단) 목록에서 뺀다. 디스크의 세션 기록 파일은 남긴다 */
   closeConversation(projectId: string, conversationId: string): string {
-    this.dropWaiting(conversationId)
-    this.sessions.get(conversationId)?.dispose()
-    this.sessions.delete(conversationId)
+    this.endSession(conversationId)
     const project = this.store.get(projectId)
     const conv = this.store.getConversation(projectId, conversationId)
     const next = this.store.closeConversation(projectId, conversationId)
@@ -269,9 +275,7 @@ export class AgentManager {
 
   /** 세션을 닫고 저장된 세션 ID를 지운다. 다음 메시지는 새 세션으로 시작 (이전 기록 파일은 지우지 않음) */
   clear(projectId: string, conversationId: string): void {
-    this.dropWaiting(conversationId)
-    this.sessions.get(conversationId)?.dispose()
-    this.sessions.delete(conversationId)
+    this.endSession(conversationId)
     this.store.updateConversation(projectId, conversationId, { sessionId: undefined, contextPercent: undefined })
     this.broadcast({ projectId, conversationId, event: { kind: 'cleared' } })
     // 비운 직후에도 컨텍스트가 보이도록 새 세션의 기본 사용량·모델을 바로 읽는다
@@ -320,9 +324,7 @@ export class AgentManager {
   disposeProject(projectId: string): void {
     const project = this.store.get(projectId)
     for (const conv of project?.conversations ?? []) {
-      this.dropWaiting(conv.id)
-      this.sessions.get(conv.id)?.dispose()
-      this.sessions.delete(conv.id)
+      this.endSession(conv.id)
       if (project && conv.worktree) void removeWorktreeIfClean(project.path, conv.worktree.path)
     }
   }

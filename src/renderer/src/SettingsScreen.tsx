@@ -224,7 +224,7 @@ export function SettingsScreen({ settings, activeHotkey, update, onClose, onSave
           <div className="krow">
             <span className="krow-label">
               Terminal shell
-              <span className="krow-note">대화창 아래 터미널(Ctrl+T)에서 띄울 셸이에요. 새로 여는 터미널부터 적용되고, 터미널 머리의 셸 이름을 눌러 그 자리에서 바꿀 수도 있어요. Claude의 Bash 명령을 그대로 실행하려면 Git Bash가 맞아요</span>
+              <span className="krow-note">대화창 아래 터미널에서 띄울 셸이에요. 새로 여는 터미널부터 적용되고, 터미널 머리의 셸 이름을 눌러 그 자리에서 바꿀 수도 있어요. Claude의 Bash 명령을 그대로 실행하려면 Git Bash가 맞아요</span>
             </span>
             <span className="seg" role="radiogroup" aria-label="터미널 셸">
               {shells.map(({ id, label, note }) => (

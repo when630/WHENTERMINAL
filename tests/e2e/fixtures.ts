@@ -77,7 +77,8 @@ async function quit(app: ElectronApplication): Promise<void> {
       // 이미 끝남
     }
   }
-  await app.close().catch(() => {})
+  // 트리째 끝낸 뒤에는 Playwright가 종료 신호를 끝내 받지 못해 close()가 돌아오지 않을 때가 있다 (테스트 정리 시간 초과)
+  await Promise.race([app.close().catch(() => {}), new Promise((r) => setTimeout(r, 3000))])
 }
 
 /** 테스트 하나 = 앱 하나. 끝나면 닫고 임시 폴더를 지운다. 화면 오류가 있으면 실패 */

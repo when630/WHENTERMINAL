@@ -144,6 +144,8 @@ export async function mergeWorktree(projectPath: string, wt: { path: string; bra
       await git(wt.path, 'add', '-A')
       await git(wt.path, 'commit', '-m', title)
     }
+    // 사용자가 프로젝트 폴더에서 하던 병합이 있으면 건드리지 않는다 (실패해도 그 병합을 되돌리면 안 된다)
+    if (await merging(projectPath)) return { ok: false, message: '프로젝트 폴더에서 진행 중인 병합이 있어요. 그 병합을 끝낸 뒤에 합쳐 주세요' }
     const target = await git(projectPath, 'rev-parse', '--abbrev-ref', 'HEAD')
     const ahead = Number(await git(projectPath, 'rev-list', '--count', `${target}..${wt.branch}`)) || 0
     if (ahead === 0) return { ok: true, message: `${target} 브랜치에 이미 모두 들어가 있어요` }
@@ -151,12 +153,25 @@ export async function mergeWorktree(projectPath: string, wt: { path: string; bra
     return { ok: true, message: `${wt.branch}의 커밋 ${ahead}개를 ${target} 브랜치에 합쳤어요` }
   } catch (err) {
     const e = err as { stderr?: string; stdout?: string; message?: string }
-    try {
-      await git(projectPath, 'merge', '--abort')
-    } catch {
-      // 병합 중이 아니었으면 되돌릴 것도 없다
+    // 위에서 진행 중인 병합이 없음을 확인했으므로, 지금 병합 중이면 이 함수가 시작한 것이다
+    if (await merging(projectPath)) {
+      try {
+        await git(projectPath, 'merge', '--abort')
+      } catch {
+        // 되돌리지 못하면 사용자에게 보이는 오류로 충분하다
+      }
     }
     return { ok: false, message: (e.stderr || e.stdout || e.message || '합치지 못했어요').trim() }
+  }
+}
+
+/** 프로젝트 폴더가 병합 중인지 (MERGE_HEAD가 있는지) */
+async function merging(projectPath: string): Promise<boolean> {
+  try {
+    await git(projectPath, 'rev-parse', '-q', '--verify', 'MERGE_HEAD')
+    return true
+  } catch {
+    return false
   }
 }
 

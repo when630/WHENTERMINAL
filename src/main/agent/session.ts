@@ -78,6 +78,17 @@ export class AgentSession {
   /** 백그라운드 작업 id → 띄운 도구 호출 (task_started에서) */
   private taskTools = new Map<string, string>()
   private background: BackgroundTask[] = []
+  /**
+   * 실행 중에 보낸 메시지. CLI로 바로 넘기면 지금 턴에 섞이거나 Esc 뒤에도 살아남아 돌므로(interrupt의 still_queued),
+   * 앱이 들고 있다가 턴이 끝나면 하나씩 보낸다. 메시지 하나 = 작업 하나
+   */
+  private held: string[] = []
+  /** 스트리밍 글자 조각을 모아 한 번에 보낸다 (조각마다 IPC·렌더러 전체 갱신을 하지 않게) */
+  private delta = ''
+  private deltaTimer: ReturnType<typeof setTimeout> | null = null
+  private disposed = false
+  /** Esc로 끊은 턴의 result가 아직 오지 않았다. 그 사이 새 메시지를 보냈으면 늦게 온 result가 새 작업을 끝내지 않게 걸러 낸다 */
+  private interrupted = false
 
   constructor(private readonly opts: AgentSessionOptions) {
     this.mode = opts.mode
@@ -110,18 +121,39 @@ export class AgentSession {
     return this.q ? this.q.supportedCommands() : null
   }
 
-  /** echo=false: 대기열에 넣을 때 이미 화면에 보낸 메시지라 다시 보내지 않는다 */
+  /**
+   * echo=false: 대기열에 넣을 때 이미 화면에 보낸 메시지라 다시 보내지 않는다.
+   * 실행 중(또는 컴팩트 중)이면 들고 있다가 지금 턴이 끝난 뒤 보낸다
+   */
   send(text: string, echo = true): void {
+    if (this.isBusy() || this.manualCompact) {
+      if (echo) this.emit({ kind: 'user', text, next: true })
+      this.held.push(text)
+      return
+    }
+    // 대기열에서 나온 메시지는 이미 화면에 있으니 작업만 지금 시작한다
+    this.emit(echo ? { kind: 'user', text } : { kind: 'task_start', text })
+    this.dispatch(text)
+  }
+
+  /** 자리가 없어 기다리는 메시지: 화면에는 바로 보이고 상태는 대기. 이미 기다리는 중이면 앞 메시지의 작업을 덮지 않는다 */
+  enqueue(text: string): void {
+    this.emit({ kind: 'user', text, next: this.status === 'queued' })
+    this.setStatus('queued')
+  }
+
+  private dispatch(text: string): void {
     if (!this.q) this.start()
-    if (echo) this.opts.emit({ kind: 'user', text })
     this.setStatus('running')
     this.queue!.push(text)
   }
 
-  /** 자리가 없어 기다리는 메시지: 화면에는 바로 보이고 상태는 대기 */
-  enqueue(text: string): void {
-    this.opts.emit({ kind: 'user', text })
-    this.setStatus('queued')
+  /** 들고 있던 메시지를 하나 보낸다. 작업은 이때 시작한다 */
+  private sendHeld(): void {
+    const text = this.held.shift()
+    if (text === undefined) return
+    this.emit({ kind: 'task_start', text })
+    this.dispatch(text)
   }
 
   /** 프로세스가 떠서 자리를 차지하는 중 (실행 또는 확인 대기) */
@@ -135,21 +167,31 @@ export class AgentSession {
 
   /** /compact를 같은 세션에 보낸다. 실행 중이면 거절 (끝난 뒤에 해야 요약이 온전하다) */
   compact(instructions?: string): void {
-    const refuse = (message: string): void => this.opts.emit({ kind: 'error', message })
+    const refuse = (message: string): void => this.emit({ kind: 'error', message })
     if (this.status === 'running' || this.status === 'waiting_approval' || this.status === 'queued') return refuse('작업이 끝난 뒤에 컴팩트할 수 있어요')
     if (!this.q && !this.sessionId) return refuse('아직 대화가 없어 컴팩트할 내용이 없어요')
     if (this.manualCompact) return
     if (!this.q) this.start()
     this.manualCompact = true
-    this.opts.emit({ kind: 'compacting', on: true })
+    this.emit({ kind: 'compacting', on: true })
     this.queue!.push(instructions?.trim() ? `/compact ${instructions.trim()}` : '/compact')
   }
 
+  /** Esc는 다 멈춘다: 지금 턴과, 차례를 기다리던 메시지까지 */
   async interrupt(): Promise<void> {
-    if (!this.q || this.status === 'idle' || this.status === 'done') return
+    const dropped = this.held.length
+    this.held = []
+    if (dropped) this.emit({ kind: 'task_note', text: `CANCELLED · 차례를 기다리던 메시지 ${dropped}개를 보내지 않았어요` })
+    if (!this.q || (this.status !== 'running' && this.status !== 'waiting_approval')) return
+    this.interrupted = true
     this.denyAllPending('사용자가 중단함')
-    await this.q.interrupt()
+    // 응답을 기다리는 사이에 끊긴 턴의 result가 먼저 와도 오류로 보이지 않게 먼저 바꾼다
     this.setStatus('stopped')
+    try {
+      await this.q.interrupt()
+    } catch (err) {
+      console.warn('interrupt 실패', err)
+    }
   }
 
   /** 백그라운드 작업 하나를 멈춘다. 끝나면 background_tasks_changed로 목록에서 빠진다 */
@@ -158,7 +200,7 @@ export class AgentSession {
     try {
       await this.q.stopTask(taskId)
     } catch (err) {
-      this.opts.emit({ kind: 'error', message: `백그라운드 작업을 멈추지 못했어요: ${err instanceof Error ? err.message : String(err)}` })
+      this.emit({ kind: 'error', message: `백그라운드 작업을 멈추지 못했어요: ${err instanceof Error ? err.message : String(err)}` })
     }
   }
 
@@ -168,13 +210,13 @@ export class AgentSession {
       try {
         await this.q.setPermissionMode(mode)
       } catch (err) {
-        this.opts.emit({ kind: 'error', message: `${mode} 모드로 바꾸지 못했어요: ${err instanceof Error ? err.message : String(err)}` })
-        this.opts.emit({ kind: 'mode', mode: this.mode })
+        this.emit({ kind: 'error', message: `${mode} 모드로 바꾸지 못했어요: ${err instanceof Error ? err.message : String(err)}` })
+        this.emit({ kind: 'mode', mode: this.mode })
         return
       }
     }
     this.mode = mode
-    this.opts.emit({ kind: 'mode', mode })
+    this.emit({ kind: 'mode', mode })
   }
 
   respondPermission(requestId: string, decision: PermissionDecision): void {
@@ -187,11 +229,16 @@ export class AgentSession {
       const always = decision === 'always' && !p.suppressAlwaysAllow
       p.resolve({ behavior: 'allow', updatedPermissions: always ? p.suggestions : undefined })
     }
-    this.opts.emit({ kind: 'permission_resolved', requestId })
+    this.emit({ kind: 'permission_resolved', requestId })
     if (this.pending.size === 0 && this.status === 'waiting_approval') this.setStatus('running')
   }
 
   dispose(): void {
+    this.disposed = true
+    this.held = []
+    if (this.deltaTimer) clearTimeout(this.deltaTimer)
+    this.deltaTimer = null
+    this.delta = ''
     this.denyAllPending('세션 종료')
     this.queue?.close()
     this.q?.close()
@@ -233,11 +280,13 @@ export class AgentSession {
         suppressAlwaysAllow: options.suppressAlwaysAllowRule ?? false,
       })
       options.signal.addEventListener('abort', () => {
-        if (this.pending.delete(requestId)) this.opts.emit({ kind: 'permission_resolved', requestId })
+        if (!this.pending.delete(requestId)) return
+        this.emit({ kind: 'permission_resolved', requestId })
+        if (this.pending.size === 0 && this.status === 'waiting_approval') this.setStatus('running')
       })
       // 상태를 먼저 바꿔야 요청 이벤트 처리 중 즉시 응답이 와도 'running'으로 정상 복귀한다
       this.setStatus('waiting_approval')
-      this.opts.emit({
+      this.emit({
         kind: 'permission_request',
         request: {
           requestId,
@@ -254,19 +303,37 @@ export class AgentSession {
 
   private async consume(q: Query): Promise<void> {
     try {
-      for await (const msg of q) this.handle(msg)
+      for await (const msg of q) {
+        // 닫거나 비운 세션에서 늦게 온 메시지는 버린다
+        if (this.q !== q) break
+        try {
+          this.handle(msg)
+        } catch (err) {
+          // 메시지 하나를 처리하다 난 오류(저장 실패 등)로 세션 전체를 끝내지 않는다
+          console.error('SDK 메시지 처리 실패', msg.type, err)
+        }
+      }
     } catch (err) {
-      this.opts.emit({ kind: 'error', message: err instanceof Error ? err.message : String(err) })
+      if (this.q !== q) return
+      this.emit({ kind: 'error', message: err instanceof Error ? err.message : String(err) })
       this.setStatus('error')
     } finally {
       // 프로세스가 끝났으면 다음 send에서 resume으로 다시 띄운다
-      if (this.q === q) {
+      if (this.q === q && !this.disposed) {
         this.denyAllPending('세션 종료')
         this.queue?.close()
         this.q = null
         this.queue = null
         // 백그라운드 작업은 CLI 프로세스와 함께 끝난다
         this.setBackground([])
+        this.interrupted = false
+        if (this.manualCompact) this.endCompacting()
+        // 결과 없이 끝났으면(프로세스가 죽는 등) 실행 중으로 남지 않게 한다
+        if (this.status === 'running' || this.status === 'waiting_approval') {
+          this.emit({ kind: 'error', message: '세션이 예기치 않게 끝났어요' })
+          this.setStatus('error')
+        }
+        this.sendHeld()
       }
     }
   }
@@ -281,24 +348,24 @@ export class AgentSession {
           }
           if (msg.model && msg.model !== this.model) {
             this.model = msg.model
-            this.opts.emit({ kind: 'model', model: msg.model, label: modelLabel(msg.model) })
+            this.emit({ kind: 'model', model: msg.model, label: modelLabel(msg.model) })
             void this.lookupModelName(msg.model)
           }
         } else if (msg.subtype === 'status') {
           // 세션 쪽에서 모드가 바뀐 경우 (플랜 모드를 빠져나오는 등) 화면과 저장값을 맞춘다
           if (msg.permissionMode && msg.permissionMode !== this.mode && isAgentMode(msg.permissionMode)) {
             this.mode = msg.permissionMode
-            this.opts.emit({ kind: 'mode', mode: msg.permissionMode })
+            this.emit({ kind: 'mode', mode: msg.permissionMode })
           }
           // 자동 컴팩트도 이 메시지로 알려온다
-          if (msg.status === 'compacting') this.opts.emit({ kind: 'compacting', on: true })
+          if (msg.status === 'compacting') this.emit({ kind: 'compacting', on: true })
           else if (msg.compact_result) {
-            if (msg.compact_result === 'failed') this.opts.emit({ kind: 'error', message: `컴팩트하지 못했어요: ${msg.compact_error ?? '알 수 없는 오류'}` })
+            if (msg.compact_result === 'failed') this.emit({ kind: 'error', message: `컴팩트하지 못했어요: ${msg.compact_error ?? '알 수 없는 오류'}` })
             this.endCompacting()
           }
         } else if (msg.subtype === 'compact_boundary') {
           const m = msg.compact_metadata
-          this.opts.emit({ kind: 'compacted', trigger: m.trigger, preTokens: m.pre_tokens, postTokens: m.post_tokens })
+          this.emit({ kind: 'compacted', trigger: m.trigger, preTokens: m.pre_tokens, postTokens: m.post_tokens })
           this.endCompacting()
           void this.refreshContext()
         } else if (msg.subtype === 'task_started') {
@@ -311,12 +378,12 @@ export class AgentSession {
           this.taskTools.delete(msg.task_id)
           if (msg.output_file && this.sessionId) rememberTaskOutput(this.sessionId, msg.output_file)
           // CLI가 모델에게 넣는 <task-notification> 사용자 메시지는 SDK로 오지 않고 이것만 온다. 한 줄 구분선으로 (되살린 기록과 같게)
-          if (!msg.skip_transcript) this.opts.emit({ kind: 'task_note', text: taskLine(msg.status, msg.summary) })
+          if (!msg.skip_transcript) this.emit({ kind: 'task_note', text: taskLine(msg.status, msg.summary) })
         } else if (msg.subtype === 'task_progress') {
           const toolUseId = msg.tool_use_id ?? this.taskTools.get(msg.task_id)
           if (toolUseId) {
             const u = msg.usage
-            this.opts.emit({
+            this.emit({
               kind: 'task_progress',
               toolUseId,
               progress: { tools: u.tool_uses, tokens: u.total_tokens, durationMs: u.duration_ms, lastTool: msg.last_tool_name, summary: msg.summary },
@@ -340,21 +407,21 @@ export class AgentSession {
         break
       case 'stream_event':
         if (msg.parent_tool_use_id === null && msg.event.type === 'content_block_delta' && msg.event.delta.type === 'text_delta') {
-          this.opts.emit({ kind: 'text_delta', text: msg.event.delta.text })
+          this.emit({ kind: 'text_delta', text: msg.event.delta.text })
         }
         break
       case 'assistant':
         if (msg.parent_tool_use_id !== null) {
           const parent = msg.parent_tool_use_id
           for (const block of msg.message.content) {
-            if (block.type === 'text' && block.text.trim()) this.opts.emit({ kind: 'sub', parent, item: { type: 'text', text: block.text } })
-            else if (block.type === 'tool_use') this.opts.emit({ kind: 'sub', parent, item: { type: 'tool', toolUseId: block.id, name: block.name, input: block.input } })
+            if (block.type === 'text' && block.text.trim()) this.emit({ kind: 'sub', parent, item: { type: 'text', text: block.text } })
+            else if (block.type === 'tool_use') this.emit({ kind: 'sub', parent, item: { type: 'tool', toolUseId: block.id, name: block.name, input: block.input } })
           }
           break
         }
         for (const block of msg.message.content) {
-          if (block.type === 'text') this.opts.emit({ kind: 'assistant_text', text: block.text })
-          else if (block.type === 'tool_use') this.opts.emit({ kind: 'tool_use', toolUseId: block.id, name: block.name, input: block.input })
+          if (block.type === 'text') this.emit({ kind: 'assistant_text', text: block.text })
+          else if (block.type === 'tool_use') this.emit({ kind: 'tool_use', toolUseId: block.id, name: block.name, input: block.input })
         }
         break
       case 'user': {
@@ -364,7 +431,7 @@ export class AgentSession {
           for (const block of msg.message.content) {
             if (block.type !== 'tool_result') continue
             const content = resultText(block)
-            this.opts.emit({ kind: 'sub_result', parent, toolUseId: block.tool_use_id, content: content.slice(0, SUB_RESULT_PREVIEW_LIMIT), isError: block.is_error ?? false })
+            this.emit({ kind: 'sub_result', parent, toolUseId: block.tool_use_id, content: content.slice(0, SUB_RESULT_PREVIEW_LIMIT), isError: block.is_error ?? false })
           }
           break
         }
@@ -374,7 +441,7 @@ export class AgentSession {
           // 백그라운드 셸의 출력 파일 위치를 알아 두면 같은 세션의 모니터 출력도 바로 찾는다
           const out = outputPathIn(content)
           if (out && this.sessionId) rememberTaskOutput(this.sessionId, out)
-          this.opts.emit({
+          this.emit({
             kind: 'tool_result',
             toolUseId: block.tool_use_id,
             content: content.slice(0, TOOL_RESULT_PREVIEW_LIMIT),
@@ -392,12 +459,20 @@ export class AgentSession {
         void this.refreshContext()
         if (this.manualCompact) {
           // /compact의 결과: 작업이 끝난 것이 아니므로 상태·보고서는 그대로 둔다
-          if (msg.subtype !== 'success' || msg.is_error) this.opts.emit({ kind: 'error', message: '컴팩트하지 못했어요' })
+          if (msg.subtype !== 'success' || msg.is_error) this.emit({ kind: 'error', message: '컴팩트하지 못했어요' })
           this.endCompacting()
+          this.sendHeld()
           break
         }
-        this.opts.emit({ kind: 'result', subtype: msg.subtype, durationMs: msg.duration_ms, costUsd: msg.total_cost_usd })
+        if (this.interrupted) {
+          this.interrupted = false
+          // 끊은 턴의 결과. 그 뒤에 새 작업이 시작됐으면 그 작업의 것이 아니므로 버린다
+          if (this.status === 'stopped') this.emit({ kind: 'result', subtype: msg.subtype, durationMs: msg.duration_ms, costUsd: msg.total_cost_usd })
+          break
+        }
+        this.emit({ kind: 'result', subtype: msg.subtype, durationMs: msg.duration_ms, costUsd: msg.total_cost_usd })
         if (this.status !== 'stopped') this.setStatus(msg.subtype === 'success' && !msg.is_error ? 'done' : 'error')
+        this.sendHeld()
         break
     }
   }
@@ -409,7 +484,7 @@ export class AgentSession {
       const base = model.replace(/\[.*\]$/, '')
       // 별칭 행('default', 'opus' 등)은 '기본값(추천)' 같은 이름이라 모델을 알 수 없다. ID가 정확히 같은 행만 쓴다
       const hit = list?.find((m) => m.value === model || m.value === base)
-      if (hit?.displayName && this.model === model) this.opts.emit({ kind: 'model', model, label: hit.displayName })
+      if (hit?.displayName && this.model === model) this.emit({ kind: 'model', model, label: hit.displayName })
     } catch {
       // 표시 이름은 없어도 된다
     }
@@ -417,7 +492,7 @@ export class AgentSession {
 
   private endCompacting(): void {
     this.manualCompact = false
-    this.opts.emit({ kind: 'compacting', on: false })
+    this.emit({ kind: 'compacting', on: false })
   }
 
   /** 컨텍스트 사용률(과 아직 모르면 모델)을 다시 읽는다 ('summary'는 토큰 계산 API를 추가로 부르지 않음) */
@@ -426,10 +501,10 @@ export class AgentSession {
     if (!q) return
     try {
       const u = await q.getContextUsage({ detail: 'summary' })
-      this.opts.emit({ kind: 'context', context: toContext(u) })
+      this.emit({ kind: 'context', context: toContext(u) })
       if (u.model && !this.model) {
         this.model = u.model
-        this.opts.emit({ kind: 'model', model: u.model, label: modelLabel(u.model) })
+        this.emit({ kind: 'model', model: u.model, label: modelLabel(u.model) })
       }
     } catch (err) {
       console.warn('getContextUsage 실패', err)
@@ -439,7 +514,7 @@ export class AgentSession {
   private denyAllPending(message: string): void {
     for (const [requestId, p] of this.pending) {
       p.resolve({ behavior: 'deny', message, interrupt: true })
-      this.opts.emit({ kind: 'permission_resolved', requestId })
+      this.emit({ kind: 'permission_resolved', requestId })
     }
     this.pending.clear()
   }
@@ -447,12 +522,32 @@ export class AgentSession {
   private setBackground(tasks: BackgroundTask[]): void {
     if (tasks.length === 0 && this.background.length === 0) return
     this.background = tasks
-    this.opts.emit({ kind: 'background', tasks })
+    this.emit({ kind: 'background', tasks })
+  }
+
+  private emit(event: AgentEvent): void {
+    if (event.kind === 'text_delta') {
+      this.delta += event.text
+      this.deltaTimer ??= setTimeout(() => this.flushDelta(), 40)
+      return
+    }
+    // 다른 이벤트보다 앞서 온 글자가 먼저 가야 순서가 맞다
+    this.flushDelta()
+    this.opts.emit(event)
+  }
+
+  private flushDelta(): void {
+    if (this.deltaTimer) clearTimeout(this.deltaTimer)
+    this.deltaTimer = null
+    if (!this.delta || this.disposed) return
+    const text = this.delta
+    this.delta = ''
+    this.opts.emit({ kind: 'text_delta', text })
   }
 
   private setStatus(status: AgentStatus): void {
     if (this.status === status) return
     this.status = status
-    this.opts.emit({ kind: 'status', status })
+    this.emit({ kind: 'status', status })
   }
 }

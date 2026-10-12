@@ -232,8 +232,6 @@ function pathLinks(e: Entry, y: number): ILink[] {
       activate: (ev) => {
         if (withMod(ev)) pathSinks.get(e.conversationId)?.(text)
       },
-      hover: () => (e.el.title = 'Ctrl+클릭하면 입력창에 경로를 넣어요'),
-      leave: () => (e.el.title = ''),
     })
   }
   return links
@@ -361,6 +359,19 @@ function closeTab(conversationId: string, termId: string, refocus = true): void 
     const active = ui.active === termId ? order[Math.min(at, order.length - 1)] : ui.active
     return { order, tabs, active, focus: refocus ? ui.focus + 1 : ui.focus }
   })
+}
+
+/**
+ * 대화를 닫았을 때(대화·프로젝트 닫기, 작업 공간 버리기): 메인이 셸을 이미 끝냈으므로 화면(xterm)과 서랍 상태만 버린다.
+ * 남겨 두면 다시 연 대화에서 셸 없는 터미널이 멈춘 채로 보인다
+ */
+export function forgetTerminals(conversationId: string): void {
+  for (const [termId, e] of entries) if (e.conversationId === conversationId) disposeEntry(termId)
+  pathSinks.delete(conversationId)
+  if (!uis[conversationId]) return
+  const { [conversationId]: _gone, ...rest } = uis
+  uis = rest
+  listeners.forEach((l) => l())
 }
 
 /** 다른 셸로 바꾼다: 지금 셸을 끝내고 화면을 비운 뒤 새로 띄운다. 고른 셸은 다음 터미널의 기본값도 된다 */
@@ -515,9 +526,9 @@ function FindBar({ entry, focusKey, leaving, onClose }: { entry: Entry; focusKey
         }}
       />
       <span className="term-find-n">{q && result ? (result.count ? `${result.index + 1}/${result.count}` : 'NONE') : ''}</span>
-      <button type="button" className="term-btn" onClick={() => find(-1)} disabled={!q} aria-label="이전 결과" title="이전 (Shift+Enter)">↑</button>
-      <button type="button" className="term-btn" onClick={() => find(1)} disabled={!q} aria-label="다음 결과" title="다음 (Enter)">↓</button>
-      <button type="button" className="term-btn term-x" onClick={close} aria-label="찾기 닫기" title="닫기 (Esc)">×</button>
+      <button type="button" className="term-btn" onClick={() => find(-1)} disabled={!q} aria-label="이전 결과" title="이전">↑</button>
+      <button type="button" className="term-btn" onClick={() => find(1)} disabled={!q} aria-label="다음 결과" title="다음">↓</button>
+      <button type="button" className="term-btn term-x" onClick={close} aria-label="찾기 닫기" title="닫기">×</button>
     </div>
   )
 }

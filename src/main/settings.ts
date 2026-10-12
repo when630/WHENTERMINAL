@@ -1,8 +1,8 @@
 import { app } from 'electron'
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { ACTIONS, APP_ICONS, DEFAULT_SETTINGS, normalize, THEMES, type Settings } from '@shared/keymap'
 import type { TerminalShell } from '@shared/types'
+import { readJson, writeJson } from './json-file'
 
 const TERMINAL_SHELLS: TerminalShell[] = ['auto', 'pwsh', 'powershell', 'gitbash', 'cmd', 'wsl', 'zsh', 'bash', 'fish']
 
@@ -12,12 +12,8 @@ export class SettingsStore {
   private settings: Settings = structuredClone(DEFAULT_SETTINGS)
 
   constructor() {
-    if (!existsSync(this.file)) return
-    try {
-      this.settings = sanitize(JSON.parse(readFileSync(this.file, 'utf8')))
-    } catch (err) {
-      console.error('settings.json 읽기 실패, 기본값으로 시작', err)
-    }
+    const saved = readJson(this.file)
+    if (saved !== undefined) this.settings = sanitize(saved)
   }
 
   get(): Settings {
@@ -26,10 +22,7 @@ export class SettingsStore {
 
   set(next: Settings): Settings {
     this.settings = sanitize(next)
-    mkdirSync(app.getPath('userData'), { recursive: true })
-    const tmp = `${this.file}.tmp`
-    writeFileSync(tmp, JSON.stringify(this.settings, null, 2), 'utf8')
-    renameSync(tmp, this.file)
+    writeJson(this.file, this.settings)
     return this.get()
   }
 }
