@@ -6,12 +6,14 @@ export class MessageQueue implements AsyncIterable<SDKUserMessage> {
   private waiter: ((r: IteratorResult<SDKUserMessage>) => void) | null = null
   private closed = false
 
-  push(text: string): void {
+  /** uuid를 주면 그 ID로 기록된다 (되감기·포크의 기준점) */
+  push(text: string, uuid?: string): void {
     if (this.closed) throw new Error('MessageQueue is closed')
     const msg: SDKUserMessage = {
       type: 'user',
       message: { role: 'user', content: text },
       parent_tool_use_id: null,
+      ...(uuid ? { uuid: uuid as `${string}-${string}-${string}-${string}-${string}` } : {}),
     }
     if (this.waiter) {
       const w = this.waiter

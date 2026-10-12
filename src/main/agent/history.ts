@@ -5,7 +5,7 @@ import type { HistoryItem } from '@shared/types'
 const MAX_ITEMS = 400
 const RESULT_LIMIT = 4000
 
-type Block = { type: string; text?: string; id?: string; name?: string; input?: unknown; tool_use_id?: string; content?: unknown; is_error?: boolean }
+type Block = { type: string; text?: string; thinking?: string; id?: string; name?: string; input?: unknown; tool_use_id?: string; content?: unknown; is_error?: boolean }
 
 /** CLI가 넣는 내부 메시지(로컬 명령 출력, 시스템 알림 등)는 사람이 쓴 글이 아니라 뺀다 */
 const INTERNAL = /^\s*<(local-command|command-name|command-message|command-args|system-reminder|local-command-stdout|local-command-caveat)/
@@ -54,19 +54,21 @@ export async function readHistory(sessionId: string, dir: string): Promise<Histo
       if (typeof content === 'string') {
         const note = taskNote(content)
         if (note) items.push({ type: 'divider', text: note })
-        else if (content.trim() && !INTERNAL.test(content)) items.push({ type: 'user', text: content })
+        else if (content.trim() && !INTERNAL.test(content)) items.push({ type: 'user', text: content, uuid: m.uuid })
         continue
       }
       for (const b of (Array.isArray(content) ? content : []) as Block[]) {
         if (b.type === 'tool_result' && b.tool_use_id) {
           const t = tools.get(b.tool_use_id)
           if (t) {
-            t.result = textOf(b.content).slice(0, RESULT_LIMIT)
+            const full = textOf(b.content)
+            t.result = full.slice(0, RESULT_LIMIT)
             t.isError = b.is_error ?? false
+            if (full.length > RESULT_LIMIT) t.truncated = true
           }
         } else if (b.type === 'text' && b.text?.trim() && !INTERNAL.test(b.text)) {
           const note = taskNote(b.text)
-          items.push(note ? { type: 'divider', text: note } : { type: 'user', text: b.text })
+          items.push(note ? { type: 'divider', text: note } : { type: 'user', text: b.text, uuid: m.uuid })
         }
       }
       continue
@@ -74,6 +76,7 @@ export async function readHistory(sessionId: string, dir: string): Promise<Histo
     if (m.type === 'assistant') {
       for (const b of (Array.isArray(content) ? content : []) as Block[]) {
         if (b.type === 'text' && b.text?.trim()) items.push({ type: 'assistant', text: b.text })
+        else if (b.type === 'thinking' && b.thinking?.trim()) items.push({ type: 'thinking', text: b.thinking })
         else if (b.type === 'tool_use' && b.id) {
           const t: Extract<HistoryItem, { type: 'tool' }> = { type: 'tool', toolUseId: b.id, name: b.name ?? '?', input: b.input }
           tools.set(b.id, t)
@@ -83,4 +86,49 @@ export async function readHistory(sessionId: string, dir: string): Promise<Histo
     }
   }
   return items.slice(-MAX_ITEMS)
+}
+
+/** 도구 결과 전문 (화면에는 앞부분만 보내므로 펼칠 때 읽는다). 없으면 null */
+export async function fullToolResult(sessionId: string, dir: string, toolUseId: string): Promise<string | null> {
+  const messages = await getSessionMessages(sessionId, { dir })
+  for (const m of messages) {
+    if (m.type !== 'user') continue
+    const content = (m.message as { content?: unknown } | undefined)?.content
+    if (!Array.isArray(content)) continue
+    for (const b of content as Block[]) {
+      if (b.type === 'tool_result' && b.tool_use_id === toolUseId) return textOf(b.content)
+    }
+  }
+  return null
+}
+
+/** 세션 기록을 마크다운으로 (/export) */
+export async function exportMarkdown(sessionId: string, dir: string, title: string): Promise<string> {
+  const messages = await getSessionMessages(sessionId, { dir, includeSystemMessages: true })
+  const out: string[] = [`# ${title}`, '', `세션 ${sessionId}`, '']
+  const results = new Map<string, string>()
+  for (const m of messages) {
+    if (m.type !== 'user' || m.parent_tool_use_id) continue
+    const content = (m.message as { content?: unknown } | undefined)?.content
+    if (!Array.isArray(content)) continue
+    for (const b of content as Block[]) if (b.type === 'tool_result' && b.tool_use_id) results.set(b.tool_use_id, textOf(b.content))
+  }
+  for (const m of messages) {
+    if (m.parent_tool_use_id) continue
+    const content = (m.message as { content?: unknown } | undefined)?.content
+    if (m.type === 'user') {
+      const text = typeof content === 'string' ? content : Array.isArray(content) ? (content as Block[]).filter((b) => b.type === 'text').map((b) => b.text ?? '').join('\n') : ''
+      if (text.trim() && !INTERNAL.test(text) && !taskNote(text)) out.push('## YOU', '', text.trim(), '')
+    } else if (m.type === 'assistant') {
+      for (const b of (Array.isArray(content) ? content : []) as Block[]) {
+        if (b.type === 'text' && b.text?.trim()) out.push('## CLAUDE', '', b.text.trim(), '')
+        else if (b.type === 'tool_use' && b.id) {
+          const r = results.get(b.id)
+          out.push(`### TOOL · ${b.name ?? '?'}`, '', '```json', JSON.stringify(b.input, null, 2), '```', '')
+          if (r !== undefined) out.push('```', r.length > 8000 ? `${r.slice(0, 8000)}\n… (${r.length - 8000}자 생략)` : r, '```', '')
+        }
+      }
+    }
+  }
+  return out.join('\n')
 }

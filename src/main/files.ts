@@ -40,6 +40,16 @@ async function listAll(cwd: string): Promise<string[]> {
     walk(cwd, 0)
   }
   files = files.slice(0, MAX_FILES).map((f) => f.replace(/\\/g, '/'))
+  // 폴더도 @로 넣을 수 있게 (CLI처럼). 파일 경로에서 끌어내고 끝에 /를 붙여 구분한다
+  const dirs = new Set<string>()
+  for (const f of files) {
+    let i = f.indexOf('/')
+    while (i > 0) {
+      dirs.add(`${f.slice(0, i)}/`)
+      i = f.indexOf('/', i + 1)
+    }
+  }
+  files = [...files, ...dirs]
   cache.set(cwd, { at: Date.now(), files })
   return files
 }
@@ -51,7 +61,9 @@ async function listAll(cwd: string): Promise<string[]> {
 function score(path: string, q: string): number {
   if (!q) return 1000 - path.length
   const p = path.toLowerCase()
-  const name = p.slice(p.lastIndexOf('/') + 1)
+  // 폴더는 끝의 /를 뗀 이름으로 맞춘다
+  const base = p.endsWith('/') ? p.slice(0, -1) : p
+  const name = base.slice(base.lastIndexOf('/') + 1)
   if (name.startsWith(q)) return 5000 - path.length
   if (name.includes(q)) return 4000 - path.length
   if (p.includes(q)) return 3000 - path.length

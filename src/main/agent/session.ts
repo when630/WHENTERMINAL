@@ -1,6 +1,6 @@
 import { query, type SlashCommand, type CanUseTool, type PermissionResult, type PermissionUpdate, type Query, type SDKMessage } from '@anthropic-ai/claude-agent-sdk'
 import { randomUUID } from 'node:crypto'
-import { isAgentMode, type EffortLevel, type AgentEvent, type AgentMode, type AgentStatus, type BackgroundTask, type ContextInfo, type PermissionDecision, type RateLimitInfo } from '@shared/types'
+import { isAgentMode, type EffortLevel, type AgentEvent, type AgentMode, type AgentStatus, type BackgroundTask, type ContextInfo, type PermissionDecision, type PermissionExtra, type RateLimitInfo } from '@shared/types'
 import { MessageQueue } from './message-queue'
 import { claudeExecutable } from '../executable'
 import { outputPathIn, rememberTaskOutput } from './task-output'
@@ -8,8 +8,16 @@ import { taskLine } from './history'
 
 interface PendingPermission {
   resolve: (r: PermissionResult) => void
+  toolName: string
+  input: Record<string, unknown>
   suggestions?: PermissionUpdate[]
   suppressAlwaysAllow: boolean
+}
+
+/** 차례를 기다리는 메시지. id로 고치거나 뺀다 */
+interface HeldMessage {
+  id: string
+  text: string
 }
 
 export interface AgentSessionOptions {
@@ -19,6 +27,8 @@ export interface AgentSessionOptions {
   model?: string
   /** 사용자가 고른 effort. 없으면 모델·설정의 기본값 */
   effort?: EffortLevel
+  /** 작업 폴더 밖에서 더 쓸 폴더 (/add-dir) */
+  additionalDirectories?: string[]
   /** 이전에 저장한 SDK 세션 ID. 있으면 이어서 시작 */
   resumeSessionId?: string
   emit: (event: AgentEvent) => void
@@ -82,7 +92,10 @@ export class AgentSession {
    * 실행 중에 보낸 메시지. CLI로 바로 넘기면 지금 턴에 섞이거나 Esc 뒤에도 살아남아 돌므로(interrupt의 still_queued),
    * 앱이 들고 있다가 턴이 끝나면 하나씩 보낸다. 메시지 하나 = 작업 하나
    */
-  private held: string[] = []
+  private held: HeldMessage[] = []
+  /** ExitPlanMode를 승인한 뒤 바꿀 모드. CLI가 플랜 모드를 빠져나온 직후(status)에 적용한다 */
+  private afterPlan: AgentMode | null = null
+  private afterPlanTimer: ReturnType<typeof setTimeout> | null = null
   /** 스트리밍 글자 조각을 모아 한 번에 보낸다 (조각마다 IPC·렌더러 전체 갱신을 하지 않게) */
   private delta = ''
   private deltaTimer: ReturnType<typeof setTimeout> | null = null
@@ -121,39 +134,62 @@ export class AgentSession {
     return this.q ? this.q.supportedCommands() : null
   }
 
+  /** 저장된(또는 이번 실행에서 받은) 세션 ID */
+  getSessionId(): string | undefined {
+    return this.sessionId
+  }
+
+  /** 살아 있는 세션이 없으면 메시지 없이 띄워 둔다 (상태 조회용). 모델은 부르지 않는다 */
+  ensureQuery(): Query {
+    if (!this.q) this.start()
+    return this.q!
+  }
+
   /**
    * echo=false: 대기열에 넣을 때 이미 화면에 보낸 메시지라 다시 보내지 않는다.
    * 실행 중(또는 컴팩트 중)이면 들고 있다가 지금 턴이 끝난 뒤 보낸다
    */
-  send(text: string, echo = true): void {
+  send(text: string, echo = true, queuedId?: string): void {
     if (this.isBusy() || this.manualCompact) {
-      if (echo) this.emit({ kind: 'user', text, next: true })
-      this.held.push(text)
+      const id = queuedId ?? randomUUID()
+      if (echo) this.emit({ kind: 'user', text, next: true, queuedId: id })
+      this.held.push({ id, text })
       return
     }
     // 대기열에서 나온 메시지는 이미 화면에 있으니 작업만 지금 시작한다
-    this.emit(echo ? { kind: 'user', text } : { kind: 'task_start', text })
-    this.dispatch(text)
+    const uuid = randomUUID()
+    this.emit(echo ? { kind: 'user', text, uuid } : { kind: 'task_start', text, queuedId, uuid })
+    this.dispatch(text, uuid)
   }
 
   /** 자리가 없어 기다리는 메시지: 화면에는 바로 보이고 상태는 대기. 이미 기다리는 중이면 앞 메시지의 작업을 덮지 않는다 */
-  enqueue(text: string): void {
-    this.emit({ kind: 'user', text, next: this.status === 'queued' })
+  enqueue(text: string, queuedId: string): void {
+    this.emit({ kind: 'user', text, next: this.status === 'queued', queuedId })
     this.setStatus('queued')
   }
 
-  private dispatch(text: string): void {
+  /** 들고 있던 메시지를 보내지 않는다. 그 글을 돌려준다 (없으면 null) */
+  dropHeld(queuedId: string): string | null {
+    const i = this.held.findIndex((h) => h.id === queuedId)
+    if (i < 0) return null
+    const [h] = this.held.splice(i, 1)
+    this.emit({ kind: 'unqueued', queuedId })
+    return h.text
+  }
+
+  private dispatch(text: string, uuid: string): void {
     if (!this.q) this.start()
     this.setStatus('running')
-    this.queue!.push(text)
+    this.queue!.push(text, uuid)
   }
 
   /** 들고 있던 메시지를 하나 보낸다. 작업은 이때 시작한다 */
   private sendHeld(): void {
-    const text = this.held.shift()
-    if (text === undefined) return
-    this.emit({ kind: 'task_start', text })
-    this.dispatch(text)
+    const h = this.held.shift()
+    if (!h) return
+    const uuid = randomUUID()
+    this.emit({ kind: 'task_start', text: h.text, queuedId: h.id, uuid })
+    this.dispatch(h.text, uuid)
   }
 
   /** 프로세스가 떠서 자리를 차지하는 중 (실행 또는 확인 대기) */
@@ -179,9 +215,9 @@ export class AgentSession {
 
   /** Esc는 다 멈춘다: 지금 턴과, 차례를 기다리던 메시지까지 */
   async interrupt(): Promise<void> {
-    const dropped = this.held.length
-    this.held = []
-    if (dropped) this.emit({ kind: 'task_note', text: `CANCELLED · 차례를 기다리던 메시지 ${dropped}개를 보내지 않았어요` })
+    const dropped = this.held.splice(0)
+    for (const h of dropped) this.emit({ kind: 'unqueued', queuedId: h.id })
+    if (dropped.length) this.emit({ kind: 'task_note', text: `CANCELLED · 차례를 기다리던 메시지 ${dropped.length}개를 보내지 않았어요` })
     if (!this.q || (this.status !== 'running' && this.status !== 'waiting_approval')) return
     this.interrupted = true
     this.denyAllPending('사용자가 중단함')
@@ -219,23 +255,67 @@ export class AgentSession {
     this.emit({ kind: 'mode', mode })
   }
 
-  respondPermission(requestId: string, decision: PermissionDecision): void {
+  respondPermission(requestId: string, decision: PermissionDecision, extra: PermissionExtra = {}): void {
     const p = this.pending.get(requestId)
     if (!p) return
     this.pending.delete(requestId)
     if (decision === 'deny') {
-      p.resolve({ behavior: 'deny', message: '사용자가 거절함' })
+      p.resolve({ behavior: 'deny', message: extra.message ?? '사용자가 거절함' })
     } else {
       const always = decision === 'always' && !p.suppressAlwaysAllow
-      p.resolve({ behavior: 'allow', updatedPermissions: always ? p.suggestions : undefined })
+      // AskUserQuestion은 답을 입력값에 실어 돌려줘야 모델이 받는다 (질문 원문도 함께)
+      const updatedInput = p.toolName === 'AskUserQuestion' && extra.answers ? { questions: p.input.questions, answers: extra.answers } : undefined
+      p.resolve({ behavior: 'allow', updatedInput, updatedPermissions: always ? p.suggestions : undefined })
+      if (p.toolName === 'ExitPlanMode' && extra.planMode) this.armAfterPlan(extra.planMode)
     }
     this.emit({ kind: 'permission_resolved', requestId })
     if (this.pending.size === 0 && this.status === 'waiting_approval') this.setStatus('running')
   }
 
+  /** 플랜을 승인한 뒤 CLI가 모드를 되돌리면(status) 고른 모드로 바꾼다. 소식이 없으면 잠시 뒤 그냥 바꾼다 */
+  private armAfterPlan(mode: AgentMode): void {
+    this.afterPlan = mode
+    if (this.afterPlanTimer) clearTimeout(this.afterPlanTimer)
+    this.afterPlanTimer = setTimeout(() => void this.applyAfterPlan(), 2000)
+  }
+
+  private async applyAfterPlan(): Promise<void> {
+    const mode = this.afterPlan
+    this.afterPlan = null
+    if (this.afterPlanTimer) clearTimeout(this.afterPlanTimer)
+    this.afterPlanTimer = null
+    if (mode && mode !== this.mode) await this.setMode(mode)
+  }
+
+  /** 파일을 그 사용자 메시지 시점으로 되돌린다 (enableFileCheckpointing). 세션이 떠 있지 않으면 이어 띄워서 */
+  async rewindFiles(uuid: string, dryRun: boolean): Promise<{ canRewind: boolean; error?: string; filesChanged?: string[] }> {
+    if (!this.q) this.start()
+    return this.q!.rewindFiles(uuid, { dryRun })
+  }
+
+  /** 대화를 다른 세션(포크·지난 세션)으로 바꾼다. 지금 프로세스는 끝내고 다음 메시지부터 그 세션을 이어 연다 */
+  switchSession(sessionId: string | undefined): void {
+    this.denyAllPending('세션 바꿈')
+    this.queue?.close()
+    this.q?.close()
+    this.q = null
+    this.queue = null
+    this.setBackground([])
+    this.sessionId = sessionId
+    this.model = undefined
+    if (this.status === 'running' || this.status === 'waiting_approval') this.setStatus('stopped')
+  }
+
+  /** 추가 폴더를 바꾼다. 살아 있으면 바로, 아니면 다음 시작 때 */
+  async setAdditionalDirectories(dirs: string[]): Promise<void> {
+    this.opts.additionalDirectories = dirs
+    if (this.q) await this.q.applyFlagSettings({ permissions: { additionalDirectories: dirs } })
+  }
+
   dispose(): void {
     this.disposed = true
     this.held = []
+    if (this.afterPlanTimer) clearTimeout(this.afterPlanTimer)
     if (this.deltaTimer) clearTimeout(this.deltaTimer)
     this.deltaTimer = null
     this.delta = ''
@@ -265,6 +345,9 @@ export class AgentSession {
         resume: this.sessionId,
         model: this.opts.model,
         effort: this.opts.effort,
+        additionalDirectories: this.opts.additionalDirectories?.length ? this.opts.additionalDirectories : undefined,
+        // 파일 되감기(/rewind)의 기준점을 남긴다
+        enableFileCheckpointing: true,
         pathToClaudeCodeExecutable: claudeExecutable(),
       },
     })
@@ -276,6 +359,8 @@ export class AgentSession {
     return new Promise<PermissionResult>((resolve) => {
       this.pending.set(requestId, {
         resolve,
+        toolName,
+        input,
         suggestions: options.suggestions,
         suppressAlwaysAllow: options.suppressAlwaysAllowRule ?? false,
       })
@@ -296,9 +381,16 @@ export class AgentSession {
           description: options.description ?? options.decisionReason,
           defaultToNo: options.defaultToNo,
           suppressAlwaysAllow: options.suppressAlwaysAllowRule,
+          agentId: options.agentID,
         },
       })
     })
+  }
+
+  /** CLI가 화면에만 보이는 안내: 명령 출력·훅 경고·알림. 사람이 봐야 할 것은 warn */
+  private notice(text: string, tone: 'info' | 'warn' | 'error' = 'info', mono = false): void {
+    const t = text.replace(/\s+$/, '')
+    if (t) this.emit({ kind: 'notice', text: t, tone, mono })
   }
 
   private async consume(q: Query): Promise<void> {
@@ -356,6 +448,8 @@ export class AgentSession {
           if (msg.permissionMode && msg.permissionMode !== this.mode && isAgentMode(msg.permissionMode)) {
             this.mode = msg.permissionMode
             this.emit({ kind: 'mode', mode: msg.permissionMode })
+            // 플랜을 승인하며 고른 모드가 있으면 CLI가 되돌린 모드 대신 그 모드로
+            if (this.afterPlan && msg.permissionMode !== 'plan') void this.applyAfterPlan()
           }
           // 자동 컴팩트도 이 메시지로 알려온다
           if (msg.status === 'compacting') this.emit({ kind: 'compacting', on: true })
@@ -379,6 +473,19 @@ export class AgentSession {
           if (msg.output_file && this.sessionId) rememberTaskOutput(this.sessionId, msg.output_file)
           // CLI가 모델에게 넣는 <task-notification> 사용자 메시지는 SDK로 오지 않고 이것만 온다. 한 줄 구분선으로 (되살린 기록과 같게)
           if (!msg.skip_transcript) this.emit({ kind: 'task_note', text: taskLine(msg.status, msg.summary) })
+        } else if (msg.subtype === 'local_command_output') {
+          // /context /usage /cost 같은 로컬 명령의 출력. CLI는 화면에만 보인다
+          this.notice(msg.content, 'info', true)
+        } else if (msg.subtype === 'informational') {
+          // info는 CLI도 transcript 모드에서만 보인다. notice 이상만
+          if (msg.level !== 'info') this.notice(msg.content, msg.level === 'warning' ? 'warn' : 'info')
+        } else if (msg.subtype === 'notification') {
+          this.notice(msg.text, msg.priority === 'high' || msg.priority === 'immediate' ? 'warn' : 'info')
+        } else if (msg.subtype === 'api_retry') {
+          this.emit({ kind: 'retry', attempt: msg.attempt, max: msg.max_retries, delayMs: msg.retry_delay_ms })
+        } else if (msg.subtype === 'permission_denied') {
+          // 자동 모드의 분류기·규칙이 거절한 것. 사람이 알아야 다음 지시를 바꿀 수 있다
+          this.notice(`DENIED · ${msg.tool_name}${msg.decision_reason ? ` · ${msg.decision_reason}` : ''}`, 'warn')
         } else if (msg.subtype === 'task_progress') {
           const toolUseId = msg.tool_use_id ?? this.taskTools.get(msg.task_id)
           if (toolUseId) {
@@ -406,9 +513,17 @@ export class AgentSession {
         }
         break
       case 'stream_event':
-        if (msg.parent_tool_use_id === null && msg.event.type === 'content_block_delta' && msg.event.delta.type === 'text_delta') {
-          this.emit({ kind: 'text_delta', text: msg.event.delta.text })
+        if (msg.parent_tool_use_id === null && msg.event.type === 'content_block_delta') {
+          if (msg.event.delta.type === 'text_delta') this.emit({ kind: 'text_delta', text: msg.event.delta.text })
+          else if (msg.event.delta.type === 'thinking_delta') this.emit({ kind: 'thinking_delta', text: msg.event.delta.thinking })
         }
+        break
+      case 'tool_progress':
+        if (msg.parent_tool_use_id === null && !msg.heartbeat) this.emit({ kind: 'tool_progress', toolUseId: msg.tool_use_id, elapsedS: msg.elapsed_time_seconds })
+        break
+      case 'auth_status':
+        if (msg.error) this.notice(`LOGIN · ${msg.error}`, 'error')
+        else if (msg.isAuthenticating) this.notice(['LOGIN', ...msg.output].join(' · '), 'warn')
         break
       case 'assistant':
         if (msg.parent_tool_use_id !== null) {
@@ -421,6 +536,7 @@ export class AgentSession {
         }
         for (const block of msg.message.content) {
           if (block.type === 'text') this.emit({ kind: 'assistant_text', text: block.text })
+          else if (block.type === 'thinking') this.emit({ kind: 'thinking', text: block.thinking })
           else if (block.type === 'tool_use') this.emit({ kind: 'tool_use', toolUseId: block.id, name: block.name, input: block.input })
         }
         break
@@ -446,6 +562,7 @@ export class AgentSession {
             toolUseId: block.tool_use_id,
             content: content.slice(0, TOOL_RESULT_PREVIEW_LIMIT),
             isError: block.is_error ?? false,
+            truncated: content.length > TOOL_RESULT_PREVIEW_LIMIT,
           })
         }
         break
@@ -526,7 +643,10 @@ export class AgentSession {
   }
 
   private emit(event: AgentEvent): void {
-    if (event.kind === 'text_delta') {
+    if (event.kind === 'text_delta' || event.kind === 'thinking_delta') {
+      // 종류가 바뀌면(생각 → 글) 모아 둔 것을 먼저 보낸다
+      if (this.deltaKind !== event.kind) this.flushDelta()
+      this.deltaKind = event.kind
       this.delta += event.text
       this.deltaTimer ??= setTimeout(() => this.flushDelta(), 40)
       return
@@ -536,13 +656,15 @@ export class AgentSession {
     this.opts.emit(event)
   }
 
+  private deltaKind: 'text_delta' | 'thinking_delta' = 'text_delta'
+
   private flushDelta(): void {
     if (this.deltaTimer) clearTimeout(this.deltaTimer)
     this.deltaTimer = null
     if (!this.delta || this.disposed) return
     const text = this.delta
     this.delta = ''
-    this.opts.emit({ kind: 'text_delta', text })
+    this.opts.emit({ kind: this.deltaKind, text })
   }
 
   private setStatus(status: AgentStatus): void {

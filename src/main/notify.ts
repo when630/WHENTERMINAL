@@ -49,7 +49,8 @@ export class Notifier {
 
     if (event.kind === 'permission_request' && s.approval) {
       const r = event.request
-      this.show(conversationId, `NEEDS YOU · ${project.name}`, r.title ?? `${r.toolName} 실행을 허락해 달라고 해요`, () => this.open(projectId, conversationId))
+      const body = r.toolName === 'AskUserQuestion' ? '물어볼 게 있어요' : r.toolName === 'ExitPlanMode' ? '계획을 세웠어요. 승인해 달라고 해요' : (r.title ?? `${r.toolName} 실행을 허락해 달라고 해요`)
+      this.show(conversationId, `NEEDS YOU · ${project.name}`, body, () => this.open(projectId, conversationId))
       if (isMac && !focused) app.dock?.bounce('informational')
     } else if (event.kind === 'status' && s.done && (event.status === 'done' || event.status === 'error')) {
       const head = event.status === 'done' ? 'DONE' : 'ERROR'

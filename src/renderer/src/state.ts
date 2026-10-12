@@ -1,12 +1,16 @@
-import { openConversations, type StoredTask, type AgentEvent, type AgentMode, type AgentProgress, type AgentStatus, type BackgroundTask, type SubItem, type ContextInfo, type PermissionRequest, type Project, type TaskInfo } from '@shared/types'
+import { openConversations, type StoredTask, type AgentEvent, type AgentMode, type AgentProgress, type AgentStatus, type BackgroundTask, type HistoryItem, type SubItem, type ContextInfo, type PermissionRequest, type Project, type TaskInfo } from '@shared/types'
 export type { TaskInfo }
 import { STATUS_PRIORITY } from '@shared/types'
 
 export type TranscriptItem =
-  | { type: 'user'; text: string; at: number }
+  /** uuid: 되감기 기준점. queuedId가 있고 pending이면 아직 차례를 기다리는 메시지 (고치거나 뺄 수 있다) */
+  | { type: 'user'; text: string; at: number; uuid?: string; queuedId?: string; pending?: boolean }
   | { type: 'assistant'; text: string; streaming: boolean; at: number }
-  | { type: 'tool'; toolUseId: string; name: string; input: unknown; result?: string; isError?: boolean; at: number }
-  | { type: 'notice'; text: string; tone: 'info' | 'error'; at: number }
+  /** 모델의 생각 (요약본). 접힌 채로 보인다 */
+  | { type: 'thinking'; text: string; streaming: boolean; at: number }
+  /** truncated: 결과 전문은 세션 기록에 (펼칠 때 읽는다). elapsedS: 도는 동안의 경과 시간 */
+  | { type: 'tool'; toolUseId: string; name: string; input: unknown; result?: string; isError?: boolean; truncated?: boolean; elapsedS?: number; at: number }
+  | { type: 'notice'; text: string; tone: 'info' | 'warn' | 'error'; mono?: boolean; at: number }
   | { type: 'divider'; text: string; at: number }
 
 /** 작업 진행 단계. SDK가 단계를 알려주지 않으므로 사용한 도구로 추정한다 (stageForTool) */
@@ -88,7 +92,7 @@ export function applyEvent(prev: ConversationState | undefined, event: AgentEven
   s.updatedAt = now
   const last = s.items[s.items.length - 1]
   const finalizeStreaming = (): void => {
-    if (last?.type === 'assistant' && last.streaming) s.items[s.items.length - 1] = { ...last, streaming: false }
+    if ((last?.type === 'assistant' || last?.type === 'thinking') && last.streaming) s.items[s.items.length - 1] = { ...last, streaming: false }
   }
   const task = (patch: Partial<TaskInfo>): void => {
     if (s.task) s.task = { ...s.task, ...patch }
@@ -111,22 +115,72 @@ export function applyEvent(prev: ConversationState | undefined, event: AgentEven
       break
     case 'user':
       finalizeStreaming()
-      s.items.push({ type: 'user', text: event.text, at: now })
+      s.items.push({ type: 'user', text: event.text, at: now, uuid: event.uuid, queuedId: event.queuedId, pending: event.next || undefined })
       // 실행 중에 보낸 메시지는 지금 작업을 덮지 않는다. 차례가 오면 task_start
       if (!event.next) startTask(event.text)
       break
-    case 'task_start':
+    case 'task_start': {
       startTask(event.text)
+      // 기다리던 메시지가 이제 보내졌다: 되감기 기준점을 받고 대기 표시를 뗀다
+      const idx = event.queuedId ? s.items.findIndex((i) => i.type === 'user' && i.queuedId === event.queuedId) : -1
+      if (idx >= 0) s.items[idx] = { ...(s.items[idx] as Extract<TranscriptItem, { type: 'user' }>), pending: undefined, uuid: event.uuid }
+      break
+    }
+    case 'unqueued':
+      s.items = s.items.filter((i) => !(i.type === 'user' && i.queuedId === event.queuedId))
       break
     case 'text_delta':
       if (last?.type === 'assistant' && last.streaming) s.items[s.items.length - 1] = { ...last, text: last.text + event.text }
-      else s.items.push({ type: 'assistant', text: event.text, streaming: true, at: now })
+      else {
+        finalizeStreaming()
+        s.items.push({ type: 'assistant', text: event.text, streaming: true, at: now })
+      }
       if (s.task && s.task.stage < 1) task({ activity: 'WRITING' })
       break
     case 'assistant_text':
       if (last?.type === 'assistant' && last.streaming) s.items[s.items.length - 1] = { type: 'assistant', text: event.text, streaming: false, at: last.at }
-      else s.items.push({ type: 'assistant', text: event.text, streaming: false, at: now })
+      else {
+        finalizeStreaming()
+        s.items.push({ type: 'assistant', text: event.text, streaming: false, at: now })
+      }
       task({ summary: event.text })
+      break
+    case 'thinking_delta':
+      if (last?.type === 'thinking' && last.streaming) s.items[s.items.length - 1] = { ...last, text: last.text + event.text }
+      else {
+        finalizeStreaming()
+        s.items.push({ type: 'thinking', text: event.text, streaming: true, at: now })
+      }
+      task({ activity: 'THINKING' })
+      break
+    case 'thinking':
+      if (last?.type === 'thinking' && last.streaming) s.items[s.items.length - 1] = { type: 'thinking', text: event.text, streaming: false, at: last.at }
+      else {
+        finalizeStreaming()
+        s.items.push({ type: 'thinking', text: event.text, streaming: false, at: now })
+      }
+      break
+    case 'tool_progress': {
+      const idx = s.items.findLastIndex((i) => i.type === 'tool' && i.toolUseId === event.toolUseId)
+      if (idx >= 0) s.items[idx] = { ...(s.items[idx] as Extract<TranscriptItem, { type: 'tool' }>), elapsedS: event.elapsedS }
+      break
+    }
+    case 'notice':
+      finalizeStreaming()
+      s.items.push({ type: 'notice', text: event.text, tone: event.tone, mono: event.mono, at: now })
+      break
+    case 'retry':
+      task({ activity: `RETRY ${event.attempt}/${event.max} · ${Math.round(event.delayMs / 1000)}s` })
+      break
+    case 'replace':
+      s.items = fromHistory(event.items)
+      s.restored = s.items.length
+      s.subs = undefined
+      s.progress = undefined
+      s.permissions = []
+      s.context = undefined
+      s.compacting = false
+      if (s.status === 'running' || s.status === 'waiting_approval') s.status = 'stopped'
       break
     case 'tool_use': {
       finalizeStreaming()
@@ -145,7 +199,7 @@ export function applyEvent(prev: ConversationState | undefined, event: AgentEven
     }
     case 'tool_result': {
       const idx = s.items.findLastIndex((i) => i.type === 'tool' && i.toolUseId === event.toolUseId)
-      if (idx >= 0) s.items[idx] = { ...(s.items[idx] as Extract<TranscriptItem, { type: 'tool' }>), result: event.content, isError: event.isError }
+      if (idx >= 0) s.items[idx] = { ...(s.items[idx] as Extract<TranscriptItem, { type: 'tool' }>), result: event.content, isError: event.isError, truncated: event.truncated, elapsedS: undefined }
       // 이번 작업에서 남은 도구가 없으면 모델이 결과를 보고 다음 걸음을 고르는 중 (중단된 턴의 도구는 결과가 끝내 오지 않으므로 뺀다)
       const since = s.task?.startedAt ?? 0
       if (!s.items.some((i) => i.type === 'tool' && i.result === undefined && i.at >= since)) task({ activity: 'THINKING' })
@@ -176,7 +230,7 @@ export function applyEvent(prev: ConversationState | undefined, event: AgentEven
     case 'history':
       // 이미 이번 실행에서 대화가 시작됐으면 덮지 않는다
       if (s.items.length === 0) {
-        s.items = event.items.map((h) => (h.type === 'tool' ? { ...h, at: 0 } : { ...h, at: 0, ...(h.type === 'assistant' ? { streaming: false } : {}) })) as TranscriptItem[]
+        s.items = fromHistory(event.items)
         s.restored = s.items.length
       }
       break
@@ -235,6 +289,14 @@ export function applyEvent(prev: ConversationState | undefined, event: AgentEven
       break
   }
   return s
+}
+
+/** 세션 기록 파일에서 되살린 항목을 화면 항목으로 (등장 애니메이션 없이 그리도록 at은 0) */
+function fromHistory(items: HistoryItem[]): TranscriptItem[] {
+  return items.map((h): TranscriptItem => {
+    if (h.type === 'assistant' || h.type === 'thinking') return { ...h, streaming: false, at: 0 }
+    return { ...h, at: 0 }
+  })
 }
 
 /** 백그라운드 작업의 종류 라벨과 보여 줄 설명. 띄운 도구 호출이 화면 기록에 있으면 그 이름·명령을 쓴다 */

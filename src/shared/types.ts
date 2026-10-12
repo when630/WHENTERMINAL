@@ -84,6 +84,8 @@ export interface Conversation {
   effort?: EffortLevel
   /** 하위 대화의 별도 작업 공간 (git worktree). 있으면 세션이 이 폴더에서 돈다 */
   worktree?: { path: string; branch: string }
+  /** 작업 폴더 밖에서 더 읽고 쓸 수 있는 폴더 (/add-dir) */
+  additionalDirectories?: string[]
 }
 
 /** 대화가 실제로 작업하는 폴더 */
@@ -101,6 +103,16 @@ export interface Project {
 
 export type PermissionDecision = 'allow' | 'always' | 'deny'
 
+/** 승인 응답에 덧붙이는 것: AskUserQuestion의 답, 플랜 승인 뒤 바꿀 모드 */
+export interface PermissionExtra {
+  /** AskUserQuestion: 질문 → 고른 답 (복수 선택은 쉼표로) */
+  answers?: Record<string, string>
+  /** ExitPlanMode를 승인한 뒤 이 모드로 (편집 자동 허용 등) */
+  planMode?: AgentMode
+  /** 거절 이유 (계획을 더 다듬어 달라는 등). 모델에게 전달된다 */
+  message?: string
+}
+
 export interface PermissionRequest {
   requestId: string
   toolName: string
@@ -111,6 +123,105 @@ export interface PermissionRequest {
   defaultToNo?: boolean
   /** true면 '항상 허용'(A) 제공 불가 */
   suppressAlwaysAllow?: boolean
+  /** 하위 에이전트 안에서 온 요청이면 그 에이전트 ID */
+  agentId?: string
+}
+
+/** AskUserQuestion 도구의 질문 하나 (SDK AskUserQuestionInput) */
+export interface AskQuestion {
+  question: string
+  header: string
+  options: { label: string; description: string; preview?: string }[]
+  multiSelect?: boolean
+}
+
+/** 되감기(/rewind) 범위: 파일만, 대화만, 둘 다 */
+export type RewindScope = 'code' | 'chat' | 'both'
+
+export interface RewindResult {
+  ok: boolean
+  message: string
+  /** 미리 보기: 되돌리면 바뀌는 파일 */
+  files?: string[]
+  /** 대화를 되감았을 때 그 메시지의 글 (입력창에 되돌려 놓아 고쳐 보낼 수 있게) */
+  text?: string
+}
+
+/** /resume 목록의 세션 하나 (SDK SDKSessionInfo) */
+export interface SessionOption {
+  sessionId: string
+  title: string
+  firstPrompt?: string
+  modified: number
+  branch?: string
+  cwd?: string
+  /** 이미 이 앱의 대화에 붙어 있으면 그 대화 ID */
+  conversationId?: string
+}
+
+/** MCP 서버 상태 (SDK McpServerStatus) */
+export interface McpServerInfo {
+  name: string
+  status: 'connected' | 'failed' | 'needs-auth' | 'pending' | 'disabled'
+  version?: string
+  error?: string
+  /** stdio 명령 또는 http/sse URL */
+  target?: string
+}
+
+/** 하위 에이전트 종류 (SDK AgentInfo) */
+export interface AgentOption {
+  name: string
+  description: string
+  model?: string
+}
+
+/** 권한 규칙·훅 (설정 파일에서 읽은 것) */
+export interface PermissionsInfo {
+  allow: string[]
+  deny: string[]
+  ask: string[]
+  defaultMode?: string
+  /** 설정 파일의 additionalDirectories + 이 대화의 /add-dir */
+  additionalDirectories: string[]
+  /** 훅 이벤트 → 명령 요약 */
+  hooks: { event: string; matcher?: string; commands: string[] }[]
+}
+
+/** 권한 규칙을 쓸 설정 파일 */
+export type PermissionRuleSource = 'local' | 'project' | 'user'
+
+/** CLAUDE.md 등 메모리 파일 */
+export interface MemoryFile {
+  label: string
+  path: string
+  exists: boolean
+  /** 글자 수 (있을 때) */
+  size?: number
+}
+
+/** 로그인 상태 (SDK accountInfo) */
+export interface AccountStatus {
+  loggedIn: boolean
+  email?: string
+  organization?: string
+  subscription?: string
+  /** 'claude.ai' | 'apiKey' … */
+  method?: string
+  error?: string
+}
+
+/** /status: 이 대화의 세션 정보 */
+export interface SessionStatus {
+  sessionId?: string
+  cwd: string
+  model?: string
+  mode: AgentMode
+  contextPercent?: number
+  additionalDirectories: string[]
+  account: AccountStatus
+  /** Claude Code CLI 버전 (알 수 있을 때) */
+  cliVersion?: string
 }
 
 /** 컨텍스트 창 사용량. autoCompactAt은 자동 컴팩트가 시작되는 사용률(%) */
@@ -262,10 +373,15 @@ export interface SearchHit {
 
 /** 세션 기록 파일에서 되살린 대화 항목 (앱을 다시 켠 뒤 보여주기용) */
 export type HistoryItem =
-  | { type: 'user'; text: string }
+  /** uuid는 되감기(/rewind)의 기준점 */
+  | { type: 'user'; text: string; uuid?: string }
   | { type: 'assistant'; text: string }
-  | { type: 'tool'; toolUseId: string; name: string; input: unknown; result?: string; isError?: boolean }
+  /** 모델의 생각 (요약본) */
+  | { type: 'thinking'; text: string }
+  | { type: 'tool'; toolUseId: string; name: string; input: unknown; result?: string; isError?: boolean; truncated?: boolean }
   | { type: 'divider'; text: string }
+  /** 명령 출력·안내문. mono면 고정폭으로 */
+  | { type: 'notice'; text: string; tone: 'info' | 'warn' | 'error'; mono?: boolean }
 
 /** 턴이 끝나도 살아 있는 백그라운드 작업 (셸·모니터·하위 에이전트 등). SDK background_tasks_changed에서 */
 export interface BackgroundTask {
@@ -304,25 +420,38 @@ export interface TaskOutput {
 /** 메인 → 렌더러 이벤트 (대화 단위) */
 export type AgentEvent =
   | { kind: 'status'; status: AgentStatus }
-  /** next: 화면에만 보이고 작업은 차례가 오면(task_start) 시작한다 */
-  | { kind: 'user'; text: string; next?: boolean }
+  /** next: 화면에만 보이고 작업은 차례가 오면(task_start) 시작한다. queuedId는 기다리는 동안 고치거나 뺄 때의 손잡이, uuid는 되감기 기준점 */
+  | { kind: 'user'; text: string; next?: boolean; queuedId?: string; uuid?: string }
   /** 기다리던 메시지를 실제로 보냈다. 이 메시지의 작업이 지금 시작된다 */
-  | { kind: 'task_start'; text: string }
+  | { kind: 'task_start'; text: string; queuedId?: string; uuid?: string }
+  /** 기다리던 메시지를 보내지 않기로 했다 (고치려고 꺼냈거나 취소) */
+  | { kind: 'unqueued'; queuedId: string }
   | { kind: 'text_delta'; text: string }
   | { kind: 'assistant_text'; text: string }
+  /** 모델의 생각 (요약본). delta는 스트리밍 조각, thinking은 완성본 */
+  | { kind: 'thinking_delta'; text: string }
+  | { kind: 'thinking'; text: string }
   | { kind: 'tool_use'; toolUseId: string; name: string; input: unknown }
-  | { kind: 'tool_result'; toolUseId: string; content: string; isError: boolean }
+  | { kind: 'tool_result'; toolUseId: string; content: string; isError: boolean; truncated?: boolean }
+  /** 오래 도는 도구의 경과 시간 */
+  | { kind: 'tool_progress'; toolUseId: string; elapsedS: number }
   | { kind: 'permission_request'; request: PermissionRequest }
   | { kind: 'permission_resolved'; requestId: string }
   | { kind: 'mode'; mode: AgentMode }
   | { kind: 'result'; subtype: string; durationMs: number; costUsd?: number }
   | { kind: 'error'; message: string }
+  /** 안내문·명령 출력·경고. CLI가 화면에만 보이는 것들 (/context 출력, 훅 경고, 자동 거절 …) */
+  | { kind: 'notice'; text: string; tone: 'info' | 'warn' | 'error'; mono?: boolean }
+  /** API 재시도 중 */
+  | { kind: 'retry'; attempt: number; max: number; delayMs: number }
   | { kind: 'context'; context: ContextInfo }
   | { kind: 'compacting'; on: boolean }
   | { kind: 'compacted'; trigger: 'manual' | 'auto'; preTokens: number; postTokens?: number }
   | { kind: 'cleared' }
   | { kind: 'model'; model: string; label: string }
   | { kind: 'history'; items: HistoryItem[] }
+  /** 화면 기록을 통째로 바꾼다 (되감기·세션 이어 열기·포크 뒤) */
+  | { kind: 'replace'; items: HistoryItem[] }
   /** 대기열 순번 (1부터) */
   | { kind: 'queue'; position: number }
   /** 살아 있는 백그라운드 작업 전체 (바꿔치기) */
@@ -401,6 +530,25 @@ export const IPC = {
   checkUpdate: 'update:check',
   applyUpdate: 'update:apply',
   updateChanged: 'update:changed',
+  dropQueued: 'agent:drop-queued',
+  toolResult: 'agent:tool-result',
+  rewind: 'agent:rewind',
+  listSessions: 'agent:list-sessions',
+  attachSession: 'agent:attach-session',
+  forkConversation: 'agent:fork',
+  mcpStatus: 'agent:mcp-status',
+  mcpReconnect: 'agent:mcp-reconnect',
+  mcpToggle: 'agent:mcp-toggle',
+  listAgents: 'agent:list-agents',
+  permissionsInfo: 'agent:permissions-info',
+  setPermissionRule: 'agent:set-permission-rule',
+  addDirectory: 'agent:add-directory',
+  memoryFiles: 'agent:memory-files',
+  openPath: 'app:open-path',
+  exportConversation: 'agent:export',
+  sessionStatus: 'agent:session-status',
+  accountStatus: 'agent:account-status',
+  loginCommand: 'agent:login-command',
 } as const
 
 /** preload가 window.api로 노출하는 API */
@@ -430,7 +578,38 @@ export interface WhenTerminalApi {
   /** 백그라운드 셸·모니터가 쓴 출력의 끝부분. 파일을 찾지 못하면 null */
   taskOutput(projectId: string, conversationId: string, taskId: string): Promise<TaskOutput | null>
   setMode(projectId: string, conversationId: string, mode: AgentMode): Promise<void>
-  respondPermission(projectId: string, conversationId: string, requestId: string, decision: PermissionDecision): Promise<void>
+  /** extra: AskUserQuestion의 답, 플랜 승인 뒤 모드, 거절 이유 */
+  respondPermission(projectId: string, conversationId: string, requestId: string, decision: PermissionDecision, extra?: PermissionExtra): Promise<void>
+  /** 차례를 기다리던 메시지를 보내지 않는다. 그 글을 돌려준다 (고쳐서 다시 보낼 수 있게). 이미 보냈으면 null */
+  dropQueued(projectId: string, conversationId: string, queuedId: string): Promise<string | null>
+  /** 도구 결과 전문 (화면에는 앞부분만 보내므로). 세션 기록에 없으면 null */
+  toolResult(projectId: string, conversationId: string, toolUseId: string): Promise<string | null>
+  /** 되감기: 그 사용자 메시지 시점으로 파일·대화를 되돌린다. dryRun이면 바뀔 파일만 알려 준다 */
+  rewind(projectId: string, conversationId: string, uuid: string, scope: RewindScope, dryRun?: boolean): Promise<RewindResult>
+  /** 이 프로젝트 폴더(작업 공간 포함)의 지난 세션들 (최근 순) */
+  listSessions(projectId: string): Promise<SessionOption[]>
+  /** 지난 세션을 이어 연다: 빈 대화면 거기에, 아니면 새 탭으로. 옮겨 갈 대화 ID */
+  attachSession(projectId: string, conversationId: string, sessionId: string, title: string): Promise<string>
+  /** 지금 대화를 포크해 새 탭으로. 새 대화 ID */
+  forkConversation(projectId: string, conversationId: string, title?: string): Promise<string>
+  mcpStatus(projectId: string, conversationId: string): Promise<McpServerInfo[]>
+  mcpReconnect(projectId: string, conversationId: string, name: string): Promise<void>
+  mcpToggle(projectId: string, conversationId: string, name: string, enabled: boolean): Promise<void>
+  listAgents(projectId: string): Promise<AgentOption[]>
+  permissionsInfo(projectId: string, conversationId: string): Promise<PermissionsInfo>
+  /** 권한 규칙 추가·삭제. 설정 파일에 쓰며 다음 세션부터 적용 */
+  setPermissionRule(projectId: string, source: PermissionRuleSource, kind: 'allow' | 'deny' | 'ask', rule: string, on: boolean): Promise<PermissionsInfo>
+  /** /add-dir: 폴더를 고르거나(path 없음) 적은 폴더를 이 대화에 더한다. 비우려면 remove */
+  addDirectory(projectId: string, conversationId: string, path?: string, remove?: boolean): Promise<string[]>
+  memoryFiles(projectId: string): Promise<MemoryFile[]>
+  /** 파일·폴더를 기본 앱(편집기)으로 연다. 없는 파일이면 만들고 연다 */
+  openPath(path: string, create?: boolean): Promise<string>
+  /** 대화를 마크다운 파일로 저장 (저장 창). 취소면 null */
+  exportConversation(projectId: string, conversationId: string): Promise<string | null>
+  sessionStatus(projectId: string, conversationId: string): Promise<SessionStatus>
+  accountStatus(refresh?: boolean): Promise<AccountStatus>
+  /** 터미널에서 로그인할 때 칠 명령 (번들된 CLI 경로 포함) */
+  loginCommand(): Promise<string>
   /** 대화 내용을 요약해 컨텍스트를 줄인다. instructions는 요약할 때 중점을 둘 내용 */
   compact(projectId: string, conversationId: string, instructions?: string): Promise<void>
   /** 컨텍스트를 비우고 다음 메시지부터 새 세션으로 시작한다 */

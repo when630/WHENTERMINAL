@@ -1,5 +1,6 @@
-import { useLayoutEffect, useRef, useState, type RefObject } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import { type PermissionDecision, type Project } from '@shared/types'
+import { refocusAfterClick, useRefocus } from './focus'
 import { HOME_ROW } from './keys'
 import { boxIn, EASE, Odo, reducedMotion, Roll, useLayoutMotion } from './motion'
 import { STAGES, type TaskRef } from './state'
@@ -29,6 +30,8 @@ interface Props {
   continueTarget: { id: string; title: string } | null
   onSelect: (conversationId: string) => void
   onOpenTask: (ref: TaskRef) => void
+  /** 보고서의 TOOLS: 대화를 열면서 도구 목록을 펼친다 */
+  onOpenTools: (ref: TaskRef) => void
   onOpenReport: (conversationId: string) => void
   onCloseReport: () => void
   onArchive: (conversationId: string) => void
@@ -47,10 +50,21 @@ export function Home(props: Props): React.JSX.Element {
   const unread = reports.filter((r) => r.task.unread).length
   const waiting = running.filter((r) => r.state.permissions.length > 0).length
   const openReport = reports.find((r) => r.conversationId === props.openReportId) ?? null
+  // 포커스는 늘 작업 지시창으로: 홈에 오면, 보고서를 닫으면, 덮개를 닫으면 (focus.ts). 카드를 키로 고르려면 Esc로 빠져나온다
+  const focusAsk = useCallback((): void => {
+    const el = props.inputRef.current
+    if (el && document.activeElement !== el && !document.activeElement?.closest('[data-keys-own]')) el.focus({ preventScroll: true })
+  }, [props.inputRef])
+  useRefocus(focusAsk)
+  // 보고서 상세가 열려 있는 동안은 O·E·I 한 키가 먹도록 입력칸을 비워 둔다
+  useEffect(() => {
+    if (!openReport) requestAnimationFrame(focusAsk)
+    else props.inputRef.current?.blur()
+  }, [!!openReport, focusAsk]) // eslint-disable-line react-hooks/exhaustive-deps
   const d = new Date(now)
 
   return (
-    <div className="home-wrap" ref={wrapRef}>
+    <div className="home-wrap" ref={wrapRef} onClick={(e) => refocusAfterClick(e, () => (wrapRef.current?.querySelector('.sheet') ? null : props.inputRef.current))}>
       <div className="home" ref={scrollRef}>
         <header className="home-head">
           <div className="hh-cell hh-run">
@@ -107,6 +121,7 @@ export function Home(props: Props): React.JSX.Element {
           closeRef={props.sheetCloseRef}
           onClosed={props.onCloseReport}
           onOpenChat={() => props.onOpenTask(openReport)}
+          onOpenTools={() => props.onOpenTools(openReport)}
           onNewTask={() => props.onNewTaskFor(openReport.projectIndex)}
           onArchive={() => props.onArchive(openReport.conversationId)}
         />
@@ -235,7 +250,15 @@ function TaskCard({ r, now, selected, onSelect, onOpen, onRespond }: {
         </div>
         <div className={`cf ${pending ? 'open' : ''}`}>
           <div>
-            {pending && (
+            {pending && (pending.toolName === 'AskUserQuestion' || pending.toolName === 'ExitPlanMode') && (
+              <div className="cf-in">
+                <span className="cf-cmd mono">{pending.toolName === 'ExitPlanMode' ? '계획을 세웠어요. 대화창에서 승인해요' : '물어볼 게 있어요. 대화창에서 답해요'}</span>
+                <button type="button" className="btn-pri sm" onClick={(e) => { e.stopPropagation(); onOpen(r) }}>
+                  {pending.toolName === 'ExitPlanMode' ? 'REVIEW PLAN' : 'ANSWER'}
+                </button>
+              </div>
+            )}
+            {pending && pending.toolName !== 'AskUserQuestion' && pending.toolName !== 'ExitPlanMode' && (
               <div className="cf-in">
                 <span className="cf-cmd mono">{pending.title ?? `${pending.toolName} ${summarizeInput(pending.input)}`}</span>
                 <button type="button" className="btn-pri sm" onClick={(e) => respond(e, 'allow')}>
@@ -300,8 +323,9 @@ function ReportCard({ r, now, selected, hidden, onOpen }: {
   )
 }
 
-function ReportSheet({ r, wrapRef, scrollRef, closeRef, onClosed, onOpenChat, onNewTask, onArchive }: {
+function ReportSheet({ r, wrapRef, scrollRef, closeRef, onClosed, onOpenChat, onOpenTools, onNewTask, onArchive }: {
   r: TaskRef
+  onOpenTools: () => void
   wrapRef: RefObject<HTMLDivElement | null>
   scrollRef: RefObject<HTMLDivElement | null>
   closeRef: RefObject<(() => void) | null>
@@ -386,7 +410,13 @@ function ReportSheet({ r, wrapRef, scrollRef, closeRef, onClosed, onOpenChat, on
             <div className="sh-box">
               <h4>LOG</h4>
               <div className="kv"><span>RESULT</span><b>{RESULT_LABEL[state.status] ?? state.status}</b></div>
-              <div className="kv"><span>TOOLS</span><b className="mono">{task.tools}</b></div>
+              <div className="kv">
+                <span>TOOLS</span>
+                <b className="mono">
+                  {task.tools}
+                  {task.tools > 0 && <button type="button" className="kv-btn" onClick={onOpenTools} title="대화를 열고 부른 도구를 모두 봐요">SHOW</button>}
+                </b>
+              </div>
               {task.costUsd !== undefined && <div className="kv"><span>EST. COST</span><b className="mono">${task.costUsd.toFixed(2)}</b></div>}
               <div className="kv"><span>CHAT</span><b>{r.title}</b></div>
             </div>

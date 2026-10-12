@@ -2,8 +2,11 @@ import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage,
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { cwdOf, IPC, type Conversation, type ModelOption, type StoredTask, type UsageInfo, type AgentEventEnvelope, type AgentMode, type PermissionDecision, type RateLimitInfo, type TerminalShell, type EffortLevel } from '@shared/types'
+import { cwdOf, IPC, type Conversation, type ModelOption, type StoredTask, type UsageInfo, type AgentEventEnvelope, type AgentMode, type PermissionDecision, type PermissionExtra, type PermissionRuleSource, type RateLimitInfo, type RewindScope, type TerminalShell, type EffortLevel } from '@shared/types'
 import { newConversationId, ProjectStore } from './store'
+import { memoryFiles, permissionsInfo, setPermissionRule } from './agent/config'
+import { exportMarkdown } from './agent/history'
+import { loginCommand } from './executable'
 import { branchOf, createWorktree, discardWorktree, isGitRepo, mergeWorktree, worktreeChanges } from './worktree'
 import { searchFiles } from './files'
 import { SettingsStore } from './settings'
@@ -359,9 +362,84 @@ function bootstrap(): void {
   })
   ipcMain.handle(
     IPC.respondPermission,
-    (_e, _projectId: string, conversationId: string, requestId: string, decision: PermissionDecision) =>
-      manager.respondPermission(conversationId, requestId, decision),
+    (_e, _projectId: string, conversationId: string, requestId: string, decision: PermissionDecision, extra?: PermissionExtra) =>
+      manager.respondPermission(conversationId, requestId, decision, extra),
   )
+  ipcMain.handle(IPC.dropQueued, (_e, projectId: string, conversationId: string, queuedId: string) => manager.dropQueued(projectId, conversationId, queuedId))
+  ipcMain.handle(IPC.toolResult, (_e, projectId: string, conversationId: string, toolUseId: string) => manager.toolResult(projectId, conversationId, toolUseId))
+  ipcMain.handle(IPC.rewind, async (_e, projectId: string, conversationId: string, uuid: string, scope: RewindScope, dryRun?: boolean) => {
+    const r = await manager.rewind(projectId, conversationId, uuid, scope, dryRun)
+    if (!dryRun && r.ok) projectsChanged()
+    return r
+  })
+  ipcMain.handle(IPC.listSessions, (_e, projectId: string) => manager.listSessions(projectId))
+  ipcMain.handle(IPC.attachSession, async (_e, projectId: string, conversationId: string, sessionId: string, title: string) => {
+    const id = await manager.attachSession(projectId, conversationId, sessionId, title)
+    projectsChanged()
+    return id
+  })
+  ipcMain.handle(IPC.forkConversation, async (_e, projectId: string, conversationId: string, title?: string) => {
+    const id = await manager.forkConversation(projectId, conversationId, title)
+    projectsChanged()
+    return id
+  })
+  ipcMain.handle(IPC.mcpStatus, (_e, projectId: string, conversationId: string) => manager.mcpStatus(projectId, conversationId))
+  ipcMain.handle(IPC.mcpReconnect, (_e, projectId: string, conversationId: string, name: string) => manager.mcpReconnect(projectId, conversationId, name))
+  ipcMain.handle(IPC.mcpToggle, (_e, projectId: string, conversationId: string, name: string, enabled: boolean) => manager.mcpToggle(projectId, conversationId, name, enabled))
+  ipcMain.handle(IPC.listAgents, (_e, projectId: string) => manager.listAgents(projectId))
+  ipcMain.handle(IPC.permissionsInfo, (_e, projectId: string, conversationId: string) => {
+    const project = store.get(projectId)
+    const conv = store.getConversation(projectId, conversationId)
+    if (!project) throw new Error(`프로젝트 없음: ${projectId}`)
+    return permissionsInfo(cwdOf(project, conv), conv?.additionalDirectories)
+  })
+  ipcMain.handle(IPC.setPermissionRule, (_e, projectId: string, source: PermissionRuleSource, kind: 'allow' | 'deny' | 'ask', rule: string, on: boolean) => {
+    const project = store.get(projectId)
+    if (!project) throw new Error(`프로젝트 없음: ${projectId}`)
+    setPermissionRule(project.path, source, kind, rule.trim(), on)
+    return permissionsInfo(project.path)
+  })
+  ipcMain.handle(IPC.addDirectory, async (_e, projectId: string, conversationId: string, path?: string, remove?: boolean) => {
+    const conv = store.getConversation(projectId, conversationId)
+    if (!conv) throw new Error(`대화 없음: ${projectId}/${conversationId}`)
+    let dirs = conv.additionalDirectories ?? []
+    if (remove && path) dirs = dirs.filter((d) => d !== path)
+    else {
+      let add = path?.trim()
+      if (!add) {
+        const res = await dialog.showOpenDialog(win!, { title: '더 쓸 폴더', properties: ['openDirectory'] })
+        add = res.canceled ? undefined : res.filePaths[0]
+      }
+      if (add && !dirs.includes(add)) dirs = [...dirs, add]
+    }
+    await manager.setAdditionalDirectories(projectId, conversationId, dirs)
+    projectsChanged()
+    return dirs
+  })
+  ipcMain.handle(IPC.memoryFiles, (_e, projectId: string) => {
+    const project = store.get(projectId)
+    return project ? memoryFiles(project.path) : []
+  })
+  ipcMain.handle(IPC.openPath, async (_e, path: string, create?: boolean) => {
+    if (create && !existsSync(path)) {
+      mkdirSync(join(path, '..'), { recursive: true })
+      writeFileSync(path, '')
+    }
+    return shell.openPath(path)
+  })
+  ipcMain.handle(IPC.exportConversation, async (_e, projectId: string, conversationId: string) => {
+    const project = store.get(projectId)
+    const conv = store.getConversation(projectId, conversationId)
+    if (!project || !conv?.sessionId) return null
+    const safe = conv.title.replace(/[\\/:*?"<>|]+/g, ' ').trim().slice(0, 60) || 'conversation'
+    const res = await dialog.showSaveDialog(win!, { title: '대화 내보내기', defaultPath: join(project.path, `${safe}.md`), filters: [{ name: 'Markdown', extensions: ['md'] }] })
+    if (res.canceled || !res.filePath) return null
+    writeFileSync(res.filePath, await exportMarkdown(conv.sessionId, cwdOf(project, conv), conv.title), 'utf8')
+    return res.filePath
+  })
+  ipcMain.handle(IPC.sessionStatus, (_e, projectId: string, conversationId: string) => manager.sessionStatus(projectId, conversationId))
+  ipcMain.handle(IPC.accountStatus, (_e, refresh?: boolean) => manager.accountStatus(refresh))
+  ipcMain.handle(IPC.loginCommand, () => loginCommand())
 
   // Windows: 기본 메뉴의 Alt 니모닉(Alt+F 파일, Alt+H 도움말 …)이 Alt+홈 줄 프로젝트 이동과 겹치므로 메뉴를 없앤다.
   // 메뉴가 없어도 입력창의 복사·붙여넣기는 그대로 동작한다.

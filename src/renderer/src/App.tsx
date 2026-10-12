@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { MODE_CYCLE, openConversations, type AgentMode, type StoredTask, type PermissionDecision, type Project, type UpdateState, type UsageInfo } from '@shared/types'
+import { MODE_CYCLE, openConversations, type AgentMode, type StoredTask, type PermissionDecision, type PermissionExtra, type Project, type UpdateState, type UsageInfo } from '@shared/types'
 import { applyEvent, collectBackground, collectTasks, mostUrgentConversation, type ConversationMap, type TaskInfo, type TaskRef } from './state'
 import { Home, type DispatchOrigin } from './Home'
 import { Chat, type PanelControl } from './Chat'
+import type { ToolPanel } from './panels'
 import { Sidebar } from './Sidebar'
 import { Ticker } from './Ticker'
 import { isEscape, isInterruptCopy, matches, physicalCode, projectIndexFromKey } from './keys'
@@ -16,6 +17,7 @@ import { usePresence } from './motion'
 import { forgetTerminals, newTerminal, showTerminal, stepTerminal } from './terminal'
 import { pruneDrafts } from './drafts'
 import { useTooltips } from './tooltip'
+import { requestRefocus } from './focus'
 
 export type View = { screen: 'home' } | { screen: 'chat'; projectId: string; conversationId: string } | { screen: 'settings'; back: View }
 
@@ -152,7 +154,9 @@ export function App(): React.JSX.Element {
   const flat = useMemo(() => [...running, ...reports], [running, reports])
   const unreadTotal = reports.filter((r) => r.task.unread).length
 
-  const openChat = useCallback((projectId: string, conversationId: string) => {
+  // 대화를 열면서 바로 펼칠 명령 화면 (홈 보고서의 TOOLS)
+  const [openPanel, setOpenPanel] = useState<{ conversationId: string; panel: ToolPanel; nonce: number } | null>(null)
+  const openChat = useCallback((projectId: string, conversationId: string, panel?: ToolPanel) => {
     // 닫힌 대화의 보고서에서 '대화 열기'를 누르면 그 대화를 다시 탭으로
     const conv = projects.find((p) => p.id === projectId)?.conversations.find((c) => c.id === conversationId)
     if (conv?.closedAt) void window.api.reopenConversation(projectId, conversationId)
@@ -160,6 +164,7 @@ export function App(): React.JSX.Element {
     const i = projects.findIndex((p) => p.id === projectId)
     if (i >= 0) setDispatchIndex(i)
     setView({ screen: 'chat', projectId, conversationId })
+    if (panel) setOpenPanel({ conversationId, panel, nonce: Date.now() })
   }, [projects])
 
   const openChatRef = useRef(openChat)
@@ -177,8 +182,8 @@ export function App(): React.JSX.Element {
     [projects, convs, openChat],
   )
 
-  const respond = useCallback((projectId: string, conversationId: string, requestId: string, decision: PermissionDecision) => {
-    void window.api.respondPermission(projectId, conversationId, requestId, decision)
+  const respond = useCallback((projectId: string, conversationId: string, requestId: string, decision: PermissionDecision, extra?: PermissionExtra) => {
+    void window.api.respondPermission(projectId, conversationId, requestId, decision, extra)
   }, [])
 
   const openReport = useCallback((id: string) => {
@@ -311,12 +316,14 @@ export function App(): React.JSX.Element {
       return take(() => {
         setSearchOpen(false)
         setHelpOpen((v) => !v)
+        if (helpOpen) requestRefocus()
       })
     }
     if (is('search')) {
       return take(() => {
         setHelpOpen(false)
         setSearchOpen((v) => !v)
+        if (searchOpen) requestRefocus()
       })
     }
     if (helpOpen || searchOpen) {
@@ -324,6 +331,7 @@ export function App(): React.JSX.Element {
         take(() => {
           setHelpOpen(false)
           setSearchOpen(false)
+          requestRefocus()
         })
       }
       return
@@ -392,7 +400,7 @@ export function App(): React.JSX.Element {
       if (decision) {
         const t = sel && sel.state.permissions[0] ? sel : running.find((r) => r.state.permissions[0])
         const req = t?.state.permissions[0]
-        if (!t || !req) return
+        if (!t || !req || req.toolName === 'AskUserQuestion' || req.toolName === 'ExitPlanMode') return
         e.preventDefault()
         if (decision !== 'deny' && req.defaultToNo) return // 한 키 승인 금지 요청은 클릭으로
         if (decision === 'always' && req.suppressAlwaysAllow) return
@@ -426,6 +434,7 @@ export function App(): React.JSX.Element {
     if (is('terminalNext') || is('terminalPrev')) return take(() => stepTerminal(projectId, conversationId, is('terminalPrev') ? -1 : 1))
     if (is('terminalClose')) return take(() => chatPanelRef.current?.closeTerminal())
     if (is('cycleEffort')) return take(() => chatPanelRef.current?.cycleEffort())
+    if (is('rewind')) return take(() => chatPanelRef.current?.rewind())
     // 새 탭: 탭 줄의 +와 같다 (설정에 따라 작업 공간을 만든다)
     if (is('newConversation')) {
       return take(() => void window.api.addConversation(projectId).then((c) => setView({ screen: 'chat', projectId, conversationId: c.id })))
@@ -441,7 +450,8 @@ export function App(): React.JSX.Element {
     if (e.key === 'Escape' || is('interrupt') || isInterruptCopy(e, code)) return take(() => void window.api.interrupt(projectId, conversationId))
     const pending = convs[conversationId]?.permissions[0]
     const decision = decisionOf(e)
-    if (pending && !typing && decision) {
+    // 질문·플랜 승인은 한 키로 답할 수 없다 (답을 골라야 한다)
+    if (pending && !typing && decision && pending.toolName !== 'AskUserQuestion' && pending.toolName !== 'ExitPlanMode') {
       e.preventDefault()
       if (decision !== 'deny' && pending.defaultToNo) return
       if (decision === 'always' && pending.suppressAlwaysAllow) return
@@ -503,6 +513,7 @@ export function App(): React.JSX.Element {
               onRespond={respond}
               panelRef={chatPanelRef}
               jump={jump?.conversationId === view.conversationId ? jump : null}
+              openPanel={openPanel?.conversationId === view.conversationId ? openPanel : null}
             />
           ) : (
             <Home
@@ -520,6 +531,7 @@ export function App(): React.JSX.Element {
             continueTarget={continueTarget}
               onSelect={setSelectedId}
               onOpenTask={(r) => openChat(r.project.id, r.conversationId)}
+              onOpenTools={(r) => openChat(r.project.id, r.conversationId, { kind: 'tools', since: r.task.startedAt })}
               onOpenReport={openReport}
               onCloseReport={() => setOpenReportId(null)}
               onArchive={archive}
@@ -530,8 +542,8 @@ export function App(): React.JSX.Element {
           )}
         </div>
       </div>
-      {search.item && <SearchOverlay leaving={search.leaving} onOpen={openHit} onClose={() => setSearchOpen(false)} />}
-      {help.item && <HelpOverlay context={view.screen} hotkey={hotkey} leaving={help.leaving} onClose={() => setHelpOpen(false)} />}
+      {search.item && <SearchOverlay leaving={search.leaving} onOpen={openHit} onClose={() => { setSearchOpen(false); requestRefocus() }} />}
+      {help.item && <HelpOverlay context={view.screen} hotkey={hotkey} leaving={help.leaving} onClose={() => { setHelpOpen(false); requestRefocus() }} />}
     </div>
     </KeymapContext.Provider>
   )
