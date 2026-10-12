@@ -1,9 +1,9 @@
 import { app } from 'electron'
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { openConversations, type Conversation, type Project, type StoredTask } from '@shared/types'
 import { draftTitle } from './agent/title'
+import { readJson, writeJson } from './json-file'
 
 /** 프로젝트·대화 목록을 userData/projects.json에 저장. 카드 순서 = 배열 순서 (숫자키 고정). */
 export class ProjectStore {
@@ -11,13 +11,8 @@ export class ProjectStore {
   private projects: Project[] = []
 
   constructor() {
-    if (existsSync(this.file)) {
-      try {
-        this.projects = JSON.parse(readFileSync(this.file, 'utf8')) as Project[]
-      } catch (err) {
-        console.error('projects.json 읽기 실패, 빈 목록으로 시작', err)
-      }
-    }
+    const saved = readJson(this.file)
+    if (Array.isArray(saved)) this.projects = saved as Project[]
   }
 
   list(): Project[] {
@@ -123,10 +118,7 @@ export class ProjectStore {
   }
 
   private save(): void {
-    mkdirSync(app.getPath('userData'), { recursive: true })
-    const tmp = `${this.file}.tmp`
-    writeFileSync(tmp, JSON.stringify(this.projects, null, 2), 'utf8')
-    renameSync(tmp, this.file)
+    writeJson(this.file, this.projects)
   }
 }
 

@@ -1,7 +1,7 @@
 import { test, expect } from './fixtures'
 import type { ElectronApplication } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -187,4 +187,40 @@ test('백그라운드 작업 알림은 사람이 쓴 글이 아니라 한 줄 �
 test('대화 기록은 가로로 스크롤되지 않는다', async ({ win }) => {
   await win.keyboard.press('Alt+a')
   await expect(win.locator('.transcript')).toHaveCSS('overflow-x', 'hidden')
+})
+
+test('작업이 끝나 오른쪽 패널이 접혀도 창에 가로 스크롤이 생기지 않는다', async ({ app, win }) => {
+  await win.keyboard.press('Alt+a')
+  await emit(app, { kind: 'user', text: '작업' })
+  await emit(app, { kind: 'status', status: 'running' })
+  await expect(win.locator('.chat-body')).toHaveClass(/open/)
+  await emit(app, { kind: 'result', subtype: 'success', durationMs: 10 })
+  await emit(app, { kind: 'status', status: 'done' })
+  await expect(win.locator('.chat-body')).not.toHaveClass(/open/)
+  // 칸이 접히는 움직임(1.6초 뒤 0.5초)이 끝난 뒤: 패널 테두리가 0px 칸 밖으로 넘쳐 문서가 넓어지면 안 된다
+  await win.waitForTimeout(2300)
+  const width = await win.evaluate(() => ({ scroll: document.documentElement.scrollWidth, client: document.documentElement.clientWidth }))
+  expect(width.scroll).toBeLessThanOrEqual(width.client)
+  await expect(win.locator('html')).toHaveCSS('overflow-x', 'hidden')
+})
+
+test('실행 중에 보낸 메시지는 지금 작업을 덮지 않고, 차례가 오면 새 작업이 되며 앞 작업의 보고서는 남는다', async ({ app, win, env }) => {
+  await win.keyboard.press('Alt+a')
+  await emit(app, { kind: 'user', text: '첫 작업' })
+  await emit(app, { kind: 'status', status: 'running' })
+  await emit(app, { kind: 'tool_use', toolUseId: 't1', name: 'Read', input: { file_path: 'README.md' } })
+  await emit(app, { kind: 'user', text: '두 번째 작업', next: true })
+  await expect(win.locator('.transcript .msg.user')).toHaveCount(2)
+  await expect(win.locator('.status-panel')).toContainText('READ README.md')
+  // 첫 턴이 끝나자마자 들고 있던 메시지가 나간다 (같은 순간에 와도 앞 작업의 보고서를 저장한다)
+  await emit(app, { kind: 'tool_result', toolUseId: 't1', content: '# alpha', isError: false })
+  await emit(app, { kind: 'result', subtype: 'success', durationMs: 10 })
+  await emit(app, { kind: 'status', status: 'done' })
+  await emit(app, { kind: 'task_start', text: '두 번째 작업' })
+  await emit(app, { kind: 'status', status: 'running' })
+  const saved = (): { instruction?: string; status?: string; tools?: number } | undefined =>
+    JSON.parse(readFileSync(join(env.userData, 'projects.json'), 'utf8'))[0].conversations[0].lastTask
+  await expect.poll(() => saved()?.instruction).toBe('첫 작업')
+  expect(saved()).toMatchObject({ status: 'done', tools: 1 })
+  await expect(win.locator('.status-panel')).toContainText('STARTING')
 })

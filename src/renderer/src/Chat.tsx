@@ -6,7 +6,7 @@ import { matchesTerms, searchableText, searchTerms } from '@shared/search'
 import { Equalizer, Roll, usePresence } from './motion'
 import { clock, useNow } from './time'
 import { SubLog, TaskDetail, type DetailTarget } from './TaskDetail'
-import { closeTerminal, pathForComposer, runInTerminal, TerminalDrawer, toggleTerminal } from './terminal'
+import { closeTerminal, forgetTerminals, pathForComposer, runInTerminal, TerminalDrawer, toggleTerminal } from './terminal'
 import { Markdown } from './Markdown'
 import { AttachButton, useAttach } from './attach'
 import { WorktreePanel } from './WorktreePanel'
@@ -170,10 +170,12 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
   const root = conv?.worktree?.path ?? project.path
 
   // effort: 모델이 받는 단계와 기본값. 모델이 바뀌면 다시 읽는다
-  const [effortInfo, setEffortInfo] = useState<EffortInfo | null>(null)
+  // 대화를 옮긴 직후 앞 대화의 단계로 고르지 않도록 어느 대화의 값인지 함께 둔다
+  const [effortOf, setEffortOf] = useState<{ id: string; info: EffortInfo } | null>(null)
+  const effortInfo = effortOf?.id === conversationId ? effortOf.info : null
   useEffect(() => {
     let alive = true
-    void window.api.getEffort(project.id, conversationId).then((i) => alive && setEffortInfo(i))
+    void window.api.getEffort(project.id, conversationId).then((info) => alive && setEffortOf({ id: conversationId, info }))
     return () => {
       alive = false
     }
@@ -354,7 +356,7 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
       setEffort(rows[(rows.indexOf(conv?.effort ?? null) + 1) % rows.length])
     },
   }
-  const attach = useAttach({ inputRef, value: draft, setValue: setDraft, root: conv?.worktree?.path ?? project.path, onCaret: setCaret })
+  const attach = useAttach({ inputRef, setValue: setDraft, scope: conversationId, root, onCaret: setCaret })
 
   const submit = (raw = draft): void => {
     const text = raw.trim()
@@ -486,7 +488,7 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
                   type="button"
                   className="tab-x"
                   aria-label={armedHere ? '한 번 더 누르면 닫혀요' : `${c.title} 닫기`}
-                  title={armedHere ? '한 번 더 누르면 닫혀요' : '대화 닫기 (Ctrl+W 두 번)'}
+                  title={armedHere ? '한 번 더 누르면 닫혀요' : '대화 닫기 · 두 번 누르면 닫혀요'}
                   onClick={() => onCloseRequest(c.id)}
                 >
                   {armedHere ? 'CLOSE?' : '×'}
@@ -525,6 +527,7 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
           onDiscarded={(next) => {
             setShowChanges(false)
             onSelectConversation(next)
+            forgetTerminals(conversationId)
           }}
         />
       ) : detail ? (
@@ -534,7 +537,7 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
           state={state}
           projectId={project.id}
           conversationId={conversationId}
-          root={project.path}
+          root={root}
           onClose={() => setDetail(null)}
           onStopTask={(taskId) => window.api.stopTask(project.id, conversationId, taskId)}
         />
@@ -547,7 +550,7 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
             </div>
           )}
           {state.items.map((item, idx) => (
-            <Item key={idx} item={item} n={item.type === 'tool' ? ++toolCount : 0} root={project.path} enter={idx >= seen.current.count} subs={state.subs} progress={state.progress} onRun={(cmd) => void runInTerminal(project.id, conversationId, cmd)} />
+            <Item key={`${conversationId}:${idx}`} item={item} n={item.type === 'tool' ? ++toolCount : 0} root={root} enter={idx >= seen.current.count} subs={state.subs} progress={state.progress} onRun={(cmd) => void runInTerminal(project.id, conversationId, cmd)} />
           ))}
           {working.item && <Working status={state.status} activity={state.task?.activity} startedAt={state.task?.startedAt} leaving={working.leaving} />}
           {compacting.item && <div className={`msg compacting ${compacting.leaving ? 'leaving' : ''}`}>COMPACTING · 지금까지의 대화를 요약하고 있어요</div>}
@@ -571,7 +574,7 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
             items={state.items}
             subs={state.subs}
             progress={state.progress}
-            root={project.path}
+            root={root}
             selected={detail}
             onOpen={(t) => {
               setShowChanges(false)
@@ -611,7 +614,7 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
               {limitShown.item.window.label} {limitShown.item.level === 100 ? '한도를 다 썼어요' : `${limitShown.item.window.percent ?? limitShown.item.level}%`}
               {limitShown.item.window.resetsAt ? ` · ${formatReset(limitShown.item.window.resetsAt)}` : ''}
             </span>
-            {limitShown.item.level === 100 && <em>{limitArmed ? '지금 보내면 거절될 수 있어요 · Enter를 한 번 더 누르면 보내요' : '보내면 거절될 수 있어요'}</em>}
+            {limitShown.item.level === 100 && <em>{limitArmed ? '지금 보내면 거절될 수 있어요 · 한 번 더 보내면 그대로 보내요' : '보내면 거절될 수 있어요'}</em>}
           </div>
         )}
         <span className="composer-prompt" aria-hidden="true">&gt;</span>
@@ -923,7 +926,7 @@ function Item({ item, n, root, enter, subs, progress, onRun }: { item: Transcrip
                 type="button"
                 className="tool-run"
                 onClick={() => onRun((item.input as { command: string }).command)}
-                title="이 명령을 아래 터미널 입력줄에 넣어요. 실행은 Enter로 직접 해요"
+                title="이 명령을 아래 터미널 입력줄에 넣어요. 실행은 직접 해요"
               >
                 RUN IN TERMINAL
               </button>

@@ -44,7 +44,7 @@ export function Sidebar(props: Props): React.JSX.Element {
 
       <div className="side-label">
         <span>PROJECTS</span>
-        <button type="button" className="side-add" onClick={props.onAddProject} title="프로젝트 추가 (Ctrl+N)">
+        <button type="button" className="side-add" onClick={props.onAddProject} title="프로젝트 추가">
           + ADD
         </button>
       </div>

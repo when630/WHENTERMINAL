@@ -1,4 +1,4 @@
-import { openConversations, type AgentEvent, type AgentMode, type AgentProgress, type AgentStatus, type BackgroundTask, type SubItem, type ContextInfo, type PermissionRequest, type Project, type TaskInfo } from '@shared/types'
+import { openConversations, type StoredTask, type AgentEvent, type AgentMode, type AgentProgress, type AgentStatus, type BackgroundTask, type SubItem, type ContextInfo, type PermissionRequest, type Project, type TaskInfo } from '@shared/types'
 export type { TaskInfo }
 import { STATUS_PRIORITY } from '@shared/types'
 
@@ -20,6 +20,8 @@ export interface ConversationState {
   permissions: PermissionRequest[]
   updatedAt: number
   task?: TaskInfo
+  /** 다음 작업이 바로 이어져 task가 바뀌었을 때, 저장하기 전에 덮인 앞 작업의 보고서 */
+  finishedTask?: StoredTask
   context?: ContextInfo
   compacting?: boolean
   /** 기록 파일에서 되살린 항목 수 (등장 애니메이션을 하지 않을 몫) */
@@ -76,6 +78,10 @@ const SUB_LIMIT = 300
 
 export const isAgentTool = (name: string): boolean => name === 'Agent' || name === 'Task'
 
+function newTask(instruction: string, now: number): TaskInfo {
+  return { instruction, startedAt: now, stage: 0, activity: 'STARTING', tools: 0, files: [], unread: false, archived: false }
+}
+
 export function applyEvent(prev: ConversationState | undefined, event: AgentEvent): ConversationState {
   const s: ConversationState = prev ? { ...prev, items: [...prev.items], permissions: [...prev.permissions] } : emptyConversation()
   const now = Date.now()
@@ -86,6 +92,10 @@ export function applyEvent(prev: ConversationState | undefined, event: AgentEven
   }
   const task = (patch: Partial<TaskInfo>): void => {
     if (s.task) s.task = { ...s.task, ...patch }
+  }
+  const startTask = (instruction: string): void => {
+    if (s.task?.finishedAt) s.finishedTask = { ...s.task, status: s.status }
+    s.task = newTask(instruction, now)
   }
 
   switch (event.kind) {
@@ -102,7 +112,11 @@ export function applyEvent(prev: ConversationState | undefined, event: AgentEven
     case 'user':
       finalizeStreaming()
       s.items.push({ type: 'user', text: event.text, at: now })
-      s.task = { instruction: event.text, startedAt: now, stage: 0, activity: 'STARTING', tools: 0, files: [], unread: false, archived: false }
+      // 실행 중에 보낸 메시지는 지금 작업을 덮지 않는다. 차례가 오면 task_start
+      if (!event.next) startTask(event.text)
+      break
+    case 'task_start':
+      startTask(event.text)
       break
     case 'text_delta':
       if (last?.type === 'assistant' && last.streaming) s.items[s.items.length - 1] = { ...last, text: last.text + event.text }
@@ -132,8 +146,9 @@ export function applyEvent(prev: ConversationState | undefined, event: AgentEven
     case 'tool_result': {
       const idx = s.items.findLastIndex((i) => i.type === 'tool' && i.toolUseId === event.toolUseId)
       if (idx >= 0) s.items[idx] = { ...(s.items[idx] as Extract<TranscriptItem, { type: 'tool' }>), result: event.content, isError: event.isError }
-      // 남은 도구가 없으면 모델이 결과를 보고 다음 걸음을 고르는 중
-      if (!s.items.some((i) => i.type === 'tool' && i.result === undefined)) task({ activity: 'THINKING' })
+      // 이번 작업에서 남은 도구가 없으면 모델이 결과를 보고 다음 걸음을 고르는 중 (중단된 턴의 도구는 결과가 끝내 오지 않으므로 뺀다)
+      const since = s.task?.startedAt ?? 0
+      if (!s.items.some((i) => i.type === 'tool' && i.result === undefined && i.at >= since)) task({ activity: 'THINKING' })
       break
     }
     case 'permission_request':
@@ -211,6 +226,8 @@ export function applyEvent(prev: ConversationState | undefined, event: AgentEven
       s.items = [{ type: 'divider', text: 'CLEARED · 컨텍스트를 비웠어요. 다음 메시지부터 새 세션이에요', at: now }]
       s.subs = undefined
       s.progress = undefined
+      // 되살린 기록도 함께 사라졌으므로, 새 항목이 등장 애니메이션 없이 나오지 않게 한다
+      s.restored = undefined
       s.permissions = []
       s.status = 'idle'
       s.context = undefined

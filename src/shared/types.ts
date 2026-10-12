@@ -304,7 +304,10 @@ export interface TaskOutput {
 /** 메인 → 렌더러 이벤트 (대화 단위) */
 export type AgentEvent =
   | { kind: 'status'; status: AgentStatus }
-  | { kind: 'user'; text: string }
+  /** next: 화면에만 보이고 작업은 차례가 오면(task_start) 시작한다 */
+  | { kind: 'user'; text: string; next?: boolean }
+  /** 기다리던 메시지를 실제로 보냈다. 이 메시지의 작업이 지금 시작된다 */
+  | { kind: 'task_start'; text: string }
   | { kind: 'text_delta'; text: string }
   | { kind: 'assistant_text'; text: string }
   | { kind: 'tool_use'; toolUseId: string; name: string; input: unknown }
