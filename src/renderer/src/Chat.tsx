@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { refocusAfterClick, useRefocus } from './focus'
-import { MODE_CYCLE, MODE_LABEL, openConversations, STATUS_LABEL, type AgentOption, type AskQuestion, type EffortInfo, type EffortLevel, type GitBranch, type UsageInfo, type SlashCommandInfo, type AgentMode, type PermissionDecision, type PermissionExtra, type PermissionRequest, type Project, type BackgroundTask, type AgentProgress, type SubItem } from '@shared/types'
+import { ELICITATION_TOOL, MODE_CYCLE, MODE_LABEL, openConversations, REFUSAL_TOOL, STATUS_LABEL, type AgentOption, type AskQuestion, type EffortInfo, type EffortLevel, type GitBranch, type UsageInfo, type SlashCommandInfo, type AgentMode, type PermissionDecision, type PermissionExtra, type PermissionRequest, type Project, type BackgroundTask, type AgentProgress, type RefusalChoice, type SubItem } from '@shared/types'
 import { agentInfo, artifactsOf, describeBackground, emptyConversation, isAgentTool, relPath, runningAgents, STAGES, subActivity, summarizeInput, type ArtifactLink, type ConversationMap, type TaskInfo, type ToolItem, type TranscriptItem } from './state'
 import { PANEL_TITLE, ToolPanelView, type ToolPanel } from './panels'
 import { usePromptHistory } from './drafts'
@@ -726,6 +726,11 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
               req={permission.item}
               leaving={permission.leaving}
               onRespond={(d, extra) => permission.item && !permission.leaving && onRespond(project.id, conversationId, permission.item.requestId, d, extra)}
+              onEditPrompt={() => {
+                // 거절된 지시를 입력창으로 돌려줘 고쳐 보낼 수 있게
+                const last = state.items.findLast((i) => i.type === 'user')
+                if (last?.type === 'user') setDraft(last.text)
+              }}
             />
           )}
         </main>
@@ -806,6 +811,8 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
             rows={1}
             placeholder={busy ? '작업 중이에요 · 지금 입력하면 다음 차례로 보내요' : '메시지 입력 · / 명령 · @ 파일'}
             onChange={(e) => {
+              // 아직 세션이 없는 대화에 글을 치기 시작하면 CLI를 미리 띄워 첫 응답을 앞당긴다
+              if (!draft && e.target.value && !conv?.sessionId && state.items.length === 0) void window.api.prewarm()
               setDraft(e.target.value)
               setCaret(e.target.selectionStart)
             }}
@@ -1125,6 +1132,20 @@ function Item({ item, n, root, enter, subs, progress, onRun, onQueueEdit, onQueu
       )
     case 'divider':
       return <div className={`divider${e}`} role="separator">■ {item.text}</div>
+    case 'hook': {
+      const st = item.running ? 'RUNNING' : item.outcome === 'error' ? `ERROR${item.exitCode ? ` ${item.exitCode}` : ''}` : item.outcome === 'cancelled' ? 'CANCELLED' : 'OK'
+      return (
+        <details className={`hook ${item.outcome === 'error' ? 'error' : ''}${e}`}>
+          <summary>
+            <span className="hook-k">HOOK</span>
+            <span className="hook-ev">{item.event}</span>
+            <span className="hook-name" title={item.name}>{item.name}</span>
+            <span className={`tool-st ${item.running ? 'run' : ''}`}>{st}</span>
+          </summary>
+          {item.output ? <pre className="hook-out">{item.output}</pre> : <div className="hook-out muted">출력이 없어요</div>}
+        </details>
+      )
+    }
     case 'tool': {
       const status = item.result === undefined ? (item.elapsedS !== undefined ? `RUNNING ${item.elapsedS}s` : 'RUNNING') : item.isError ? 'ERROR' : 'DONE'
       // 하위 에이전트: 그 안에서 한 일을 펼쳐 볼 수 있게 한다
@@ -1249,7 +1270,7 @@ function ToolInput({ name, input }: { name: string; input: unknown }): React.JSX
   )
 }
 
-function PermissionBox({ req, leaving, onRespond }: { req: PermissionRequest; leaving: boolean; onRespond: (d: PermissionDecision, extra?: PermissionExtra) => void }): React.JSX.Element {
+function PermissionBox({ req, leaving, onRespond, onEditPrompt }: { req: PermissionRequest; leaving: boolean; onRespond: (d: PermissionDecision, extra?: PermissionExtra) => void; onEditPrompt?: () => void }): React.JSX.Element {
   const cls = `permission ${leaving ? 'leaving' : ''}`
   // 모델이 묻는 질문: 선택지를 고르거나 직접 적어 답한다
   if (req.toolName === 'AskUserQuestion' && Array.isArray(req.input.questions)) {
@@ -1257,6 +1278,10 @@ function PermissionBox({ req, leaving, onRespond }: { req: PermissionRequest; le
   }
   // 플랜 승인: 계획을 읽고 어떤 모드로 실행할지 고른다
   if (req.toolName === 'ExitPlanMode') return <PlanBox cls={cls} req={req} onRespond={onRespond} />
+  // MCP 서버의 입력 요청: 폼 값을 적거나 브라우저에서 인증하고 온다
+  if (req.toolName === ELICITATION_TOOL && req.elicitation) return <ElicitationBox cls={cls} req={req} onRespond={onRespond} />
+  // 모델이 답을 거절함: 다른 모델로 다시 시도할지 고른다
+  if (req.toolName === REFUSAL_TOOL && req.refusal) return <RefusalBox cls={cls} req={req} onRespond={onRespond} onEditPrompt={onEditPrompt} />
   return (
     <div className={cls} role="alert">
       <div className="permission-head">
@@ -1274,6 +1299,156 @@ function PermissionBox({ req, leaving, onRespond }: { req: PermissionRequest; le
         <button type="button" onClick={() => onRespond('deny')}>DENY</button>
       </div>
       {req.defaultToNo && <div className="muted">이 요청은 단축키로 허락할 수 없어요. 버튼을 직접 눌러 주세요.</div>}
+    </div>
+  )
+}
+
+/** MCP elicitation의 폼 필드 하나 (JSON Schema 일부) */
+interface FieldSchema {
+  type?: string | string[]
+  title?: string
+  description?: string
+  enum?: (string | number)[]
+  default?: unknown
+  format?: string
+}
+
+type FieldValue = string | number | boolean | string[]
+
+function fieldType(f: FieldSchema): string {
+  const t = Array.isArray(f.type) ? f.type.find((x) => x !== 'null') : f.type
+  return t ?? 'string'
+}
+
+/**
+ * MCP 서버가 사람에게 묻는 것. form: 스키마대로 값을 받아 accept와 함께 돌려준다. url: 브라우저에서 인증하고 DONE.
+ * DECLINE은 서버에 거절로, CANCEL은 그냥 닫은 것으로 전해진다
+ */
+function ElicitationBox({ cls, req, onRespond }: { cls: string; req: PermissionRequest; onRespond: (d: PermissionDecision, extra?: PermissionExtra) => void }): React.JSX.Element {
+  const info = req.elicitation!
+  const url = info.mode === 'url'
+  const schema = (info.schema ?? {}) as { properties?: Record<string, FieldSchema>; required?: string[] }
+  const fields = useMemo(() => Object.entries(schema.properties ?? {}), [schema.properties])
+  const required = schema.required ?? []
+  const [values, setValues] = useState<Record<string, FieldValue>>(() => {
+    const init: Record<string, FieldValue> = {}
+    for (const [key, f] of fields) {
+      if (f.default !== undefined) init[key] = f.default as FieldValue
+      else if (fieldType(f) === 'boolean') init[key] = false
+    }
+    return init
+  })
+  const set = (key: string, v: FieldValue): void => setValues((o) => ({ ...o, [key]: v }))
+  const missing = !url && required.some((k) => values[k] === undefined || values[k] === '')
+  const answer = (action: 'accept' | 'decline' | 'cancel'): void =>
+    onRespond(action === 'accept' ? 'allow' : 'deny', { elicitation: { action, content: action === 'accept' && !url ? values : undefined } })
+  return (
+    <div className={`${cls} elicit`} role="alert">
+      <div className="permission-head">
+        <span className="q" aria-hidden="true">?</span>
+        <div>
+          <div className="permission-title">{info.title ?? (url ? '브라우저에서 인증해 주세요' : '서버가 입력을 기다려요')}</div>
+          <div className="permission-desc">MCP · {info.serverName}{info.description ? ` · ${info.description}` : ''}</div>
+        </div>
+      </div>
+      {info.message && <div className="elicit-msg">{info.message}</div>}
+      {url && info.url && (
+        <a className="elicit-url" href={info.url} target="_blank" rel="noreferrer noopener" title={info.url}>
+          OPEN IN BROWSER
+        </a>
+      )}
+      {!url && fields.length > 0 && (
+        <div className="elicit-form">
+          {fields.map(([key, f]) => {
+            const t = fieldType(f)
+            const id = `elicit-${req.requestId}-${key}`
+            const label = (
+              <label htmlFor={id}>
+                {f.title ?? key}
+                {required.includes(key) && <i aria-label="필수"> *</i>}
+                {f.description && <span>{f.description}</span>}
+              </label>
+            )
+            if (f.enum) {
+              return (
+                <div className="elicit-field" key={key}>
+                  {label}
+                  <select id={id} value={String(values[key] ?? '')} onChange={(e) => set(key, t === 'number' || t === 'integer' ? Number(e.target.value) : e.target.value)}>
+                    <option value="">—</option>
+                    {f.enum.map((v) => (
+                      <option key={String(v)} value={String(v)}>{String(v)}</option>
+                    ))}
+                  </select>
+                </div>
+              )
+            }
+            if (t === 'boolean') {
+              return (
+                <div className="elicit-field check" key={key}>
+                  <input id={id} type="checkbox" checked={values[key] === true} onChange={(e) => set(key, e.target.checked)} />
+                  {label}
+                </div>
+              )
+            }
+            const numeric = t === 'number' || t === 'integer'
+            const inputType = numeric ? 'number' : f.format === 'email' ? 'email' : f.format === 'uri' ? 'url' : f.format === 'date' ? 'date' : 'text'
+            return (
+              <div className="elicit-field" key={key}>
+                {label}
+                <input
+                  id={id}
+                  type={inputType}
+                  step={t === 'integer' ? 1 : undefined}
+                  value={values[key] === undefined ? '' : String(values[key])}
+                  onChange={(e) => set(key, numeric ? (e.target.value === '' ? '' : Number(e.target.value)) : e.target.value)}
+                />
+              </div>
+            )
+          })}
+        </div>
+      )}
+      <div className="permission-actions">
+        <button type="button" onClick={() => answer('accept')} disabled={missing}>{url ? 'DONE' : 'SUBMIT'}</button>
+        <button type="button" onClick={() => answer('decline')}>DECLINE</button>
+        <button type="button" onClick={() => answer('cancel')}>CANCEL</button>
+      </div>
+    </div>
+  )
+}
+
+/** 'claude-opus-5-5' → 'OPUS 5.5'. 모르는 형식은 그대로 */
+function shortModel(id: string): string {
+  const m = /^claude-([a-z]+)-(\d+)(?:-(\d{1,2}))?/i.exec(id)
+  return m ? `${m[1].toUpperCase()} ${m[2]}${m[3] ? `.${m[3]}` : ''}` : id
+}
+
+/**
+ * 모델이 답을 거절했을 때 CLI가 묻는 것 (refusal_fallback_prompt): 다른 모델로 다시 시도 · 지시를 고쳐 보냄 · 그만.
+ * EDIT PROMPT는 거절된 지시를 입력창으로 돌려준다
+ */
+function RefusalBox({ cls, req, onRespond, onEditPrompt }: { cls: string; req: PermissionRequest; onRespond: (d: PermissionDecision, extra?: PermissionExtra) => void; onEditPrompt?: () => void }): React.JSX.Element {
+  const r = req.refusal!
+  const pick = (choice: RefusalChoice): void => {
+    if (choice === 'edit_prompt') onEditPrompt?.()
+    onRespond(choice === 'cancelled' ? 'deny' : 'allow', { dialog: choice })
+  }
+  return (
+    <div className={`${cls} refusal`} role="alert">
+      <div className="permission-head">
+        <span className="q" aria-hidden="true">!</span>
+        <div>
+          <div className="permission-title">{shortModel(r.originalModel)} 모델이 이 요청에 답하지 않았어요</div>
+          <div className="permission-desc">
+            {r.guidance ?? `${shortModel(r.fallbackModel)} 모델로 다시 시도하거나, 지시를 고쳐 다시 보낼 수 있어요`}
+            {r.category ? ` · ${r.category}` : ''}
+          </div>
+        </div>
+      </div>
+      <div className="permission-actions">
+        <button type="button" onClick={() => pick('retry_fallback')}>RETRY WITH {shortModel(r.fallbackModel)}</button>
+        <button type="button" onClick={() => pick('edit_prompt')}>EDIT PROMPT</button>
+        <button type="button" onClick={() => pick('cancelled')}>CANCEL</button>
+      </div>
     </div>
   )
 }

@@ -23,6 +23,8 @@ interface Props {
   onOpenProject: (index: number) => void
   onOpenConversation: (projectId: string, conversationId: string) => void
   onAddProject: () => void
+  /** 짧은 안내 (프로젝트 상한 등). PROJECTS 목록 아래에 잠깐 */
+  flash: { text: string; leaving: boolean } | null
   /** 닫기 확인을 기다리는 프로젝트 (× 또는 단축키 한 번) */
   armedProjectId: string | null
   onRemoveProjectRequest: (projectId: string) => void
@@ -102,6 +104,12 @@ export function Sidebar(props: Props): React.JSX.Element {
           </div>
         )
       })}
+
+      {props.flash && (
+        <div className={`side-flash ${props.flash.leaving ? 'leaving' : ''}`} role="status">
+          {props.flash.text}
+        </div>
+      )}
 
       <span className="side-spacer" />
 

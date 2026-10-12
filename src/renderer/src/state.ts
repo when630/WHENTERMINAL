@@ -1,4 +1,4 @@
-import { openConversations, type StoredTask, type AgentEvent, type AgentMode, type AgentProgress, type AgentStatus, type BackgroundTask, type HistoryItem, type SubItem, type ContextInfo, type PermissionRequest, type Project, type TaskInfo } from '@shared/types'
+import { openConversations, type StoredTask, type AgentEvent, type AgentMode, type AgentProgress, type AgentStatus, type BackgroundTask, type HistoryItem, type HookOutcome, type SubItem, type ContextInfo, type PermissionRequest, type Project, type TaskInfo } from '@shared/types'
 export type { TaskInfo }
 import { STATUS_PRIORITY } from '@shared/types'
 
@@ -12,6 +12,10 @@ export type TranscriptItem =
   | { type: 'tool'; toolUseId: string; name: string; input: unknown; result?: string; isError?: boolean; truncated?: boolean; elapsedS?: number; at: number }
   | { type: 'notice'; text: string; tone: 'info' | 'warn' | 'error'; mono?: boolean; at: number }
   | { type: 'divider'; text: string; at: number }
+  /** 설정의 훅이 도는 것 (살아 있는 세션에서만. 기록 파일에는 남지 않는다) */
+  | HookItem
+
+export type HookItem = { type: 'hook'; hookId: string; name: string; event: string; running: boolean; output?: string; outcome?: HookOutcome; exitCode?: number; at: number }
 
 /** 작업 진행 단계. SDK가 단계를 알려주지 않으므로 사용한 도구로 추정한다 (stageForTool) */
 export const STAGES = ['PLAN', 'EXPLORE', 'EDIT', 'VERIFY', 'REPORT'] as const
@@ -172,6 +176,29 @@ export function applyEvent(prev: ConversationState | undefined, event: AgentEven
     case 'retry':
       task({ activity: `RETRY ${event.attempt}/${event.max} · ${Math.round(event.delayMs / 1000)}s` })
       break
+    case 'hook': {
+      // 같은 훅 실행(hookId)은 한 줄에서 상태만 바뀐다. 시작 없이 끝만 올 수도 있다
+      const idx = s.items.findLastIndex((i) => i.type === 'hook' && i.hookId === event.hookId)
+      const prev = idx >= 0 ? (s.items[idx] as HookItem) : undefined
+      const item: HookItem = {
+        type: 'hook',
+        hookId: event.hookId,
+        name: event.name,
+        event: event.event,
+        running: event.phase !== 'done',
+        output: event.output ?? prev?.output,
+        outcome: event.outcome ?? prev?.outcome,
+        exitCode: event.exitCode ?? prev?.exitCode,
+        at: prev?.at ?? now,
+      }
+      if (prev) s.items[idx] = item
+      else {
+        finalizeStreaming()
+        s.items.push(item)
+      }
+      if (event.phase === 'start' && s.task) task({ activity: `HOOK ${event.event}` })
+      break
+    }
     case 'replace':
       s.items = fromHistory(event.items)
       s.restored = s.items.length

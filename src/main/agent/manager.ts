@@ -2,9 +2,9 @@ import { forkSession, getSessionMessages, listSessions, resolveSettings, type Qu
 import { randomUUID } from 'node:crypto'
 import { cwdOf, EFFORT_LEVELS, openConversations, type AccountStatus, type AgentOption, type EffortInfo, type EffortLevel, type McpServerInfo, type ModelOption, type AgentEventEnvelope, type PermissionExtra, type RewindResult, type RewindScope, type SessionOption, type SessionStatus, type TaskOutput, AgentMode, PermissionDecision, RateLimitInfo, SlashCommandInfo } from '@shared/types'
 import type { ProjectStore } from '../store'
-import { AgentSession } from './session'
+import { AgentSession, baseOptions, modelLabel, toContext } from './session'
 import { commandsFor, remember, withProbe } from './commands'
-import { modelLabel, toContext } from './session'
+import { SpareKeeper } from './spare'
 import { fullToolResult, readHistory } from './history'
 import { readTaskOutput } from './task-output'
 import { draftTitle, saveSessionTitle, sessionTitle } from './title'
@@ -16,6 +16,14 @@ export class AgentManager {
 
   /** 자리가 나길 기다리는 메시지 (OPEN-003). 들어온 순서대로 시작한다. id는 화면의 queuedId */
   private waiting: { id: string; projectId: string; conversationId: string; text: string }[] = []
+
+  /** 미리 띄워 둔 CLI 하나. 새 세션의 첫 메시지가 기동을 기다리지 않게 */
+  private readonly spare = new SpareKeeper((cb) => baseOptions(cb))
+
+  /** 홈·빈 대화에 글을 치기 시작했다: 새 세션이 곧 생길 수 있으니 CLI를 미리 띄운다 */
+  prewarm(): void {
+    this.spare.ensure()
+  }
 
   constructor(
     private readonly store: ProjectStore,
@@ -526,6 +534,7 @@ export class AgentManager {
   disposeAll(): void {
     for (const s of this.sessions.values()) s.dispose()
     this.sessions.clear()
+    this.spare.dispose()
   }
 
   private getOrCreate(projectId: string, conversationId: string): AgentSession {
@@ -541,6 +550,7 @@ export class AgentManager {
       model: conv.modelChoice && conv.modelChoice !== 'default' ? conv.modelChoice : undefined,
       effort: conv.effort,
       additionalDirectories: conv.additionalDirectories,
+      takeSpare: () => this.spare.take(),
       emit: (event) => {
         // 실행이 끝나 자리가 나면 다음 차례를 시작한다
         if (event.kind === 'status' && event.status !== 'running' && event.status !== 'waiting_approval' && event.status !== 'queued') {

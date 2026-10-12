@@ -701,6 +701,41 @@ kbd { display: inline-block; font: 500 11px/1 var(--mono); padding: 3px 5px; col
 .tool[open] > summary { background: var(--code-bg); color: var(--code-fg); }
 .tool-body { background: var(--code-bg); color: var(--code-fg); padding: 4px 28px 16px 92px; }
 .tool-body h5 { margin: 10px 0 4px; font: 600 10.5px/1 var(--disp); letter-spacing: 0.14em; color: var(--gray-2); }
+
+/* 설정의 훅이 도는 줄. 도구 줄보다 작게, 펼치면 출력 */
+.hook { border-top: var(--rule); interpolate-size: allow-keywords; }
+.hook::details-content { height: 0; overflow: clip; transition: height 0.38s var(--ease-out), content-visibility 0.38s allow-discrete; }
+.hook[open]::details-content { height: auto; }
+.hook + .hook, .tool + .hook, .hook + .tool { margin-top: 0; }
+.hook > summary { display: grid; grid-template-columns: 52px 92px minmax(0, 1fr) auto; align-items: baseline; gap: 12px; padding: 6px 28px; cursor: pointer; list-style: none; color: var(--gray); transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out); }
+.hook > summary::-webkit-details-marker { display: none; }
+.hook > summary:hover { background: var(--sel-bg); color: var(--sel-fg); }
+.hook-k { font: 600 10.5px/1 var(--disp); letter-spacing: 0.14em; }
+.hook-ev { font: 900 12px/1 var(--disp); letter-spacing: 0.04em; text-transform: uppercase; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hook-name { font: 12px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hook > summary .tool-st { font-size: 11.5px; }
+.hook.error > summary { color: var(--ink); }
+.hook.error > summary .tool-st { color: var(--signal); }
+.hook-out { margin: 0; padding: 8px 28px 12px 92px; background: var(--code-bg); color: var(--code-fg); font: 12px/1.5 var(--mono); white-space: pre-wrap; word-break: break-all; max-height: 240px; overflow: auto; }
+.hook-out.muted { color: var(--gray); font: 12px var(--font); }
+.hook.enter { animation: up 0.5s var(--ease-out) both; }
+
+/* MCP 입력 요청(elicitation)·거절 대화 상자: 승인창의 변형 */
+.elicit-msg { font-size: 14.5px; line-height: 1.5; font-weight: 600; white-space: pre-wrap; }
+.elicit-url { align-self: flex-start; padding: 9px 16px; border: 3px solid var(--on-signal); color: var(--on-signal); font: 900 15px/1 var(--disp); text-decoration: none; transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out); }
+.elicit-url:hover { background: var(--on-signal); color: var(--signal); }
+.elicit-form { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px 16px; }
+.elicit-field { display: flex; flex-direction: column; gap: 4px; }
+.elicit-field label { display: flex; flex-direction: column; gap: 2px; font: 900 13px/1.2 var(--disp); }
+.elicit-field label i { font-style: normal; }
+.elicit-field label span { font: 600 12px/1.4 var(--font); opacity: 0.85; }
+.elicit-field input:not([type='checkbox']), .elicit-field select { padding: 8px 10px; border: 2px solid var(--on-signal); background: rgba(0, 0, 0, 0.18); color: var(--on-signal); font: 600 14px var(--font); outline: none; }
+.elicit-field select option { color: var(--ink); background: var(--paper); }
+.elicit-field.check { flex-direction: row; align-items: center; gap: 10px; }
+.elicit-field.check input { width: 18px; height: 18px; accent-color: var(--on-signal); }
+
+/* 사이드바의 짧은 안내 (프로젝트 상한 등) */
+.side-flash { margin: 0; padding: 10px 18px; border-bottom: var(--rule); background: var(--sel-bg); color: var(--sel-fg); font: 600 12.5px/1.45 var(--font); box-shadow: inset 6px 0 0 var(--signal); animation: up 0.4s var(--ease-out) both; }
 pre { font: 12.5px/1.65 var(--mono); background: transparent; padding: 0; overflow-x: auto; max-height: 360px; margin: 0; white-space: pre-wrap; word-break: break-all; color: inherit; }
 .diff { display: flex; flex-direction: column; font: 12.5px/1.65 var(--mono); }
 .diff span { white-space: pre-wrap; word-break: break-all; }
