@@ -35,8 +35,25 @@ test('작업이 끝나도 백그라운드 셸·아티팩트가 있으면 사이�
 
   await emit(app, { kind: 'tool_use', toolUseId: 't2', name: 'Artifact', input: { file_path: 'C:/x/report.html', title: 'Weekly report' } })
   await emit(app, { kind: 'tool_result', toolUseId: 't2', content: 'Published https://claude.ai/code/artifact/abc-123', isError: false })
-  await expect(panel.locator('.sp-art a')).toHaveAttribute('href', 'https://claude.ai/code/artifact/abc-123')
-  await expect(panel.locator('.sp-art a span')).toHaveText('Weekly report')
+  await expect(panel.locator('.sp-art button span')).toHaveText('Weekly report')
+
+  // 줄을 누르면 대화 기록 자리에 앱 안 화면(webview, claude.ai 세션)으로 펼친다
+  await panel.locator('.sp-art button').click()
+  const art = win.locator('.td')
+  await expect(art.locator('.wt-title .kr')).toHaveText('ARTIFACT')
+  await expect(art.locator('webview')).toHaveAttribute('src', 'https://claude.ai/code/artifact/abc-123')
+  await expect(art.locator('webview')).toHaveAttribute('partition', 'persist:claude')
+  await expect(panel.locator('.sp-art li')).toHaveClass(/sel/)
+  // 손님 페이지가 붙었고 앱 기능(preload)은 없다
+  await expect.poll(() => app.evaluate(({ webContents }) => webContents.getAllWebContents().filter((w) => w.getType() === 'webview').length)).toBe(1)
+  // 손님 페이지에 포커스가 있어도 앱 단축키(Ctrl+B 돌아가기)는 앱으로 넘어온다
+  await app.evaluate(({ webContents }) => {
+    const guest = webContents.getAllWebContents().find((w) => w.getType() === 'webview')!
+    guest.focus()
+    guest.sendInputEvent({ type: 'keyDown', keyCode: 'B', modifiers: ['control'] })
+  })
+  await expect(art).toHaveCount(0)
+  await expect(win.locator('.transcript')).toBeVisible()
 
   // 셸이 끝나도 아티팩트가 남아 있으면 펼친 채로
   await emit(app, { kind: 'background', tasks: [] })

@@ -502,6 +502,8 @@ export function collectBackground(projects: Project[], convs: ConversationMap): 
 export interface ArtifactLink {
   url: string
   title: string
+  /** 이 대화에서 올린 횟수. 다시 올리면 늘어 앱 안 화면을 새로 고친다 */
+  rev: number
 }
 
 const ARTIFACT_URL = /https:\/\/claude\.ai\/(?:code\/)?artifact\/[\w-]+/
@@ -517,8 +519,9 @@ export function artifactsOf(items: TranscriptItem[]): ArtifactLink[] {
     const url = ARTIFACT_URL.exec(item.result)?.[0] ?? (typeof o.url === 'string' ? ARTIFACT_URL.exec(o.url)?.[0] : undefined)
     if (!url) continue
     const title = str(o.title) || baseName(str(o.file_path)) || url
+    const rev = (byUrl.get(url)?.rev ?? 0) + 1
     byUrl.delete(url)
-    byUrl.set(url, { url, title })
+    byUrl.set(url, { url, title, rev })
   }
   return [...byUrl.values()].reverse()
 }

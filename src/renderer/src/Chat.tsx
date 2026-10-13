@@ -790,7 +790,7 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
         />
       ) : panelShown.item.tool ? (
         <ToolPanelView
-          key={panelShown.item.tool.kind}
+          key={panelShown.item.tool.kind === 'artifact' ? `artifact:${panelShown.item.tool.url}` : panelShown.item.tool.kind}
           panel={panelShown.item.tool}
           projectId={project.id}
           conversationId={conversationId}
@@ -891,6 +891,8 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
               setDetail((cur) => (cur && sameTarget(cur, t) ? null : t))
             }}
             onTools={() => (tool?.kind === 'tools' ? setTool(null) : openTool({ kind: 'tools', since: state.task?.startedAt }))}
+            artifactOpen={tool?.kind === 'artifact' ? tool.url : null}
+            onArtifact={(a) => (tool?.kind === 'artifact' && tool.url === a.url ? setTool(null) : openTool({ kind: 'artifact', url: a.url, title: a.title }))}
             onStopTask={(taskId) => window.api.stopTask(project.id, conversationId, taskId)}
           />
         )}
@@ -1081,6 +1083,9 @@ interface PanelProps {
   /** 앞에서 기다리는 하위 에이전트 (결과가 아직 안 온 Agent 도구 호출) */
   agents: ToolItem[]
   artifacts: ArtifactLink[]
+  /** 앱 안에 펼친 아티팩트 */
+  artifactOpen: string | null
+  onArtifact: (a: ArtifactLink) => void
   items: TranscriptItem[]
   subs?: Record<string, SubItem[]>
   progress?: Record<string, AgentProgress>
@@ -1100,7 +1105,7 @@ const sameTarget = (a: DetailTarget, b: DetailTarget): boolean =>
  * 오른쪽 상태 패널: 실행 중이거나, 백그라운드 셸·모니터가 돌거나, 아티팩트가 연결돼 있으면 펼쳐진다.
  * 그 밖에는 끝난 뒤 마지막 단계를 잠깐 보여 주고 접힌다
  */
-function StatusPanel({ task, status, background, agents, artifacts, items, subs, progress, root, selected, onOpen, onTools, onStopTask }: PanelProps): React.JSX.Element {
+function StatusPanel({ task, status, background, agents, artifacts, artifactOpen, onArtifact, items, subs, progress, root, selected, onOpen, onTools, onStopTask }: PanelProps): React.JSX.Element {
   const now = useNow(1000)
   // 멈춤을 눌렀지만 아직 목록에서 빠지지 않은 작업
   const [stopping, setStopping] = useState<string[]>([])
@@ -1181,12 +1186,11 @@ function StatusPanel({ task, status, background, agents, artifacts, items, subs,
           </div>
           <PresenceList items={artifacts} keyOf={(a) => a.url} className="sp-art">
             {(a, leaving) => (
-              <li className={leaving ? 'leaving' : ''}>
-                {/* 메인의 setWindowOpenHandler가 외부 브라우저로 연다 */}
-                <a href={a.url} target="_blank" rel="noreferrer" title={`${a.title}\n${a.url}`}>
+              <li className={`${artifactOpen === a.url ? 'sel' : ''} ${leaving ? 'leaving' : ''}`}>
+                <button type="button" onClick={() => onArtifact(a)} title={`${a.title}\n${a.url}\n누르면 앱 안에서 봐요`}>
                   <span>{a.title}</span>
-                  <i aria-hidden="true">↗</i>
-                </a>
+                  <i aria-hidden="true">→</i>
+                </button>
               </li>
             )}
           </PresenceList>

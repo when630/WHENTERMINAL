@@ -10,6 +10,7 @@ import { exportMarkdown } from './agent/history'
 import { loginCommand } from './executable'
 import { branchOf, createWorktree, discardWorktree, isGitRepo, mergeWorktree, worktreeChanges } from './worktree'
 import { listChildren, searchFiles } from './files'
+import { setupArtifactView } from './artifact-view'
 import { fetchRemoteImages, handleFileScheme, registerFileScheme, viewFile } from './file-view'
 import { SettingsStore } from './settings'
 import { applyBadge, Notifier } from './notify'
@@ -101,6 +102,7 @@ if (!app.requestSingleInstanceLock()) {
 
 function bootstrap(): void {
   handleFileScheme()
+  setupArtifactView(() => win, toggleFullscreen)
   const store = new ProjectStore()
   settingsStore = new SettingsStore()
   ipcMain.on(IPC.getSettingsSync, (e) => {
@@ -555,6 +557,8 @@ function createWindow(): void {
       preload: join(__dirname, '../preload/index.cjs'),
       sandbox: true,
       contextIsolation: true,
+      // 아티팩트를 앱 안에서 본다 (설정은 artifact-view.ts의 will-attach-webview가 강제)
+      webviewTag: true,
     },
   })
   win.once('ready-to-show', () => {

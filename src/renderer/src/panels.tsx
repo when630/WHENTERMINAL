@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import type { DidFailLoadEvent, DidNavigateEvent, WebviewTag } from 'electron'
 import { Presence, PresenceList } from './motion'
 import type { AgentOption, McpServerInfo, MemoryFile, PermissionRuleSource, PermissionsInfo, RewindScope, SessionOption, SessionStatus } from '@shared/types'
-import { MODE_LABEL } from '@shared/types'
-import { relPath as relPathOf, summarizeInput as summarizeInputOf, type TranscriptItem } from './state'
+import { ARTIFACT_PARTITION, MODE_LABEL } from '@shared/types'
+import { artifactsOf, relPath as relPathOf, summarizeInput as summarizeInputOf, type TranscriptItem } from './state'
 import { elapsed, useNow } from './time'
 
 // 대화 기록 자리에 펼치는 명령 화면들 (CLI의 /rewind /resume /mcp /agents /permissions /hooks /memory /status).
@@ -18,6 +19,8 @@ export type ToolPanel =
   | { kind: 'status' }
   /** 이번 작업에서 부른 도구 목록. since는 작업 시작 시각 (없으면 전부) */
   | { kind: 'tools'; since?: number }
+  /** Artifact 도구로 올린 claude.ai 페이지를 앱 안에서 (상태 패널의 ARTIFACTS 줄) */
+  | { kind: 'artifact'; url: string; title: string }
 
 export const PANEL_TITLE: Record<ToolPanel['kind'], string> = {
   rewind: 'REWIND',
@@ -28,6 +31,7 @@ export const PANEL_TITLE: Record<ToolPanel['kind'], string> = {
   memory: 'MEMORY',
   status: 'STATUS',
   tools: 'TOOLS',
+  artifact: 'ARTIFACT',
 }
 
 interface Props {
@@ -70,6 +74,8 @@ export function ToolPanelView(props: Props): React.JSX.Element {
       return <MemoryPanel {...props} />
     case 'status':
       return <StatusPanel {...props} />
+    case 'artifact':
+      return <ArtifactPanel {...props} url={panel.url} title={panel.title} />
   }
 }
 
@@ -95,6 +101,71 @@ function Frame({ title, sub, actions, message, onClose, children }: { title: str
 }
 
 type Msg = { ok: boolean; text: string } | null
+
+// ── 아티팩트 (claude.ai 페이지를 webview로) ──
+// 로그인은 앱 안에서 한 번(persist:claude 세션에 남는다). 설정 강제·새 창·키 넘기기는 메인 artifact-view.ts
+
+function ArtifactPanel({ url, title, items, onClose }: Props & { url: string; title: string }): React.JSX.Element {
+  const ref = useRef<WebviewTag>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [at, setAt] = useState(url)
+  // 같은 링크로 다시 올리면 새로 고친다
+  const rev = artifactsOf(items).find((a) => a.url === url)?.rev ?? 0
+  const firstRev = useRef(rev)
+  useEffect(() => {
+    if (rev === firstRev.current) return
+    firstRev.current = rev
+    ref.current?.reload()
+  }, [rev])
+  useEffect(() => {
+    const view = ref.current
+    if (!view) return
+    const start = (): void => {
+      setLoading(true)
+      setError(null)
+    }
+    const stop = (): void => setLoading(false)
+    const fail = (e: DidFailLoadEvent): void => {
+      // -3(ABORTED)은 다른 페이지로 넘어가며 끊긴 것
+      if (e.isMainFrame && e.errorCode !== -3) setError(`${e.errorDescription || 'LOAD FAILED'} (${e.errorCode})`)
+    }
+    const nav = (e: DidNavigateEvent): void => setAt(e.url)
+    view.addEventListener('did-start-loading', start)
+    view.addEventListener('did-stop-loading', stop)
+    view.addEventListener('did-fail-load', fail)
+    view.addEventListener('did-navigate', nav)
+    return () => {
+      view.removeEventListener('did-start-loading', start)
+      view.removeEventListener('did-stop-loading', stop)
+      view.removeEventListener('did-fail-load', fail)
+      view.removeEventListener('did-navigate', nav)
+    }
+  }, [])
+  // 아티팩트를 벗어났으면(로그인 화면 등) 그 주소를 보인다
+  const off = at.split(/[?#]/)[0] !== url
+  return (
+    <Frame
+      title="ARTIFACT"
+      sub={off ? `${title} · ${at}` : title}
+      message={error ? { ok: false, text: `페이지를 열지 못했어요: ${error}` } : null}
+      actions={
+        <>
+          <button type="button" className="btn ghost" disabled={loading} onClick={() => ref.current?.reload()} title="페이지를 다시 읽어요">
+            {loading ? 'LOADING' : 'RELOAD'}
+          </button>
+          <button type="button" className="btn ghost" onClick={() => window.open(url)} title="기본 브라우저로 열어요">
+            OPEN IN BROWSER
+          </button>
+        </>
+      }
+      onClose={onClose}
+    >
+      {/* allowpopups: 구글 로그인 팝업. 어디로 열지는 메인 artifact-view.ts가 거른다 */}
+      <webview ref={ref as React.Ref<HTMLWebViewElement>} className="art-view" src={url} partition={ARTIFACT_PARTITION} {...({ allowpopups: 'true' } as object)} />
+    </Frame>
+  )
+}
 
 // ── 도구 목록 (상태 패널·보고서의 TOOLS 수를 누르면) ──
 

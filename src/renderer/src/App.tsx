@@ -91,6 +91,10 @@ export function App(): React.JSX.Element {
         // 터미널 알림: 대화를 연 뒤 그 터미널을 펼친다
         if (terminal) requestAnimationFrame(() => showTerminal(conversationId, terminal))
       }),
+      // 아티팩트 화면(webview)에 포커스가 있을 때 누른 앱 단축키: 앱 창에서 누른 것처럼 키 처리로
+      window.api.onGuestKey((k) => {
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: k.key, code: k.code, ctrlKey: k.ctrl, altKey: k.alt, shiftKey: k.shift, metaKey: k.meta, bubbles: true, cancelable: true }))
+      }),
     ]
     return () => offs.forEach((off) => off())
   }, [])
