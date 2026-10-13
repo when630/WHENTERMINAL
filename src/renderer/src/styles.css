@@ -27,6 +27,9 @@
   --code-fg: var(--paper);
   --line: var(--ink);
   --shadow: rgba(0, 0, 0, 0.1);
+  /* 문법 색 (파일 보기의 원문). 빨강(신호색)은 쓰지 않는다 */
+  --syn-keyword: #5b2bb5; --syn-string: #1c7a3a; --syn-number: #a35200; --syn-comment: #8a8a8a;
+  --syn-type: #1557b0; --syn-fn: #0a0a0a; --syn-attr: #7a4a00;
   --rule: 2px solid var(--line);
   --rule-thick: 6px solid var(--line);
   --font: 'Pretendard Variable', Pretendard, 'Apple SD Gothic Neo', 'Malgun Gothic', system-ui, sans-serif;
@@ -50,22 +53,26 @@
 
 /* ── 색 테마 (설정에서 고름). 구조는 같고 색 토큰만 바뀐다. 포스터 외에는 대비·채도를 낮춰 오래 봐도 덜 피곤하게 ── */
 :root[data-theme='paper'] {
+  --syn-keyword: #6b3f8f; --syn-string: #4f6b2a; --syn-number: #9a5a1c; --syn-comment: #9a9083; --syn-type: #2f5f86; --syn-fn: #2e2a25; --syn-attr: #7d5530;
   --paper: #f4efe6; --ink: #2e2a25; --signal: #c4553a; --signal-ink: #9c3f29; --on-signal: #fbf6ee;
   --wash: #ebe5da; --wash-2: #e0d9cc; --gray: #6f675d; --gray-2: #a39a8e; --gray-3: #cdc5b8;
   --line: #4a443c; --code-bg: #2e2a25; --code-fg: #ece6da; --shadow: rgba(60, 40, 20, 0.12);
 }
 :root[data-theme='sage'] {
+  --syn-keyword: #5d4a8a; --syn-string: #3f6b3a; --syn-number: #93602a; --syn-comment: #8d978e; --syn-type: #2f5d73; --syn-fn: #273029; --syn-attr: #6f5a34;
   --paper: #e8ece4; --ink: #273029; --signal: #b6533c; --signal-ink: #8f3f2c; --on-signal: #f5f7f2;
   --wash: #dfe4da; --wash-2: #d3d9cd; --gray: #5f6a61; --gray-2: #96a097; --gray-3: #c2cabf;
   --line: #3f4a42; --code-bg: #273029; --code-fg: #e3e8df; --shadow: rgba(20, 40, 25, 0.12);
 }
 :root[data-theme='sumi'] {
+  --syn-keyword: #c9a0e8; --syn-string: #a8c98a; --syn-number: #e6b673; --syn-comment: #7a756c; --syn-type: #8fbce6; --syn-fn: #ebe6dc; --syn-attr: #d9b38c;
   --paper: #1f1e1c; --ink: #d8d2c6; --signal: #e07a5f; --signal-ink: #f0a08a; --on-signal: #1f1e1c;
   --wash: #2a2926; --wash-2: #34322e; --gray: #9a948a; --gray-2: #6e6a63; --gray-3: #47443f;
   --sel-bg: #3a3833; --sel-fg: #ebe6dc; --line: #6b665e; --code-bg: #161513; --code-fg: #d8d2c6;
   --shadow: rgba(0, 0, 0, 0.45); color-scheme: dark;
 }
 :root[data-theme='night'] {
+  --syn-keyword: #c3a6f0; --syn-string: #9fd08f; --syn-number: #f0bd7a; --syn-comment: #6b7684; --syn-type: #82b8f0; --syn-fn: #e1e7ee; --syn-attr: #d6b48e;
   --paper: #1a1e24; --ink: #c5cdd6; --signal: #e5806b; --signal-ink: #f2a593; --on-signal: #1a1e24;
   --wash: #232831; --wash-2: #2c323c; --gray: #8c96a3; --gray-2: #616b78; --gray-3: #3d4550;
   --sel-bg: #2f3642; --sel-fg: #e1e7ee; --line: #5a6473; --code-bg: #12151a; --code-fg: #c5cdd6;
@@ -870,6 +877,48 @@ pre { font: 12.5px/1.65 var(--mono); background: transparent; padding: 0; overfl
 .search-snippet { font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
 .search-snippet mark { background: var(--sel-bg); color: var(--sel-fg); padding: 0 1px; }
 .search-hit.on .search-snippet mark { background: var(--sel-fg); color: var(--sel-bg); }
+/* 파일 찾기·읽기 (FilesOverlay): 왼쪽 목록, 오른쪽 미리 보기 */
+.overlay.files { padding: 40px 24px; }
+.files-sheet { width: min(1280px, 100%); height: 100%; outline: none; }
+.files-crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; min-height: 34px; padding: 6px 20px; border-bottom: var(--rule); font-size: 12.5px; }
+.files-crumbs .crumb { padding: 2px 4px; border: 0; background: transparent; color: var(--ink); font: inherit; cursor: pointer; transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out); }
+.files-crumbs .crumb:hover { background: var(--sel-bg); color: var(--sel-fg); }
+.files-crumbs .crumb-sep { padding: 0 2px; color: var(--gray-2); }
+.files-main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(240px, 340px) 1fr; }
+.files-list { border-right: var(--rule-thick); }
+.files-row { display: flex; flex-direction: column; gap: 2px; padding: 7px 20px; border-bottom: 1px solid color-mix(in srgb, var(--line) 14%, transparent); cursor: pointer; transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out); }
+.files-row.on { background: var(--sel-bg); color: var(--sel-fg); }
+.files-row.up { color: var(--gray); }
+.files-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.files-row.dir .files-name { font-weight: 700; }
+.files-dir { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--gray); }
+.files-row.on .files-dir { color: inherit; opacity: 0.7; }
+.files-view { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.fv-head { display: flex; align-items: center; gap: 10px; padding: 8px 12px 8px 20px; border-bottom: var(--rule); }
+.fv-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; font-weight: 700; }
+.fv-meta { flex: none; font-size: 11px; color: var(--gray); letter-spacing: 0.06em; }
+.fv-body { position: relative; flex: 1; min-height: 0; overflow: auto; }
+.fv-empty { padding: 28px; color: var(--gray); font-weight: 600; }
+.fv-empty.error { color: var(--signal-ink); }
+/* md 읽기 모드: 읽기 좋은 폭과 글자 */
+.fv-read { padding: 28px 40px 48px; }
+.fv-read .md { max-width: 760px; margin: 0 auto; font-size: 16px; line-height: 1.8; }
+.fv-read .md h1 { font-size: 32px; } .fv-read .md h2 { font-size: 25px; } .fv-read .md h3 { font-size: 20px; }
+.fv-read .md img { max-width: 100%; }
+.fv-read .md hr { border: 0; border-top: var(--rule); margin: 2em 0; }
+.fv-read .md blockquote { margin: 0 0 1em; padding: 2px 0 2px 16px; border-left: 4px solid var(--line); color: var(--gray); }
+/* html 미리 보기: 페이지는 흰 바탕을 기대하므로 테마와 상관없이 흰색 */
+.fv-frame { display: block; width: 100%; height: 100%; border: 0; background: #fff; }
+.fv-image { display: flex; align-items: center; justify-content: center; min-height: 100%; padding: 24px; background: repeating-conic-gradient(var(--wash) 0 25%, transparent 0 50%) 0 0 / 16px 16px; }
+.fv-image img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.fv-body.code { overflow: hidden; }
+.fv-cm { height: 100%; }
+/* 미리 보기 위의 안내 줄 (외부 그림·큰 문서) */
+.fv-bar { display: flex; align-items: center; gap: 12px; padding: 6px 12px 6px 20px; border-bottom: var(--rule); font-size: 12.5px; }
+.fv-bar > span { flex: 1; min-width: 0; }
+/* 막아 둔 외부 그림의 자리 */
+.md-remote { display: inline-block; max-width: 100%; padding: 6px 10px; border: 1px dashed var(--gray-2); color: var(--gray); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
+@media (max-width: 760px) { .files-main { grid-template-columns: 1fr; grid-template-rows: 40% 1fr; } .files-list { border-right: 0; border-bottom: var(--rule-thick); } }
 @media (prefers-reduced-motion: reduce) { .overlay, .overlay-sheet { animation: none; } }
 
 /* 마우스를 올리면 나오는 설명 (tooltip.tsx가 title을 옮겨 보여준다) */

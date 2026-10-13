@@ -482,6 +482,7 @@ export function App(): React.JSX.Element {
     if (is('terminalClose')) return take(() => chatPanelRef.current?.closeTerminal())
     if (is('cycleEffort')) return take(() => chatPanelRef.current?.cycleEffort())
     if (is('rewind')) return take(() => chatPanelRef.current?.rewind())
+    if (is('files')) return take(() => chatPanelRef.current?.files())
     // 새 탭: 탭 줄의 +와 같다 (설정에 따라 작업 공간을 만든다)
     if (is('newConversation')) {
       return take(() => void window.api.addConversation(projectId).then((c) => setView({ screen: 'chat', projectId, conversationId: c.id })))

@@ -90,3 +90,19 @@ export async function searchFiles(cwd: string, query: string, limit = 50): Promi
     .slice(0, limit)
     .map((x) => x.f)
 }
+
+/**
+ * 폴더 하나의 바로 아래 항목 (파일 보기에서 폴더를 둘러볼 때). dir은 ''(맨 위) 또는 'src/main/'처럼 끝에 /.
+ * 폴더(끝에 /)가 먼저, 그 안에서는 이름순
+ */
+export async function listChildren(cwd: string, dir: string): Promise<string[]> {
+  const prefix = dir && !dir.endsWith('/') ? `${dir}/` : dir
+  return (await listAll(cwd))
+    .filter((f) => {
+      if (!f.startsWith(prefix) || f === prefix) return false
+      const rest = f.slice(prefix.length)
+      const slash = rest.indexOf('/')
+      return slash < 0 || slash === rest.length - 1
+    })
+    .sort((a, b) => Number(b.endsWith('/')) - Number(a.endsWith('/')) || a.localeCompare(b, undefined, { sensitivity: 'base', numeric: true }))
+}
