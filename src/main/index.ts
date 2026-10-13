@@ -239,6 +239,10 @@ function bootstrap(): void {
     projectsChanged()
     return project
   })
+  ipcMain.handle(IPC.moveProject, (_e, projectId: string, to: number) => {
+    store.moveProject(projectId, to)
+    projectsChanged()
+  })
   ipcMain.handle(IPC.removeProject, (_e, projectId: string) => {
     for (const c of store.get(projectId)?.conversations ?? []) terminals.closeConversation(c.id)
     manager.disposeProject(projectId)

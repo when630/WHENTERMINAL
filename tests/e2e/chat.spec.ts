@@ -114,3 +114,19 @@ test('프로젝트 닫기: 사이드바 × 두 번, 대화창 Ctrl+Shift+W 두 �
   await expect.poll(names).toEqual([])
   expect(existsSync(env.path('alpha'))).toBe(true)
 })
+
+test('다른 화면에 갔다가 돌아오면 써 둔 글의 끝에 커서가 있다', async ({ win }) => {
+  await win.keyboard.press('Alt+KeyA')
+  const input = win.locator('#composer-input')
+  await input.click()
+  await win.keyboard.type('써 둔 글이에요')
+  await win.keyboard.press('Control+KeyH')
+  await expect(input).toHaveCount(0)
+  await win.keyboard.press('Alt+KeyA')
+  await expect(input).toBeFocused()
+  await expect(input).toHaveValue('써 둔 글이에요')
+  expect(await input.evaluate((el: HTMLTextAreaElement) => [el.selectionStart, el.selectionEnd, el.value.length])).toEqual([8, 8, 8])
+  // 바로 이어서 치면 끝에 붙는다
+  await win.keyboard.type('!')
+  await expect(input).toHaveValue('써 둔 글이에요!')
+})

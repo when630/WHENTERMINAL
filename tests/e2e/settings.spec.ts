@@ -18,6 +18,7 @@ test('색 테마를 바꾸면 바로 적용되고 저장된다', async ({ win, e
 
 test('단축키: 글자만은 거부, 바꾼 키는 저장·표시·동작한다', async ({ win, env }) => {
   await win.keyboard.press('Control+Comma')
+  await win.locator('.set-tab', { hasText: 'SHORTCUTS' }).click()
   const row = win.locator('.krow').filter({ has: win.locator('.krow-label').getByText('Clear (twice)', { exact: true }) })
   await row.locator('.kbind').click()
   await win.keyboard.press('KeyL')
@@ -36,6 +37,7 @@ test('단축키: 글자만은 거부, 바꾼 키는 저장·표시·동작한다
 
 test('겹치는 키는 충돌로 표시하고 Backspace로 기본값', async ({ win }) => {
   await win.keyboard.press('Control+Comma')
+  await win.locator('.set-tab', { hasText: 'SHORTCUTS' }).click()
   const compact = win.locator('.krow').filter({ has: win.locator('.krow-label').getByText('Compact', { exact: true }) })
   await compact.locator('.kbind').click()
   await win.keyboard.press('Control+KeyL')
@@ -43,4 +45,28 @@ test('겹치는 키는 충돌로 표시하고 Backspace로 기본값', async ({ 
   await compact.locator('.kbind').click()
   await win.keyboard.press('Backspace')
   await expect(compact.locator('.kbind')).toHaveAttribute('aria-label', /Ctrl\+Shift\+L/)
+})
+
+test('설정은 GENERAL·SHORTCUTS 탭으로 나뉘고, 키로 넘기며, 마지막 탭을 기억한다', async ({ win }) => {
+  await win.keyboard.press('Control+Comma')
+  const general = win.locator('.set-tab', { hasText: 'GENERAL' })
+  const keys = win.locator('.set-tab', { hasText: 'SHORTCUTS' })
+  // 처음은 일반 설정: 테마는 보이고 단축키 칸은 없다
+  await expect(general).toHaveAttribute('aria-selected', 'true')
+  await expect(win.locator('.theme').first()).toBeVisible()
+  await expect(win.locator('#set-panel-keys')).toHaveCount(0)
+  // 다음 탭 키(기본 Ctrl+Tab)로 넘어간다
+  await win.keyboard.press('Control+Tab')
+  await expect(keys).toHaveAttribute('aria-selected', 'true')
+  await expect(win.locator('#set-panel-keys .kbind').first()).toBeVisible()
+  await win.screenshot({ path: test.info().outputPath('keys.png') })
+  await expect(win.locator('#set-panel-general')).toHaveCount(0)
+  // 닫았다 다시 열면 마지막 탭 그대로
+  await win.keyboard.press('Escape')
+  await expect(win.locator('.settings')).toHaveCount(0)
+  await win.keyboard.press('Control+Comma')
+  await expect(keys).toHaveAttribute('aria-selected', 'true')
+  await general.click()
+  await expect(win.locator('.theme').first()).toBeVisible()
+  await win.screenshot({ path: test.info().outputPath('general.png') })
 })

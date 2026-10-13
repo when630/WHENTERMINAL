@@ -7,7 +7,7 @@ import { IS_MAC } from './keys'
 export type HelpContext = 'home' | 'chat' | 'settings'
 
 interface Group {
-  id: ActionScope | 'terminal' | 'commands' | 'files'
+  id: ActionScope | 'terminal' | 'commands' | 'files' | 'input'
   title: string
   note: string
   /** 키맵의 동작 (바꾼 키가 그대로 보인다) */
@@ -23,7 +23,7 @@ const GROUPS: Group[] = [
     id: 'anywhere',
     title: 'ANYWHERE',
     note: '어느 화면에서든',
-    actions: ['help', 'search', 'goHome', 'dispatch', 'quickAsk', 'away', 'openSettings'],
+    actions: ['help', 'search', 'goHome', 'dispatch', 'quickAsk', 'away', 'openSettings', 'projectUp', 'projectDown'],
     fixed: [
       ['alt A S D F G H J K L', 'Go to project 1–9'],
       ['ctrl 1…9', 'Go to project (alt.)'],
@@ -46,15 +46,23 @@ const GROUPS: Group[] = [
     title: 'CHAT',
     note: '대화창. 입력 중에도 Ctrl 조합은 동작해요',
     actions: ['newConversation', 'nextConversation', 'prevConversation', 'renameConversation', 'closeConversation', 'closeProject', 'clear', 'compact', 'rewind', 'cycleMode', 'cycleEffort', 'interrupt', 'panelNext', 'panelPrev', 'panelBack', 'stopTask'],
+  },
+  {
+    id: 'input',
+    title: 'INPUT',
+    note: '대화창 입력창에서',
     fixed: [
-      ['esc', 'Interrupt'],
-      ['ctrl C', 'Interrupt (no text selected)'],
       ['enter', 'Send'],
       ['shift enter', 'New line'],
+      ['esc', 'Interrupt'],
+      ['ctrl C', 'Interrupt (no text selected)'],
       ['tab', 'Accept suggested prompt (empty input)'],
       ['up', 'Previous prompt (empty input or first line)'],
       ['down', 'Next prompt'],
       ['1…4', 'Pick an option (question box)'],
+      ['/', 'All commands and skills'],
+      ['@', 'Insert a file, folder or @agent-name'],
+      ['!', 'Run a shell command; Claude reads the output and replies'],
     ],
   },
   {
@@ -115,9 +123,6 @@ const GROUPS: Group[] = [
       ['/tag', 'Tag this chat (filter on home)'],
       ['/memory', 'Open CLAUDE.md files'],
       ['/status', 'Account · session · login'],
-      ['/', 'All commands and skills'],
-      ['@', 'Insert a file, folder or @agent-name'],
-      ['!', 'Run a shell command in the terminal; the output goes to Claude'],
     ],
   },
 ]
@@ -128,7 +133,9 @@ const FIRST: Record<HelpContext, Group['id']> = { home: 'home', chat: 'chat', se
 export function HelpOverlay({ context, hotkey, leaving, onClose }: { context: HelpContext; hotkey: string | null; leaving: boolean; onClose: () => void }): React.JSX.Element {
   const km = useKeymap()
   const first = FIRST[context]
-  const groups = [...GROUPS.filter((g) => g.id === first), ...GROUPS.filter((g) => g.id !== first)]
+  // 지금 화면의 묶음이 맨 앞. 대화창이면 입력창 키(INPUT)가 바로 뒤
+  const lead = first === 'chat' ? ['chat', 'input'] : [first]
+  const groups = [...lead.flatMap((id) => GROUPS.filter((g) => g.id === id)), ...GROUPS.filter((g) => !lead.includes(g.id))]
   return (
     <div className={`help ${leaving ? 'leaving' : ''}`} role="dialog" aria-modal="true" aria-labelledby="help-title" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="help-sheet">
@@ -156,10 +163,16 @@ export function HelpOverlay({ context, hotkey, leaving, onClose }: { context: He
                 ))}
                 {g.fixed?.map(([k, text]) => (
                   <div key={k} className="fixed">
-                    <dt>{k.startsWith('/') || k === '@' ? <kbd className="mono">{k}</kbd> : <Keys keys={k} />}</dt>
+                    <dt>{k.startsWith('/') || k === '@' || k === '!' ? <kbd className="mono">{k}</kbd> : <Keys keys={k} />}</dt>
                     <dd>{text}</dd>
                   </div>
                 ))}
+                {g.id === 'anywhere' && (
+                  <div className="fixed">
+                    <dt><Keys keys={km.nextConversation} /></dt>
+                    <dd>Settings: switch tab</dd>
+                  </div>
+                )}
                 {g.id === 'anywhere' && hotkey && (
                   <div className="fixed">
                     <dt><Keys keys={hotkey} /></dt>

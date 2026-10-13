@@ -618,6 +618,7 @@ export const IPC = {
   listProjects: 'projects:list',
   addProject: 'projects:add',
   removeProject: 'projects:remove',
+  moveProject: 'projects:move',
   addConversation: 'conversations:add',
   closeConversation: 'conversations:close',
   renameConversation: 'conversations:rename',
@@ -720,9 +721,11 @@ export interface WhenTerminalApi {
   approveDenied(projectId: string, conversationId: string, calls: DeniedCall[]): Promise<void>
   /** CLI 명령(/goal …)을 세션에 보낸다. 작업으로 치지 않아 상태·보고서가 바뀌지 않는다. 실행 중이면 오류 이벤트 */
   command(projectId: string, conversationId: string, text: string): Promise<void>
-  /** 입력창 `!명령`으로 터미널에서 돌린 명령의 출력을 세션에 덧붙인다 (모델 턴 없이, 다음 메시지에 합쳐진다). 화면에는 출력 항목으로 */
+  /** 입력창 `!명령`으로 터미널에서 돌린 명령의 출력을 보낸다. 화면에는 출력 항목으로 보이고 모델이 이어 답한다 */
   shellOutput(projectId: string, conversationId: string, result: ShellResult): Promise<void>
   removeProject(projectId: string): Promise<void>
+  /** 프로젝트를 목록의 to번째(0부터) 자리로 옮긴다 */
+  moveProject(projectId: string, to: number): Promise<void>
   addConversation(projectId: string): Promise<Conversation>
   /** 대화(세션)를 닫는다. 실행 중이면 중단한다. 마지막 대화였다면 빈 대화를 새로 만든다. 남은 대화 중 옮겨 갈 ID를 돌려준다 */
   closeConversation(projectId: string, conversationId: string): Promise<string>

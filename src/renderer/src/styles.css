@@ -152,6 +152,14 @@ kbd { display: inline-block; font: 500 11px/1 var(--mono); padding: 3px 5px; col
 .side-add { border: 0; background: none; padding: 0; font: 700 12px var(--font); letter-spacing: 0; }
 .side-add:hover { color: var(--signal); }
 .side-row { display: flex; align-items: stretch; border-bottom: var(--rule); }
+/* 끌어다 놓아 순서 바꾸기: 끄는 줄은 흐리게, 놓을 자리에 굵은 선 */
+.side-project { position: relative; }
+.side-project.dragging { opacity: 0.35; }
+.side-project.drop-before::before, .side-project.drop-after::after { content: ''; position: absolute; left: 0; right: 0; height: 4px; background: var(--ink); z-index: 2; pointer-events: none; }
+.side-project.drop-before::before { top: -2px; }
+.side-project.drop-after::after { bottom: -2px; }
+.side-row[draggable='true'] { cursor: grab; }
+.side-row[draggable='true']:active { cursor: grabbing; }
 .side-row > .nav { flex: 1; min-width: 0; border-bottom: 0; }
 /* 프로젝트 닫기: 올려 두면 오른쪽 ×가 보이고, 한 번 누르면 빨갛게 넓어져 확인을 받는다 */
 .side-x { flex: none; width: 30px; padding: 0; border: 0; overflow: hidden; background: transparent; color: var(--ink); font: 900 18px/1 var(--disp); white-space: nowrap; opacity: 0; transition: opacity var(--t-fast) var(--ease-out), width var(--t-med) var(--ease-out), background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out); }
@@ -361,6 +369,14 @@ kbd { display: inline-block; font: 500 11px/1 var(--mono); padding: 3px 5px; col
 .upd-actions { display: inline-flex; gap: 6px; }
 .settings-title { font: 56px/0.85 var(--kr); letter-spacing: -0.02em; }
 .settings-body { flex: 1; min-height: 0; overflow-y: auto; padding-bottom: 40px; }
+/* 설정 탭: 일반 설정 / 단축키. 고른 탭은 반전 면 */
+.set-tabs { flex: none; display: flex; border-bottom: var(--rule); }
+.set-tab { display: inline-flex; align-items: baseline; gap: 10px; padding: 12px 28px; border: 0; border-right: var(--rule); background: var(--paper); color: var(--ink); font: 900 14px/1 var(--disp); letter-spacing: 0.1em; cursor: pointer; transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out); }
+.set-tab:hover { background: var(--wash); }
+.set-tab.on { background: var(--sel-bg); color: var(--sel-fg); }
+.set-tab-n { font-size: 11px; font-weight: 600; letter-spacing: 0.04em; opacity: 0.7; }
+.set-panel { animation: up var(--t-med) var(--ease-out) both; }
+@media (prefers-reduced-motion: reduce) { .set-panel { animation: none; } }
 .set-sec + .set-sec { border-top: var(--rule-thick); }
 .set-sec .col-h { justify-content: space-between; align-items: center; }
 .set-reset { font-family: var(--font); }
@@ -829,45 +845,28 @@ pre { font: 12.5px/1.65 var(--mono); background: transparent; padding: 0; overfl
 .tab-edit { width: 180px; min-width: 0; padding: 4px 6px; border: 0; outline: 2px solid currentColor; outline-offset: 0; background: transparent; color: inherit; font: inherit; }
 
 /* 단축키 도움말 (Ctrl+/). 하단 안내 줄 대신 모아서 보여 준다 */
-.help { position: fixed; inset: 0; z-index: 50; display: flex; justify-content: center; align-items: flex-start; padding: 12px 16px; overflow-y: auto; background: color-mix(in srgb, var(--paper) 72%, transparent); animation: help-fade var(--t-med) var(--ease-out) both; }
+/* 도움말: 화면을 다 채우고 여유 있게. 묶음은 단 경계에서 쪼개지 않는다(읽다가 끊기지 않게). 구분선 없이 여백으로 */
+.help { position: fixed; inset: 0; z-index: 50; display: flex; justify-content: center; align-items: stretch; padding: 16px; background: color-mix(in srgb, var(--paper) 72%, transparent); animation: help-fade var(--t-med) var(--ease-out) both; }
 /* 닫힐 때는 연 움직임을 그대로 뒤집는다. 키프레임 이름이 같으면 끝난 애니메이션의 방향만 바뀌어 바로 사라지므로 따로 둔다 */
-.help.leaving { animation: help-out var(--t-med) var(--ease-io) both !important; }
 @keyframes help-fade { from { opacity: 0; } }
 @keyframes help-out { to { opacity: 0; } }
 @keyframes sheet-out { to { opacity: 0; transform: translateY(10px); } }
-/* 스크롤 없이 한눈에: 창 폭을 거의 다 쓰고 묶음을 여러 단으로 흘려 채운다 */
-.help-sheet { width: min(2200px, 100%); background: var(--paper); color: var(--ink); border: var(--rule-thick); box-shadow: 0 24px 48px var(--shadow); animation: up 0.36s var(--ease-out) both; }
+.help.leaving { animation: help-out var(--t-med) var(--ease-io) both !important; }
+.help-sheet { display: flex; flex-direction: column; width: min(2400px, 100%); min-height: 0; overflow-y: auto; background: var(--paper); color: var(--ink); border: var(--rule-thick); box-shadow: 0 24px 48px var(--shadow); animation: up 0.36s var(--ease-out) both; }
 .help.leaving .help-sheet { animation: sheet-out var(--t-med) var(--ease-io) both; }
-.help-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 20px; padding: 8px 18px; border-bottom: var(--rule-thick); }
-.help-head h1 { margin: 0; font-size: 30px; line-height: 1; }
-.help-head p { flex: 1; margin: 0; min-width: 0; color: var(--gray); font-size: 13.5px; font-weight: 600; }
-.help-grid { column-width: 232px; column-gap: 0; }
-/* 긴 묶음(CHAT 등)은 단 경계에서 줄 단위로 이어진다: 단 높이가 고르게 맞춰져 스크롤이 줄어든다. 제목·설명은 첫 줄과 떨어지지 않는다 */
-.help-group { display: block; padding: 10px 16px 10px; min-width: 0; box-decoration-break: clone; }
-.help-group h2 { margin-bottom: 4px !important; break-after: avoid; }
-.help-group .help-note { break-after: avoid; break-inside: avoid; }
-.help-group dl > div { break-inside: avoid; }
-/* 단 끝에 한 줄만 남거나 다음 단에 한 줄만 넘어가지 않게 */
-.help-group dl > div:nth-child(2), .help-group dl > div:last-child { break-before: avoid; }
-/* 넓은 창은 자리가 넉넉하다: 묶음을 통째로 두고 단을 넓혀 읽기 쉽게 */
-@media (min-width: 1500px) {
-  .help-grid { column-width: 280px; }
-  .help-group { break-inside: avoid; }
-}
-/* 낮은 화면(1366×768 등): 여백과 줄 간격을 한 단계 더 줄여 한 화면에 */
-@media (max-height: 800px) {
-  .help { padding: 6px 12px; }
-  .help-head { padding: 6px 16px; }
-  .help-group { padding: 8px 14px; }
-  .help-group dl > div { padding: 2px 0; }
-}
-.help-group h2 { display: flex; align-items: center; gap: 10px; margin: 0; font: 900 15px/1 var(--disp); letter-spacing: 0.1em; }
-.help-here { padding: 3px 6px; background: var(--sel-bg); color: var(--sel-fg); font: 900 10.5px/1 var(--disp); letter-spacing: 0.08em; }
-.help-note { margin: 0 0 4px; color: var(--gray); font-size: 12px; line-height: 1.4; }
+.help-head { position: sticky; top: 0; z-index: 1; background: var(--paper); flex: none; display: flex; align-items: center; flex-wrap: wrap; gap: 8px 24px; padding: 14px 32px; border-bottom: var(--rule-thick); }
+.help-head h1 { margin: 0; font-size: 36px; line-height: 1; }
+.help-head p { flex: 1; margin: 0; min-width: 0; color: var(--gray); font-size: 14px; font-weight: 600; }
+/* 단 상자는 내용 높이 그대로 (높이를 정하면 넘친 묶음이 오른쪽으로 단을 더 만든다). 넘치면 시트가 스크롤되고 머리줄은 위에 붙어 있다 */
+.help-grid { flex: none; padding: 24px 32px 4px; column-width: 252px; column-gap: 40px; }
+.help-group { break-inside: avoid; margin: 0 0 28px; min-width: 0; }
+.help-group h2 { display: flex; align-items: center; gap: 10px; margin: 0 0 6px; font: 900 17px/1 var(--disp); letter-spacing: 0.1em; }
+.help-here { padding: 3px 7px; background: var(--sel-bg); color: var(--sel-fg); font: 900 11px/1 var(--disp); letter-spacing: 0.08em; }
+.help-note { margin: 0 0 12px; color: var(--gray); font-size: 12.5px; line-height: 1.5; }
 .help-group dl { margin: 0; }
-.help-group dl > div { display: grid; grid-template-columns: minmax(84px, auto) minmax(0, 1fr); align-items: baseline; gap: 8px; padding: 3px 0; line-height: 1.3; }
+.help-group dl > div { display: grid; grid-template-columns: minmax(104px, auto) minmax(0, 1fr); align-items: baseline; gap: 12px; padding: 4px 0; line-height: 1.4; }
 .help-group dt { font-weight: 700; white-space: nowrap; }
-.help-group dd { margin: 0; font-size: 12.5px; min-width: 0; }
+.help-group dd { margin: 0; font-size: 13.5px; min-width: 0; }
 .help-group .fixed dd { color: var(--gray); }
 .help-group kbd.mono { font-size: 12.5px; }
 @media (prefers-reduced-motion: reduce) { .help, .help-sheet { animation: none; } }

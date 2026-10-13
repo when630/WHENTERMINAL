@@ -12,6 +12,7 @@ const api: WhenTerminalApi = {
   listProjects: () => ipcRenderer.invoke(IPC.listProjects),
   addProject: () => ipcRenderer.invoke(IPC.addProject),
   removeProject: (projectId) => ipcRenderer.invoke(IPC.removeProject, projectId),
+  moveProject: (projectId, to) => ipcRenderer.invoke(IPC.moveProject, projectId, to),
   addConversation: (projectId) => ipcRenderer.invoke(IPC.addConversation, projectId),
   closeConversation: (projectId, conversationId) => ipcRenderer.invoke(IPC.closeConversation, projectId, conversationId),
   reopenConversation: (projectId, conversationId) => ipcRenderer.invoke(IPC.reopenConversation, projectId, conversationId),

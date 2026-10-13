@@ -1,5 +1,5 @@
-import { useRef, useState } from 'react'
-import { Odo, Presence, Roll, usePresence, usePresenceList, useSpin } from './motion'
+import { useLayoutEffect, useRef, useState } from 'react'
+import { EASE, Odo, Presence, reducedMotion, Roll, usePresence, usePresenceList, useSpin } from './motion'
 import { openConversations, type Project, type UpdateState, type UsageInfo, type UsageWindow } from '@shared/types'
 import { STATUS_LABEL } from '@shared/types'
 import { formatReset, limitLevel } from '@shared/usage'
@@ -28,6 +28,8 @@ interface Props {
   /** 닫기 확인을 기다리는 프로젝트 (× 또는 단축키 한 번) */
   armedProjectId: string | null
   onRemoveProjectRequest: (projectId: string) => void
+  /** 끌어다 놓아 프로젝트 순서를 바꾼다 (to는 옮긴 뒤의 자리, 0부터) */
+  onMoveProject: (projectId: string, to: number) => void
   /** 자리 비움(AWAY) 모드 */
   away: boolean
   onToggleAway: () => void
@@ -39,6 +41,39 @@ export function Sidebar(props: Props): React.JSX.Element {
   const rows = usePresenceList(projects, (p) => p.id)
   const seen = useRef<Set<string> | null>(null)
   if (!seen.current) seen.current = new Set(projects.map((p) => p.id))
+
+  // 끌어다 놓기: 끄는 프로젝트와 놓을 자리(그 줄의 위·아래)
+  const [drag, setDrag] = useState<string | null>(null)
+  const [over, setOver] = useState<{ id: string; after: boolean } | null>(null)
+  const drop = (): void => {
+    if (drag && over && drag !== over.id) {
+      const from = projects.findIndex((p) => p.id === drag)
+      let to = projects.findIndex((p) => p.id === over.id) + (over.after ? 1 : 0)
+      if (from < to) to -= 1
+      if (from >= 0 && to !== from) props.onMoveProject(drag, to)
+    }
+    setDrag(null)
+    setOver(null)
+  }
+
+  // 순서가 바뀌면 줄이 이전 자리에서 새 자리로 미끄러진다 (하위 대화를 펼쳐 높이가 바뀌는 것은 움직이지 않는다)
+  const rowEls = useRef(new Map<string, HTMLElement>())
+  const tops = useRef(new Map<string, number>())
+  const order = useRef('')
+  useLayoutEffect(() => {
+    const key = projects.map((p) => p.id).join('|')
+    const reorder = order.current !== '' && order.current !== key && order.current.split('|').length === projects.length
+    order.current = key
+    for (const [id, el] of rowEls.current) {
+      const top = el.offsetTop
+      const prev = tops.current.get(id)
+      tops.current.set(id, top)
+      if (reorder && prev !== undefined && prev !== top && !reducedMotion()) {
+        el.animate([{ transform: `translateY(${prev - top}px)` }, { transform: 'none' }], { duration: 320, easing: EASE })
+      }
+    }
+  })
+
   return (
     <nav className="side" aria-label="프로젝트">
       <div className="brand">
@@ -67,9 +102,41 @@ export function Sidebar(props: Props): React.JSX.Element {
         const progress = live?.task ? Math.min(1, (live.task.stage + 0.5) / STAGES.length) : 0
         const threadsOpen = on && openConversations(p).length > 1
         return (
-          <div key={p.id} className={`side-project ${props.armedProjectId === p.id ? 'armed' : ''} ${leaving ? 'leaving' : seen.current!.has(p.id) ? '' : 'enter'}`}>
-            <div className="side-row">
-            <button type="button" className={`nav ${on ? 'on' : ''}`} onClick={() => props.onOpenProject(i)} title={p.path}>
+          <div
+            key={p.id}
+            ref={(el) => {
+              if (el) rowEls.current.set(p.id, el)
+              else rowEls.current.delete(p.id)
+            }}
+            className={`side-project ${props.armedProjectId === p.id ? 'armed' : ''} ${leaving ? 'leaving' : seen.current!.has(p.id) ? '' : 'enter'} ${drag === p.id ? 'dragging' : ''} ${over?.id === p.id && drag !== p.id ? (over.after ? 'drop-after' : 'drop-before') : ''}`}
+            onDragOver={(e) => {
+              if (!drag) return
+              e.preventDefault()
+              e.dataTransfer.dropEffect = 'move'
+              const r = e.currentTarget.getBoundingClientRect()
+              const after = e.clientY > r.top + Math.min(r.height, 40) / 2
+              if (over?.id !== p.id || over.after !== after) setOver({ id: p.id, after })
+            }}
+            onDrop={(e) => {
+              if (!drag) return
+              e.preventDefault()
+              drop()
+            }}
+          >
+            <div
+              className="side-row"
+              draggable={!leaving}
+              onDragStart={(e) => {
+                e.dataTransfer.effectAllowed = 'move'
+                e.dataTransfer.setData('text/x-wt-project', p.id)
+                setDrag(p.id)
+              }}
+              onDragEnd={() => {
+                setDrag(null)
+                setOver(null)
+              }}
+            >
+            <button type="button" className={`nav ${on ? 'on' : ''}`} onClick={() => props.onOpenProject(i)} title={`${p.path} · 끌어서 순서를 바꿀 수 있어요`}>
               <span className="nav-key">{HOME_ROW[i] ?? ''}</span>
               <span className="nav-name">{p.name}</span>
               <Presence show={unread > 0} className="pill"><Odo n={unread} /></Presence>

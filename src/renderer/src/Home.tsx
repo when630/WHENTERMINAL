@@ -192,7 +192,6 @@ function Dispatch(props: Props & { scrollRef: RefObject<HTMLDivElement | null> }
     >
       <div className="ask-row">
         <span className="ask-prompt" aria-hidden="true">&gt;</span>
-        <AttachButton onClick={attach.pick} />
         <label htmlFor="ask-input" className="sr-only">맡길 작업</label>
         <input
           id="ask-input"
@@ -218,6 +217,8 @@ function Dispatch(props: Props & { scrollRef: RefObject<HTMLDivElement | null> }
             }
           }}
         />
+        {/* 첨부는 입력칸 오른쪽 (보내기 앞) */}
+        <AttachButton onClick={attach.pick} />
         <button type="submit" className="btn-pri" disabled={!text.trim()}>
           SEND
         </button>
