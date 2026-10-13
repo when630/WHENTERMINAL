@@ -176,6 +176,8 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
       if (!el) return
       const group = el.parentElement?.closest<HTMLDetailsElement>('details.tgroup')
       if (group) group.open = true
+      // 접힌 긴 답이면 펼친다
+      el.dispatchEvent(new Event(UNFOLD_EVENT))
       el.scrollIntoView({ block: 'center' })
       el.classList.add('hit')
       setTimeout(() => el.classList.remove('hit'), 2400)
@@ -1246,11 +1248,7 @@ export function Item({ item, idx: di, n, root, enter, subs, progress, onRun, onQ
         </div>
       )
     case 'assistant':
-      return (
-        <div className={`msg assistant ${item.streaming ? 'streaming' : ''}${e}`} data-idx={di}>
-          <Markdown text={item.text} />
-        </div>
-      )
+      return <Answer text={item.text} streaming={item.streaming} enter={e} idx={di} />
     case 'thinking':
       return <Thinking text={item.text} streaming={item.streaming} enter={enter} idx={di} />
     case 'notice':
@@ -1351,6 +1349,64 @@ function ToolOutput({ toolUseId, text, truncated, onExpand }: { toolUseId: strin
 }
 
 /** 모델의 생각 (요약본). 접힌 채로 첫 줄만, 생각하는 동안은 맥동 */
+/** 답이 이보다 높으면(px) 접는다. 조금 넘는 건 접지 않는다. 접으면 FOLD_TO만큼 보인다 */
+const FOLD_AT = 900
+const FOLD_TO = 480
+/** 검색 점프가 접힌 답을 가리키면 이 이벤트로 펼친다 */
+const UNFOLD_EVENT = 'wt-unfold'
+
+/** 모델의 답. 길면 앞부분만 보이고 SHOW ALL로 펼친다. 쓰는 중에는 접지 않는다 */
+function Answer({ text, streaming, enter, idx }: { text: string; streaming: boolean; enter: string; idx?: number }): React.JSX.Element {
+  const outer = useRef<HTMLDivElement>(null)
+  const inner = useRef<HTMLDivElement>(null)
+  const [height, setHeight] = useState(0)
+  const [open, setOpen] = useState(false)
+  // 이 화면에서 다 쓴 답은 펼친 높이에서 접히며 줄어든다. 처음부터 다 쓴 답(되살린 기록)은 접힌 채로 나온다
+  const [settled, setSettled] = useState(!streaming)
+  useLayoutEffect(() => {
+    const el = inner.current
+    if (!el) return
+    setHeight(el.offsetHeight)
+    const ro = new ResizeObserver(() => setHeight(el.offsetHeight))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+  useEffect(() => {
+    const el = outer.current
+    if (!el) return
+    const unfold = (): void => setOpen(true)
+    el.addEventListener(UNFOLD_EVENT, unfold)
+    return () => el.removeEventListener(UNFOLD_EVENT, unfold)
+  }, [])
+  const tall = !streaming && height > FOLD_AT
+  const folded = tall && !open
+  // 펼친 높이로 한 번 그린 뒤 다음 프레임에 접는다 (max-height가 none에서 바로 바뀌면 움직이지 않는다)
+  useEffect(() => {
+    if (!tall || settled) return
+    let id = requestAnimationFrame(() => (id = requestAnimationFrame(() => setSettled(true))))
+    return () => cancelAnimationFrame(id)
+  }, [tall, settled])
+  const toggle = (): void => {
+    // 접으면 답의 머리가 화면 위로 사라질 수 있다: 머리로 돌아간다
+    if (open) outer.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+    setOpen(!open)
+  }
+  return (
+    <div ref={outer} className={`msg assistant ${streaming ? 'streaming' : ''}${folded && settled ? ' folded' : ''}${enter}`} data-idx={idx}>
+      <div className="answer-body" style={tall ? { maxHeight: folded && settled ? FOLD_TO : height } : undefined}>
+        <div ref={inner}>
+          <Markdown text={text} />
+        </div>
+      </div>
+      {tall && (
+        <button type="button" className="answer-fold" aria-expanded={open} onClick={toggle} title={open ? '긴 답을 다시 접어요' : '접힌 답을 모두 펼쳐요'}>
+          {open ? 'FOLD' : `SHOW ALL · ${text.split('\n').length} LINES`}
+        </button>
+      )}
+    </div>
+  )
+}
+
 function Thinking({ text, streaming, enter, idx }: { text: string; streaming: boolean; enter: boolean; idx?: number }): React.JSX.Element {
   const first = text.trim().split('\n').find(Boolean) ?? ''
   return (
