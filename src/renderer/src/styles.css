@@ -693,6 +693,12 @@ kbd { display: inline-block; font: 500 11px/1 var(--mono); padding: 3px 5px; col
 .md th { border-bottom: var(--rule); font-weight: 800; }
 .msg.assistant { white-space: normal; }
 .msg.assistant { padding: 14px max(28px, calc(100% - 860px)) 14px 28px; font-size: 15.5px; line-height: 1.75; }
+.msg.assistant .answer-body { position: relative; overflow: clip; transition: max-height var(--t-slow) var(--ease-out); }
+/* 접힌 답: 끝을 종이색으로 흐려 아래로 이어짐을 보인다 */
+.msg.assistant .answer-body::after { content: ''; position: absolute; inset: auto 0 0; height: 120px; background: linear-gradient(to bottom, transparent, var(--paper)); opacity: 0; pointer-events: none; transition: opacity var(--t-med) var(--ease-out); }
+.msg.assistant.folded .answer-body::after { opacity: 1; }
+.answer-fold { display: block; margin-top: 10px; padding: 6px 10px; border: var(--rule); background: transparent; color: var(--ink); font: 600 11px/1 var(--disp); letter-spacing: 0.14em; cursor: pointer; transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out); }
+.answer-fold:hover { background: var(--sel-bg); color: var(--sel-fg); }
 .msg.assistant.streaming .md > :last-child::after { content: ''; display: inline-block; width: 11px; height: 19px; margin-left: 4px; vertical-align: -3px; background: var(--signal); animation: blink var(--pulse-urgent) var(--ease-io) infinite; }
 .msg.notice { padding: 8px 28px; font: 12.5px var(--mono); color: var(--gray); }
 .msg.notice.error { margin: 6px 0; padding: 10px 28px; background: var(--sel-bg); color: var(--sel-fg); box-shadow: inset 8px 0 0 var(--signal); }

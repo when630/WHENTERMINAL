@@ -50,6 +50,8 @@ export interface TaskInfo {
   files: string[]
   finishedAt?: number
   durationMs?: number
+  /** CLI가 다시 연 턴으로 이어 간 작업: 앞 턴들의 걸린 시간 합. result의 시간은 그 턴 것뿐이라 더한다 */
+  priorDurationMs?: number
   costUsd?: number
   summary?: string
   unread: boolean
@@ -528,7 +530,8 @@ export interface TaskOutput {
 
 /** 메인 → 렌더러 이벤트 (대화 단위) */
 export type AgentEvent =
-  | { kind: 'status'; status: AgentStatus }
+  /** quiet: 확인 요청에 답하고 전 상태로 돌아간 것. 작업이 새로 끝난 게 아니라 보고서·알림을 건드리지 않는다 */
+  | { kind: 'status'; status: AgentStatus; quiet?: boolean }
   /** next: 화면에만 보이고 작업은 차례가 오면(task_start) 시작한다. queuedId는 기다리는 동안 고치거나 뺄 때의 손잡이, uuid는 되감기 기준점 */
   | { kind: 'user'; text: string; next?: boolean; queuedId?: string; uuid?: string }
   /** 기다리던 메시지를 실제로 보냈다. 이 메시지의 작업이 지금 시작된다 */

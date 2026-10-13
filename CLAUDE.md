@@ -8,7 +8,7 @@
 - `npm run typecheck` — main/preload(`tsconfig.node.json`) + renderer(`tsconfig.web.json`)
 - `npm run build` — `out/`으로 빌드
 - `npm run smoke` — SDK 단발 호출로 구독 인증 확인 (`apiKeySource=none`이면 구독)
-- `npm run test:e2e` — 실제 앱(out/)을 Playwright로 띄워 조작하는 테스트. 모델을 부르지 않음 (설정·단축키·/·@ 메뉴·첨부·대화 닫기·보고함·작업 공간). 기능을 바꾸면 이걸 먼저 돌릴 것
+- `npm run test:e2e` — 실제 앱(out/)을 Playwright로 띄워 조작하는 테스트. 모델을 부르지 않음 (설정·단축키·/·@ 메뉴·첨부·대화 닫기·보고함·작업 공간·긴 답 접기). 기능을 바꾸면 이걸 먼저 돌릴 것
 - `npm run test:e2e:live` — 모델을 실제로 부르는 `@live` 테스트 (승인 흐름·대기열·컴팩트·클리어). 구독 사용량을 조금 씀
   - 테스트마다 임시 사용자 데이터·프로젝트를 만든다(`tests/e2e/fixtures.ts`의 `seed`). 실제 데이터는 건드리지 않음
   - 파일 3개를 함께 돌린다(`workers: 3`, 파일 안의 테스트는 차례로). 일부만: `npm run test:e2e -- terminal`(파일 이름), `-- -g "검색"`(테스트 이름)
@@ -37,6 +37,9 @@
   - 프로젝트 닫기: 사이드바 ×를 두 번 또는 대화창에서 `Ctrl+Shift+W` 두 번(`confirmTwice`의 `project`). 세션을 모두 끝내고 대기열에서 빼고, 변경 없는 작업 공간만 정리한 뒤 목록에서 뺀다(`disposeProject` → `store.removeProject`). 프로젝트 폴더는 건드리지 않는다
   - 탭 제목(`agent/title.ts`, `Conversation.titleSource`): 새 세션의 첫 메시지(처음·클리어 뒤)를 보내면 규칙으로 다듬은 임시 제목(`draft`), 응답이 끝날 때마다 CLI가 세션마다 만드는 제목(`getSessionInfo().summary`, 첫 메시지와 같으면 아직 없음)으로 바꾼다(`auto`, 5초 뒤 한 번 더). 직접 붙인 이름(`custom`: 탭 더블클릭·`/rename 이름`·`Ctrl+Shift+E`)은 자동으로 바꾸지 않고 `renameSession`으로 세션 기록에도 남긴다. 모델을 따로 부르지 않는다
   - 백그라운드 작업 알림(`<task-notification>`)은 CLI가 세션 기록의 사용자 메시지 자리에 넣지만 SDK로는 `system/task_notification`만 온다. 실시간은 그 이벤트, 되살린 기록은 `taskNote()`로 같은 한 줄 구분선(`TASK DONE · …`, `taskLine`)
+  - 사람이 보내지 않은 턴(백그라운드 작업 알림·Monitor·예약된 깨우기 등으로 CLI가 스스로 모델을 부름): 끝난 상태에서 최상위 `message_start`·답이 오면 `resumeTurn`이 다시 `running`으로, result에서 끝난다. 렌더러는 끝난 작업을 다시 열어(`RESUMED`) 같은 작업으로 이어 간다(걸린 시간은 `priorDurationMs`에 더한다). 자리를 기다리는(`queued`) 중에 온 이런 턴의 result는 상태·보고서를 바꾸지 않는다
+  - 턴 밖의 확인 요청(메인 턴이 끝난 뒤 백그라운드 에이전트가 묻는 것): `ask`가 그 전 상태를 `askFrom`에 두고, 답하면 RUNNING 대신 그 상태로 `quiet` status(보고서·DONE 알림 없음). 이때는 턴이 열린 게 아니라(`turnOpen`) 새 메시지를 들고 있지 않고 보내며, Esc는 요청만 거절한다
+  - 턴 끝 안전망: `subscriptionEnv`가 `CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS=1`을 넣어 `session_state_changed`를 받는다. `idle`이면 Esc의 `interrupted` 표시를 지우고, result 없이 RUNNING에 남았으면(보낸 메시지·`!` 출력·확인 대기가 없을 때만) DONE으로. 세션을 바꿀 때(`switchSession`)도 `interrupted`·`quietCommand`·`shellInflight`를 비운다
   - 클리어는 세션을 닫고 `sessionId`를 지운다. 다음 메시지가 새 세션을 만든다. 실수 방지로 `Ctrl+L`을 3초 안에 두 번 눌러야 한다
 - `src/main/store.ts` — `userData/projects.json`에 프로젝트·대화·SDK 세션 ID 저장 (재시작 시 resume)
 - `src/renderer/src/App.tsx` — 전역 키 처리 (기획서 7장 단축키 맵)
@@ -93,6 +96,7 @@
 - 포커스는 늘 글 입력칸으로(`focus.ts`): 대화창은 입력창, 홈은 작업 지시창. 화면을 옮기거나(마운트), 버튼을 누르거나(`refocusAfterClick`, 루트 onClick), 패널·세부 화면·덮개(도움말·검색, `requestRefocus`)를 닫으면 돌아온다. 예외는 다른 입력칸·터미널(`[data-terminal]`)·펼친 목록(`[data-keys-own]`)·글을 긁는 중·확인 요청(Y/A/N)·홈 보고서 상세(O/E/I)가 떠 있을 때. 홈에서 카드를 키로 고르려면 Esc로 입력칸에서 나온다
 - 툴팁: 요소에는 그냥 `title`을 쓴다. `tooltip.tsx`(`useTooltips`, App 루트)가 처음 올릴 때 `data-tip`으로 옮겨 OS 풍선 대신 `.tip`으로 보여준다. 누른 요소·`aria-expanded=true`인 요소에는 띄우지 않는다
 - 펼치는 목록(모델·effort·셸): `.model-list` + `ListHead`(ModelPicker.tsx) 머리줄 + `.model-row` 한 줄 행. 누른 칸 아래(셸은 위)에 붙어서 내려오고(`drop-in`), 긴 설명은 말줄임 + title
+- 긴 답 접기(`Answer`, Chat.tsx): 다 쓴 답이 900px(`FOLD_AT`)보다 높으면 480px만 보이고 끝을 흐린 뒤 `SHOW ALL · n LINES`로 펼친다. 쓰는 중에는 접지 않고, 다 쓰면 펼친 높이로 한 번 그린 뒤(`settled`) 줄어들며 접힌다(되살린 기록은 처음부터 접힌 채). 검색 점프가 접힌 답을 가리키면 `UNFOLD_EVENT`로 펼친다
 - 답변은 `Markdown.tsx`(react-markdown, 원시 HTML 비허용). 링크는 메인이 외부 브라우저로만 연다 (`setWindowOpenHandler`, `will-navigate` 차단)
 - 알림(`main/notify.ts`): 확인 요청·작업 끝남·터미널 명령 끝남·한도 경고(설정 `notify`의 approval·done·terminal·usage). 누르면 `IPC.navigate`로 그 대화로. 배지는 렌더러가 `setBadge`로 보낸다
 - 대기열(OPEN-003): `AgentManager.send`가 `maxConcurrent`를 넘으면 `queued`로 두고, 상태가 끝나면 `drain()`. 확인 대기도 자리를 차지한다
@@ -119,7 +123,7 @@
 - 단축키 안내는 도움말(`HelpOverlay.tsx`, `help` 기본 `Ctrl+/`, 사이드바 HELP 줄)과 설정의 키맵에만 모은다. 범위별 묶음(지금 화면이 맨 앞)·고정 키·입력창 명령. 새 동작을 ACTIONS에 넣으면 `GROUPS`에도 넣을 것. 열려 있는 동안 App은 Esc(닫기) 말고 키를 받지 않는다
   - 화면 안의 버튼·라벨·메뉴 머리줄·전광판·확인 문구·툴팁(`title`)에는 단축키를 적지 않는다. 프로젝트의 홈 열 글자(A S D…)는 프로젝트 표시라 그대로 둔다
 - 단축키 표시(도움말·설정)는 `<Keys keys="ctrl shift L" />`(`KeyHint.tsx`)를 쓴다. macOS는 수정·특수 키를 아이콘으로, Windows는 글자와 +로(`Ctrl+Shift+L`) 표시한다. 파일 이름이 `keys.ts`와 대소문자만 다르면 macOS에서 충돌하므로 `KeyHint`
-- `!명령`(Chat.tsx `submit`): 아래 터미널의 지금 셸에서 바로 실행(`execInTerminal`, xterm `term.input`으로 실제 키 입력과 같은 길이라 끝남 감지가 그대로)하고, 프롬프트로 돌아오면 명령 줄 다음부터의 출력(끝 400줄·32KB)을 `IPC.shellOutput` → 세션 `appendShell`로 보낸다. CLI의 bash 모드 꼴(`<bash-input>`·`<bash-stdout>`)로 `shouldQuery: false` 메시지를 큐에 넣어 모델 턴 없이 기록에 붙이고 다음 메시지에 합쳐지게 한다. CLI가 바쁘거나 떠 있지 않으면 `pendingShell`에 두었다가 다음 `dispatch` 앞에 흘려보낸다. 화면·되살린 기록(`shellNote`)에는 `! 명령` 출력 항목(`notice` mono). 서랍은 펼치되 포커스는 입력창에. 빈 `!`는 터미널 열기. 질문 창은 터미널이 없어 제외. 이렇게 붙인 메시지보다 앞으로는 되감기 포크가 거절된다(SDK)
+- `!명령`(Chat.tsx `submit`): 아래 터미널의 지금 셸에서 바로 실행(`execInTerminal`, xterm `term.input`으로 실제 키 입력과 같은 길이라 끝남 감지가 그대로)하고, 프롬프트로 돌아오면 명령 줄 다음부터의 출력(끝 400줄·32KB)을 `IPC.shellOutput` → 세션 `appendShell`로 보낸다. CLI의 bash 모드 꼴(`<bash-input>`·`<bash-stdout>`)로 `shouldQuery: false` 메시지를 큐에 넣어 모델 턴 없이 기록에 붙이고 다음 메시지에 합쳐지게 한다. CLI가 바쁘거나 떠 있지 않으면 `pendingShell`에 두었다가 다음 `dispatch` 앞에 흘려보낸다. CLI는 이 메시지마다 모델 턴 없는 빈 result(`num_turns` 0)를 따로 돌려주므로 `shellInflight` 개수만큼 걸러 낸다(안 거르면 바로 뒤 메시지의 작업이 시작하자마자 DONE이 된다). claim이 거절되면 같이 다시 보낸다. 화면·되살린 기록(`shellNote`)에는 `! 명령` 출력 항목(`notice` mono). 서랍은 펼치되 포커스는 입력창에. 빈 `!`는 터미널 열기. 질문 창은 터미널이 없어 제외. 이렇게 붙인 메시지보다 앞으로는 되감기 포크가 거절된다(SDK)
 - 슬래시 명령 후보: 입력창에 `/`를 치면 `SlashMenu`. 목록은 살아 있는 세션의 `supportedCommands()`, 없으면 메시지 없이 CLI만 띄워 받아 프로젝트 폴더별로 5분 캐시 (`src/main/agent/commands.ts`). 앱이 직접 처리하는 명령은 `SlashMenu.tsx`의 `LOCAL`과 `Chat.tsx`의 `submit`에 같이 적는다
   - 명령 화면(`panels.tsx`, `ToolPanel`): `/rewind` `/resume` `/mcp` `/agents` `/permissions`(=`/hooks`) `/memory` `/status`(=`/login`)는 대화 기록 자리에 펼친다. 상태 패널의 TOOLS 수·홈 보고서의 TOOLS SHOW를 누르면 `tools`(이번 작업의 도구 호출 목록, 행을 누르면 `jumpToTool`로 기록의 그 호출을 펼친다. 홈에서는 `App.openChat(…, panel)` → Chat `openPanel`) (CHANGES·TaskDetail과 같은 자리, `Chat`의 `tool` 상태). `/fork [이름]` `/export` `/add-dir [폴더]`는 바로 실행
   - 되감기(`/rewind`, 키맵 `rewind`, 사용자 메시지에 올리면 REWIND): 세션 옵션 `enableFileCheckpointing`과 보낼 때 붙인 `uuid`(MessageQueue.push)가 기준점. CODE는 `rewindFiles`, CHAT은 그 메시지 앞까지 `forkSession(upToMessageId)`로 포크해 세션을 바꿔 끼운다(`switchSession` → `replace` 이벤트). 되감은 메시지 글은 입력창으로 돌려준다

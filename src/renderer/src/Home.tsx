@@ -456,7 +456,6 @@ function ReportSheet({ r, wrapRef, scrollRef, closeRef, onClosed, onOpenChat, on
                   {task.tools > 0 && <button type="button" className="kv-btn" onClick={onOpenTools} title="대화를 열고 부른 도구를 모두 봐요">SHOW</button>}
                 </b>
               </div>
-              {task.costUsd !== undefined && <div className="kv"><span>EST. COST</span><b className="mono">${task.costUsd.toFixed(2)}</b></div>}
               <div className="kv"><span>CHAT</span><b>{r.title}</b></div>
             </div>
           </div>
