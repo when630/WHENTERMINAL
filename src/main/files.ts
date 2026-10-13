@@ -16,8 +16,9 @@ async function listAll(cwd: string): Promise<string[]> {
   if (hit && Date.now() - hit.at < TTL_MS) return hit.files
   let files: string[]
   try {
-    const { stdout } = await run('git', ['-C', cwd, 'ls-files', '--cached', '--others', '--exclude-standard'], { maxBuffer: 32 * 1024 * 1024, timeout: 10_000 })
-    files = stdout.split('\n').filter(Boolean)
+    // 한글 같은 비ASCII 경로를 git이 "\353\254\270…"처럼 이스케이프하지 않게(core.quotepath), 공백·줄바꿈이 든 이름도 안전하게 NUL로 구분(-z)
+    const { stdout } = await run('git', ['-C', cwd, '-c', 'core.quotepath=false', 'ls-files', '-z', '--cached', '--others', '--exclude-standard'], { maxBuffer: 32 * 1024 * 1024, timeout: 10_000, encoding: 'utf8' })
+    files = stdout.split('\0').filter(Boolean)
   } catch {
     files = []
     const walk = (dir: string, depth: number): void => {

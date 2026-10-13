@@ -83,6 +83,8 @@
   - 큰 파일: 20MB까지는 한 번에, 넘으면 4MB씩 줄 끝에서 잘라 `offset`·`next`로 나눠 읽고 MORE로 덧붙인다. 2MB 넘는 md·html은 읽기 모드 대신 원문만
   - 원격 그림: CSP는 외부 그림을 계속 막는다(모델 답의 그림 주소로 대화가 새지 않게). 파일 보기의 md만 자리 표시(`md-remote`)와 LOAD REMOTE IMAGES → `IPC.fileImages`(main `fetchRemoteImages`, image/*·10MB·60개까지) → data URI(`Markdown`의 `remote`). 누르기 전에는 요청이 나가지 않는다. Tab 원문↔읽기, Enter는 폴더 들어가기·파일은 입력창에 `@경로`(`insertPath`), 빈 칸 Backspace 위 폴더, Ctrl+D/U 미리 보기 스크롤
   - `wt-file://<폴더 키>/<상대 경로>`: CSP가 file:을 막아 html·그림은 이 주소로 읽는다. 앱 준비 전에 `registerSchemesAsPrivileged`(standard·secure), `protocol.handle`은 `viewFile`로 열어 준 폴더(sha1 키)만, 폴더 밖(`../`)은 403. CSP에 `img-src wt-file:`·`frame-src wt-file:`
+  - 목록(files.ts `listAll`, `@` 메뉴와 같이 씀)은 git이면 `git -c core.quotepath=false ls-files -z`. 빼면 git이 한글 경로를 `"ë…"`로 이스케이프해 이름이 깨지고 열리지 않는다
+  - 덮개는 `createPortal`로 body에 붙인다(대화 영역이 fixed의 기준 상자라 사이드바까지 덮지 못한다). 창 폭을 거의 다 쓴다(최대 2200px)
   - 덮개 전체가 `data-keys-own`이고, 안을 누르면 포커스를 찾기 칸으로 돌린다(버튼에 포커스가 남으면 App이 Esc를 실행 중단으로 받는다). html 미리 보기 안을 누르면 키는 그 페이지로 간다
 - 대화 검색(`SearchOverlay.tsx`, 키맵 `search` 기본 `Ctrl+Shift+F`): 모든 프로젝트의 열린 대화를 세션 기록(`readHistory`, 끝 400개)에서 찾는다(`agent/search.ts`, 기록 파일 `lastModified`가 같으면 캐시). 띄어 쓴 말이 모두 들어간 내 메시지·답변·도구 호출. 고르면 그 대화를 열고 `jump`로 그 메시지까지 스크롤·강조. 무엇을 찾을지와 몇 번째로 맞았는지(`ordinal`)는 메인·렌더러가 `@shared/search`의 같은 함수로 센다
 - macOS도 지원한다 (`isMac` 분기, `src/main/index.ts`)
@@ -126,6 +128,7 @@
   - 고정 키(바꿀 수 없음): Esc, ⌥A~L·Ctrl+1~9 프로젝트 이동, 선택 없을 때 Ctrl+C, 방향키. 대화창·전역 범위 키는 Ctrl/Alt/Meta가 있어야 한다 (입력 중 오작동 방지)
   - 전역 호출 키(`summon`)는 메인이 다시 등록한다. 실패하면 이전 키를 되살리고 저장하지 않는다
 - 단축키 안내는 도움말(`HelpOverlay.tsx`, `help` 기본 `Ctrl+/`, 사이드바 HELP 줄)과 설정의 키맵에만 모은다. 범위별 묶음(지금 화면이 맨 앞)·고정 키·입력창 명령. 새 동작을 ACTIONS에 넣으면 `GROUPS`에도 넣을 것. 열려 있는 동안 App은 Esc(닫기) 말고 키를 받지 않는다
+  - 안쪽 구분선(단 사이·묶음 아래·줄 사이)은 두지 않고 여백으로 나눈다
   - 배치: 스크롤 없이 한눈에 보이도록 창 폭을 거의 다 쓰고 묶음을 여러 단(CSS columns)으로 흘린다. 1500px 미만은 긴 묶음이 단 경계에서 줄 단위로 이어지고(제목·설명은 첫 줄과 붙어 있음), 넓으면 묶음을 통째로 둔다. 높이 800px 이하는 여백을 한 단계 더 줄인다. 1280×820·1366×768·1920×1080에서 스크롤이 없는지 `help.spec.ts`가 본다. 묶음을 늘리면 이 테스트부터 돌릴 것
   - 화면 안의 버튼·라벨·메뉴 머리줄·전광판·확인 문구·툴팁(`title`)에는 단축키를 적지 않는다. 프로젝트의 홈 열 글자(A S D…)는 프로젝트 표시라 그대로 둔다
 - 단축키 표시(도움말·설정)는 `<Keys keys="ctrl shift L" />`(`KeyHint.tsx`)를 쓴다. macOS는 수정·특수 키를 아이콘으로, Windows는 글자와 +로(`Ctrl+Shift+L`) 표시한다. 파일 이름이 `keys.ts`와 대소문자만 다르면 macOS에서 충돌하므로 `KeyHint`
