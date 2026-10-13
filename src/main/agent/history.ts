@@ -14,12 +14,13 @@ const TASK_STATUS: Record<string, string> = { completed: 'TASK DONE', killed: 'T
 
 /**
  * 백그라운드 작업 알림(<task-notification>…)을 한 줄로. CLI가 모델에게 알리려고 사용자 메시지 자리에 넣는 것이라
- * 사람이 쓴 글처럼 보이면 안 된다. 알림이 아니면 null
+ * 사람이 쓴 글처럼 보이면 안 된다. 알림이 아니면 null, 숨길 감시자 알림이면 ''
  */
 export function taskNote(text: string): string | null {
   if (!/^\s*<task-notification>/.test(text)) return null
   const tag = (name: string): string | undefined => new RegExp(`<${name}>([\\s\\S]*?)</${name}>`).exec(text)?.[1]?.trim()
-  return taskLine(tag('status'), tag('summary'), tag('event'))
+  const summary = tag('summary')
+  return watcherNote(summary) ? '' : taskLine(tag('status'), summary, tag('event'))
 }
 
 /**
@@ -31,6 +32,12 @@ export function shellNote(text: string): { command: string; output: string } | n
   const tag = (name: string): string => new RegExp(`<${name}>([\\s\\S]*?)</${name}>`).exec(text)?.[1] ?? ''
   return { command: tag('bash-input').trim(), output: [tag('bash-stdout'), tag('bash-stderr')].filter((s) => s.trim()).join('\n').replace(/\s+$/, '') }
 }
+
+/**
+ * 활동이 아닌 감시자(Artifact를 올리면 CLI가 켜는 live update 감시 등)의 알림. 끝나도 사람이 알 일이 아니라 숨긴다.
+ * 기록에는 ambient 표시가 없어 요약 문구로 가린다
+ */
+export const watcherNote = (summary?: string): boolean => !!summary && /^\s*live updates for /i.test(summary)
 
 /** 작업 알림 한 줄: 'TASK DONE · 요약 · 이벤트' */
 export const taskLine = (status?: string, summary?: string, event?: string): string =>
@@ -64,7 +71,7 @@ export async function readHistory(sessionId: string, dir: string): Promise<Histo
       if (typeof content === 'string') {
         const note = taskNote(content)
         const shell = shellNote(content)
-        if (note) items.push({ type: 'divider', text: note })
+        if (note !== null) { if (note) items.push({ type: 'divider', text: note }) }
         else if (shell) items.push({ type: 'notice', text: `! ${shell.command}\n${shell.output || '(출력 없음)'}`, tone: 'info', mono: true })
         else if (content.trim() && !INTERNAL.test(content)) items.push({ type: 'user', text: content, uuid: m.uuid })
         continue
@@ -81,6 +88,7 @@ export async function readHistory(sessionId: string, dir: string): Promise<Histo
         } else if (b.type === 'text' && b.text?.trim() && !INTERNAL.test(b.text)) {
           const note = taskNote(b.text)
           const shell = shellNote(b.text)
+          if (note === '') continue
           items.push(note ? { type: 'divider', text: note } : shell ? { type: 'notice', text: `! ${shell.command}\n${shell.output || '(출력 없음)'}`, tone: 'info', mono: true } : { type: 'user', text: b.text, uuid: m.uuid })
         }
       }
@@ -133,7 +141,7 @@ export async function exportMarkdown(sessionId: string, dir: string, title: stri
       const text = typeof content === 'string' ? content : Array.isArray(content) ? (content as Block[]).filter((b) => b.type === 'text').map((b) => b.text ?? '').join('\n') : ''
       const shell = shellNote(text)
       if (shell) out.push(`## SHELL · ${shell.command}`, '', '```', shell.output, '```', '')
-      else if (text.trim() && !INTERNAL.test(text) && !taskNote(text)) out.push('## YOU', '', text.trim(), '')
+      else if (text.trim() && !INTERNAL.test(text) && taskNote(text) === null) out.push('## YOU', '', text.trim(), '')
     } else if (m.type === 'assistant') {
       for (const b of (Array.isArray(content) ? content : []) as Block[]) {
         if (b.type === 'text' && b.text?.trim()) out.push('## CLAUDE', '', b.text.trim(), '')
