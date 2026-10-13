@@ -59,6 +59,7 @@
   - 패널 세부 내용: `Ctrl+J`/`Ctrl+Shift+J` 패널 순서(AGENTS → BACKGROUND)대로 펼치고 마지막 다음은 대화 기록, `Ctrl+B` 돌아가기, `Ctrl+Shift+X` 펼친 작업 멈춤. App이 Chat의 `panelRef`(`PanelControl`)로 다룬다
   - Alt 니모닉과 겹치지 않도록 Windows에서는 기본 메뉴를 없앴다 (`Menu.setApplicationMenu(null)`). 개발 중 `Ctrl+Shift+I` 개발자 도구, `Ctrl+Shift+R` 새로고침
 - Windows 창은 테두리 없는 창(`frame: false`): 제목 표시줄·창 버튼이 없다. 사이드바 로고(`.side .brand`, `-webkit-app-region: drag`)를 잡고 옮기고 더블클릭하면 최대화, 크기 조절은 가장자리, 닫기는 `Alt+F4`(트레이로 숨김). macOS는 기본 제목 표시줄 그대로
+- 창 숨기기(전역 호출 키로 끄기·Alt+F4·macOS 닫기)는 `hideWindow()` 한 곳에서: Windows는 `blur()` 뒤 `hide()`(숨기기만 하면 포커스를 가진 창이 없어져 원래 쓰던 창으로 돌아가지 않는다), macOS는 `app.hide()`(앞에 쓰던 앱이 다시 활성). 다시 보일 때 macOS는 `app.show()`부터. `window.spec.ts`가 포커스가 돌아가는지 본다
 - 트레이 아이콘: Windows는 설정에서 고른 앱 아이콘을 16px(+1.25~2배)로 줄여 쓰고 아이콘을 바꾸면 같이 바뀐다(`makeTrayIcon`). macOS는 메뉴 막대 관례대로 흑백 템플릿 이미지
 - 터미널(대화창 아래 서랍): 메인 `terminal.ts`(node-pty, 터미널마다 셸 하나, 폴더는 `cwdOf`) ↔ 렌더러 `terminal.tsx`(xterm, 터미널마다 화면 하나를 만들어 두고 탭을 옮기면 다시 붙인다)
   - 대화마다 터미널 탭 여러 개. 셸은 `termId`(`대화 ID#번호`)로 구분하고, 대화를 닫으면 `closeConversation`으로 그 대화의 셸을 모두 끝낸다. 탭 줄은 둘 이상일 때만. `terminalNew`(Ctrl+Alt+T)·`terminalNext/Prev`(Ctrl+Alt+J/K)·`terminalClose`(Ctrl+Alt+W, 서랍 오른쪽 ×와 같이 지금 탭만 바로 닫는다)

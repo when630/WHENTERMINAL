@@ -559,7 +559,7 @@ function createWindow(): void {
   win.on('close', (e) => {
     if (!quitting) {
       e.preventDefault()
-      win?.hide()
+      hideWindow()
     }
   })
   // 답변 속 링크: 앱 창 안에서 이동하지 않고 http(s)만 외부 브라우저로 연다
@@ -613,13 +613,31 @@ function createTray(): void {
 
 function showWindow(): void {
   if (!win) return
+  // macOS: hideWindow가 앱째 숨겼으면 먼저 풀어 준다
+  if (isMac) app.show()
   if (win.isMinimized()) win.restore()
   win.show()
   win.focus()
 }
 
+/**
+ * 창을 트레이로 숨기고 포커스를 원래 쓰던 창(앱)에 돌려준다 (전역 호출 키로 끄기·Alt+F4).
+ * Windows는 숨기기만 하면 포커스를 가진 창이 없어지므로 먼저 blur해 바로 뒤 창을 활성화하고,
+ * macOS는 창만 숨기면 앱이 활성으로 남으므로 앱을 숨겨 앞에 쓰던 앱으로 돌아간다
+ */
+function hideWindow(): void {
+  if (!win) return
+  if (isMac) {
+    win.hide()
+    app.hide()
+    return
+  }
+  win.blur()
+  win.hide()
+}
+
 function toggleWindow(): void {
-  if (win?.isVisible() && win.isFocused()) win.hide()
+  if (win?.isVisible() && win.isFocused()) hideWindow()
   else showWindow()
 }
 
