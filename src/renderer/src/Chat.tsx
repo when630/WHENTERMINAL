@@ -536,22 +536,25 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
         default: return void window.api.clear(project.id, conversationId)
       }
     }
-    // `!명령`: 아래 터미널에서 바로 실행하고, 끝나면 출력을 세션에 덧붙인다 (모델 턴 없이). 구독 사용량과 무관하므로 한도 확인 앞에
+    // `!명령`: 아래 터미널에서 바로 실행하고, 끝나면 출력을 보내 모델이 이어 답한다. 빈 `!`는 터미널 열기
     const bang = /^!\s*([\s\S]*)$/.exec(text)
+    if (bang && !bang[1].trim()) {
+      setDraft('')
+      return toggleTerminal(project.id, conversationId, () => inputRef.current?.focus())
+    }
+    // 한도를 다 썼는데 언제 풀리는지 모르면 한 번 더 확인. 알면 보내 두면 그때 자동으로 시작한다
+    if (limit?.level === 100 && !limitHolds && !limitArmed) {
+      setLimitArmed(true)
+      return
+    }
     if (bang) {
       setDraft('')
       const command = bang[1].trim()
-      if (!command) return toggleTerminal(project.id, conversationId, () => inputRef.current?.focus())
       history.push(text)
       void execInTerminal(project.id, conversationId, command).then((r) => {
         if (!r) return setNotice({ ok: false, text: '터미널이 명령을 받을 수 없어요 · 앞 명령이 끝나기를 기다리거나 터미널을 확인해 주세요' })
         void window.api.shellOutput(project.id, conversationId, r)
       })
-      return
-    }
-    // 한도를 다 썼는데 언제 풀리는지 모르면 한 번 더 확인. 알면 보내 두면 그때 자동으로 시작한다
-    if (limit?.level === 100 && !limitHolds && !limitArmed) {
-      setLimitArmed(true)
       return
     }
     setDraft('')

@@ -23,6 +23,17 @@ const HOOK_OUTPUT_LIMIT = 4000
 interface HeldMessage {
   id: string
   text: string
+  /** 화면·입력창 되돌리기에 쓸 글 (`!명령` 출력은 보내는 글이 아니라 `! 명령`) */
+  display?: string
+}
+
+/**
+ * 입력창 `!명령`으로 터미널에서 돌린 명령의 출력을 세션에 보낼 글. CLI의 bash 모드와 같은 꼴(<bash-input>·<bash-stdout>)이라
+ * 모델이 알아보고, 되살린 기록에서는 `shellNote`가 출력 항목으로 바꾼다
+ */
+export function shellMessage(r: ShellResult): { text: string; output: string } {
+  const output = r.output.replace(/\s+$/, '')
+  return { text: `<bash-input>${r.command}</bash-input>\n<bash-stdout>${r.truncated ? '… (앞부분은 잘랐어요)\n' : ''}${output}</bash-stdout>`, output }
 }
 
 export interface AgentSessionOptions {
@@ -204,13 +215,6 @@ export class AgentSession {
    * 앱이 들고 있다가 턴이 끝나면 하나씩 보낸다. 메시지 하나 = 작업 하나
    */
   private held: HeldMessage[] = []
-  /** `!명령` 출력 중 아직 세션에 붙이지 못한 것 (CLI가 바쁘거나 떠 있지 않을 때). 다음 메시지 앞에 흘려보낸다 */
-  private pendingShell: string[] = []
-  /**
-   * 큐에 넣었지만 아직 결과가 오지 않은 `!명령` 출력. CLI는 shouldQuery: false 메시지에도 모델 턴 없는 빈 result(num_turns 0)를
-   * 따로 돌려주므로, 그걸 작업 끝으로 받지 않게 개수만큼 걸러 낸다. claim이 거절되면 새 프로세스로 다시 보낸다
-   */
-  private shellInflight: string[] = []
   /** ExitPlanMode를 승인한 뒤 바꿀 모드. CLI가 플랜 모드를 빠져나온 직후(status)에 적용한다 */
   private afterPlan: AgentMode | null = null
   private afterPlanTimer: ReturnType<typeof setTimeout> | null = null
@@ -277,18 +281,19 @@ export class AgentSession {
 
   /**
    * echo=false: 대기열에 넣을 때 이미 화면에 보낸 메시지라 다시 보내지 않는다.
-   * 실행 중(또는 컴팩트 중)이면 들고 있다가 지금 턴이 끝난 뒤 보낸다
+   * 실행 중(또는 컴팩트 중)이면 들고 있다가 지금 턴이 끝난 뒤 보낸다.
+   * display: 보내는 글과 화면의 글이 다를 때(`!명령` 출력). 바로 보낼 때는 말풍선 없이 작업만 시작한다 (출력 항목이 이미 있다)
    */
-  send(text: string, echo = true, queuedId?: string): void {
+  send(text: string, echo = true, queuedId?: string, display?: string): void {
     if (this.turnOpen() || this.manualCompact) {
       const id = queuedId ?? randomUUID()
-      if (echo) this.emit({ kind: 'user', text, next: true, queuedId: id })
-      this.held.push({ id, text })
+      if (echo) this.emit({ kind: 'user', text: display ?? text, next: true, queuedId: id })
+      this.held.push({ id, text, display })
       return
     }
     // 대기열에서 나온 메시지는 이미 화면에 있으니 작업만 지금 시작한다
     const uuid = randomUUID()
-    this.emit(echo ? { kind: 'user', text, uuid } : { kind: 'task_start', text, queuedId, uuid })
+    this.emit(echo && !display ? { kind: 'user', text, uuid } : { kind: 'task_start', text: display ?? text, queuedId, uuid })
     this.dispatch(text, uuid)
   }
 
@@ -298,13 +303,18 @@ export class AgentSession {
     this.setStatus('queued')
   }
 
+  /** `!명령` 출력을 대화 기록에 보인다. 세션에는 manager가 보통 메시지로 보낸다(모델이 바로 이어 답한다) */
+  noteShell(command: string, output: string): void {
+    this.emit({ kind: 'notice', text: `! ${command}\n${output || '(출력 없음)'}`, tone: 'info', mono: true })
+  }
+
   /** 들고 있던 메시지를 보내지 않는다. 그 글을 돌려준다 (없으면 null) */
   dropHeld(queuedId: string): string | null {
     const i = this.held.findIndex((h) => h.id === queuedId)
     if (i < 0) return null
     const [h] = this.held.splice(i, 1)
     this.emit({ kind: 'unqueued', queuedId })
-    return h.text
+    return h.display ?? h.text
   }
 
   private dispatch(text: string, uuid: string): void {
@@ -314,31 +324,7 @@ export class AgentSession {
     if (this.status === 'waiting_approval') this.askFrom = 'running'
     else this.setStatus('running')
     this.inflight.push({ text, uuid })
-    this.flushShell()
     this.queue!.push(text, uuid)
-  }
-
-  /** 붙이지 못했던 `!명령` 출력을 지금 큐에 (모델 턴 없이). 실제 메시지 앞에 넣어야 그 메시지에 합쳐진다 */
-  private flushShell(): void {
-    if (!this.queue) return
-    for (const text of this.pendingShell.splice(0)) this.pushShell(text)
-  }
-
-  private pushShell(text: string): void {
-    this.shellInflight.push(text)
-    this.queue!.push(text, undefined, { shouldQuery: false })
-  }
-
-  /**
-   * 입력창 `!명령`으로 터미널에서 돌린 명령의 출력을 세션에 덧붙인다. CLI의 bash 모드와 같은 꼴(<bash-input>·<bash-stdout>)이라
-   * 모델이 알아본다. 모델 턴을 열지 않으므로 상태·보고서는 그대로. CLI가 한가하면 바로, 아니면 다음 메시지 앞에
-   */
-  appendShell(r: ShellResult): void {
-    const output = r.output.replace(/\s+$/, '')
-    const text = `<bash-input>${r.command}</bash-input>\n<bash-stdout>${r.truncated ? '… (앞부분은 잘랐어요)\n' : ''}${output}</bash-stdout>`
-    this.emit({ kind: 'notice', text: `! ${r.command}\n${output || '(출력 없음)'}`, tone: 'info', mono: true })
-    if (this.q && this.queue && !this.turnOpen() && !this.manualCompact && this.status !== 'queued') this.pushShell(text)
-    else this.pendingShell.push(text)
   }
 
   /**
@@ -393,7 +379,7 @@ export class AgentSession {
    */
   private onIdle(): void {
     this.interrupted = false
-    if (this.status !== 'running' || this.inflight.length || this.shellInflight.length || this.pending.size || this.manualCompact || this.quietCommand) return
+    if (this.status !== 'running' || this.inflight.length || this.pending.size || this.manualCompact || this.quietCommand) return
     console.warn('result 없이 턴이 끝나 상태를 정리함')
     this.setStatus('done')
     this.sendHeld()
@@ -427,7 +413,7 @@ export class AgentSession {
     const h = this.held.shift()
     if (!h) return
     const uuid = randomUUID()
-    this.emit({ kind: 'task_start', text: h.text, queuedId: h.id, uuid })
+    this.emit({ kind: 'task_start', text: h.display ?? h.text, queuedId: h.id, uuid })
     this.dispatch(h.text, uuid)
   }
 
@@ -555,7 +541,6 @@ export class AgentSession {
     this.queue = null
     this.claiming = false
     this.inflight = []
-    this.shellInflight = []
     this.quietCommand = null
     // 끊은 턴의 result는 닫은 프로세스에서 오지 않는다. 남겨 두면 새 세션의 첫 result를 버린다
     this.interrupted = false
@@ -654,11 +639,8 @@ export class AgentSession {
         this.queue?.close()
         q.close()
         const resend = this.inflight.splice(0)
-        const shell = this.shellInflight.splice(0)
         this.queue = new MessageQueue()
         this.startCold()
-        // `!명령` 출력이 그 메시지보다 앞에 있어야 합쳐진다
-        for (const text of shell) this.pushShell(text)
         for (const m of resend) this.queue.push(m.text, m.uuid)
       },
     )
@@ -785,7 +767,6 @@ export class AgentSession {
         this.queue = null
         this.claiming = false
         this.inflight = []
-        this.shellInflight = []
         this.quietCommand = null
         // 백그라운드 작업은 CLI 프로세스와 함께 끝난다
         this.setBackground([])
@@ -980,11 +961,6 @@ export class AgentSession {
       case 'result':
         // 미리 띄운 CLI가 claim을 거절하면 보냈던 메시지에 not_claimed 오류 결과가 온다. 새 프로세스로 다시 보내므로 작업 끝으로 치지 않는다
         if (this.claiming && msg.subtype !== 'success' && msg.errors?.some((e) => e.startsWith('not_claimed'))) break
-        // `!명령` 출력(shouldQuery: false)의 빈 결과: 모델 턴이 없었으니 작업 끝이 아니다. 바로 뒤에 보낸 메시지의 작업은 계속된다
-        if (this.shellInflight.length && msg.num_turns === 0) {
-          this.shellInflight.shift()
-          break
-        }
         void this.refreshContext()
         if (this.quietCommand) {
           // /goal 같은 명령의 결과: 작업이 아니다
