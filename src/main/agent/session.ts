@@ -4,7 +4,7 @@ import { ELICITATION_TOOL, isAgentMode, REFUSAL_TOOL, type AlwaysInfo, type Alwa
 import { MessageQueue } from './message-queue'
 import { claudeExecutable } from '../executable'
 import { outputPathIn, rememberTaskOutput } from './task-output'
-import { taskLine } from './history'
+import { taskLine, watcherNote } from './history'
 import type { SessionCallbacks, SpareHandle } from './spare'
 
 /** 사람의 답을 기다리는 것: 도구 승인 · MCP 입력 요청 · CLI 대화 상자. 화면에는 모두 승인창으로 */
@@ -210,6 +210,8 @@ export class AgentSession {
   /** 백그라운드 작업 id → 띄운 도구 호출 (task_started에서) */
   private taskTools = new Map<string, string>()
   private background: BackgroundTask[] = []
+  /** 활동이 아닌 감시자(ambient) 작업 id. 끝남 알림도 구분선으로 보이지 않는다 */
+  private ambientTasks = new Set<string>()
   /**
    * 실행 중에 보낸 메시지. CLI로 바로 넘기면 지금 턴에 섞이거나 Esc 뒤에도 살아남아 돌므로(interrupt의 still_queued),
    * 앱이 들고 있다가 턴이 끝나면 하나씩 보낸다. 메시지 하나 = 작업 하나
@@ -843,7 +845,8 @@ export class AgentSession {
           this.taskTools.delete(msg.task_id)
           if (msg.output_file && this.sessionId) rememberTaskOutput(this.sessionId, msg.output_file)
           // CLI가 모델에게 넣는 <task-notification> 사용자 메시지는 SDK로 오지 않고 이것만 온다. 한 줄 구분선으로 (되살린 기록과 같게)
-          if (!msg.skip_transcript) this.emit({ kind: 'task_note', text: taskLine(msg.status, msg.summary) })
+          const watcher = this.ambientTasks.delete(msg.task_id) || watcherNote(msg.summary)
+          if (!msg.skip_transcript && !watcher) this.emit({ kind: 'task_note', text: taskLine(msg.status, msg.summary) })
         } else if (msg.subtype === 'local_command_output') {
           // /context /usage /cost 같은 로컬 명령의 출력. CLI는 화면에만 보인다
           this.notice(msg.content, 'info', true)
@@ -876,6 +879,7 @@ export class AgentSession {
         } else if (msg.subtype === 'background_tasks_changed') {
           // 전체 목록이 온다 (바꿔치기). 활동이 아닌 감시자(ambient)는 뺀다
           const now = Date.now()
+          for (const t of msg.tasks) if (t.ambient) this.ambientTasks.add(t.task_id)
           this.setBackground(
             msg.tasks
               .filter((t) => !t.ambient)
