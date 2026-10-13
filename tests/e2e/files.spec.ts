@@ -10,11 +10,14 @@ test.use({
     projects: [
       {
         name: 'alpha',
+        // git이면 목록을 git ls-files로 받는다 (한글 경로 이스케이프 확인)
+        git: true,
         files: {
           'README.md': '# 알파 문서\n\n본문이에요.\n\n![로고](img/logo.svg)\n\n[가이드 보기](docs/guide.md)\n',
           'docs/guide.md': '# 가이드\n\n두 번째 문서예요.\n',
           'img/logo.svg': SVG,
           'src/app.ts': 'export const answer = 42\nconsole.log(answer)\n',
+          '문서/기획서 초안.md': '# 안녕하세요\n\n한글 이름 파일이에요.\n',
           'page.html': '<!doctype html><h1 id="t">static</h1><script>document.getElementById("t").textContent = "scripted"</script>',
         },
       },
@@ -35,7 +38,8 @@ test('파일 찾기: 폴더 둘러보기·md 읽기 모드·html 미리 보기·
 
   // 맨 위 폴더: 폴더가 먼저, 그다음 파일
   const rows = overlay.locator('.files-row:not(.up) .files-name')
-  await expect(rows.first()).toHaveText('docs/')
+  // 폴더가 먼저 (이름 순서는 시스템 언어를 따라 한글·영어 중 어느 쪽이 앞일지 다르다)
+  await expect(rows.first()).toHaveText(/\/$/)
   await expect(rows).toContainText(['docs/', 'img/', 'src/', 'page.html', 'README.md'])
 
   // README.md: 읽기 모드, 상대 경로 그림은 wt-file로 읽힌다
@@ -81,7 +85,7 @@ test('파일 찾기: 폴더 둘러보기·md 읽기 모드·html 미리 보기·
     .poll(() => overlay.locator('.cm-content span', { hasText: /^export$/ }).first().evaluate((el) => getComputedStyle(el).color))
     .toBe('rgb(91, 43, 181)')
   await win.keyboard.press('Backspace')
-  await expect(rows.first()).toHaveText('docs/')
+  await expect(rows.filter({ hasText: /^docs\/$/ })).toHaveCount(1)
 
   // 파일에서 Enter: 입력창에 @경로를 넣고 닫는다
   await input.fill('app.ts')
@@ -185,4 +189,30 @@ test('md의 외부 그림은 막아 두었다가 누르면 앱이 받아 와서 
   } finally {
     server.close()
   }
+})
+
+test('git 프로젝트의 한글 이름 파일·폴더도 찾고, 둘러보고, 읽는다', async ({ win }) => {
+  await win.keyboard.press('Alt+KeyA')
+  const composer = win.locator('#composer-input')
+  await composer.focus()
+  await win.keyboard.press('Control+KeyP')
+  const overlay = win.locator('.overlay.files')
+  const input = overlay.locator('.search-input')
+  const rows = overlay.locator('.files-row:not(.up) .files-name')
+  // 둘러보기: 한글 폴더가 이스케이프 없이 보인다
+  await expect(rows.filter({ hasText: /^문서\/$/ })).toHaveCount(1)
+  await overlay.locator('.files-row', { hasText: '문서/' }).click()
+  await expect(overlay.locator('.files-crumbs')).toContainText('문서')
+  await expect(rows).toHaveText(['기획서 초안.md'])
+  await expect(overlay.locator('.fv-read h1')).toHaveText('안녕하세요')
+  // 이름으로 찾기
+  await input.fill('')
+  await win.keyboard.press('Backspace')
+  await input.fill('기획')
+  await expect(overlay.locator('.files-row.on .files-name')).toHaveText('기획서 초안.md')
+  await expect(overlay.locator('.files-row.on .files-dir')).toHaveText('문서/')
+  await expect(overlay.locator('.fv-path')).toHaveText('문서/기획서 초안.md')
+  await expect(overlay.locator('.fv-read')).toContainText('한글 이름 파일이에요.')
+  await win.keyboard.press('Enter')
+  await expect(composer).toHaveValue('@문서/기획서 초안.md ')
 })

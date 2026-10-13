@@ -58,6 +58,7 @@ test('도움말은 흔한 창 크기에서 스크롤 없이 한 화면에 들어
     const help = win.locator('.help')
     await expect(help.locator('.help-sheet')).toBeVisible()
     await expect.poll(() => help.evaluate((el) => el.scrollHeight <= el.clientHeight), { message: `${w}×${h}` }).toBe(true)
+    await win.screenshot({ path: test.info().outputPath(`help-${w}.png`) })
     await win.keyboard.press('Escape')
     await expect(help).toHaveCount(0)
   }

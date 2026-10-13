@@ -13,6 +13,7 @@ import { SubLog, TaskDetail, type DetailTarget } from './TaskDetail'
 import { closeTerminal, execInTerminal, forgetTerminals, pathForComposer, runInTerminal, TerminalDrawer, toggleTerminal } from './terminal'
 import { Markdown } from './Markdown'
 import { FilesOverlay } from './FilesOverlay'
+import { createPortal } from 'react-dom'
 import { AttachButton, useAttach } from './attach'
 import { WorktreePanel } from './WorktreePanel'
 import { EffortPicker, ModelPicker } from './ModelPicker'
@@ -1009,7 +1010,8 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
         // Ctrl+클릭한 경로를 커서 자리에 넣는다
         onPath={(raw) => insertPath(pathForComposer(raw, root))}
       />
-      {browse.item === conversationId && (
+      {/* 대화 영역이 fixed의 기준 상자라 사이드바까지 덮도록 body에 붙인다 */}
+      {browse.item === conversationId && createPortal(
         <FilesOverlay
           projectId={project.id}
           conversationId={conversationId}
@@ -1024,7 +1026,8 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
             setBrowseOpen(false)
             insertPath(`@${path} `)
           }}
-        />
+        />,
+        document.body,
       )}
     </div>
   )
