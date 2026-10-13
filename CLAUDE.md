@@ -97,7 +97,7 @@
   - 트레이 아이콘은 템플릿 이미지(검정+투명), Dock 아이콘 클릭(`activate`)으로 창 다시 열기
 - 구독 한도(사이드바): `src/main/agent/usage.ts`가 SDK `usage_EXPERIMENTAL…`(실험적 API, 이름이 바뀔 수 있음)로 5시간·주간·모델별 주간 창을 받는다. 살아 있는 세션이 없으면 `withProbe`로 CLI만 띄움. 앱 시작·작업 완료 2.5초 뒤·5분마다 갱신, `rate_limit_event`는 해당 창에 바로 반영
   - 경고 기준은 `@shared/usage`(`limitLevel` 80·95·100, `worstLimit`은 5시간·주간 + 지금 모델 계열의 주간만). 입력창 위 `limit-warn` 줄, 100%면 Enter를 한 번 더 눌러야 보낸다(앱 명령은 제외). OS 알림은 `UsageAlerts`가 창마다 단계를 처음 넘을 때 한 번(앱을 켤 때 이미 넘었으면 95 이상만)
-- 대화창 오른쪽 상태 패널(`StatusPanel`, Chat.tsx): 실행 중이거나, 백그라운드 작업(SDK `background_tasks_changed`, `ambient` 제외 → `background` 이벤트)이 있거나, 이 대화에서 Artifact 도구로 올린 페이지(`artifactsOf`, 화면 기록에서 추출)가 있으면 펼친다. CLI 프로세스가 끝나면 백그라운드 목록을 비운다
+- 대화창 오른쪽 상태 패널(`StatusPanel`, Chat.tsx): 실행 중이거나, 백그라운드 작업(SDK `background_tasks_changed`, `ambient` 제외 → `background` 이벤트)이 있거나, 이 대화에서 Artifact 도구로 올리거나 연(`open`) 페이지(`artifactsOf`, 화면 기록에서 추출)가 있으면 펼친다. CLI 프로세스가 끝나면 백그라운드 목록을 비운다
   - SDK로 띄운 CLI는 Artifact 도구가 기본으로 꺼져 있어(`sdk_default_off`) `subscriptionEnv`가 `CLAUDE_CODE_ARTIFACT=1`을 넣는다
   - ARTIFACTS 줄을 누르면 대화 기록 자리에 앱 안 화면(`ToolPanel`의 `artifact`, `<webview>`)으로 펼친다. claude.ai는 `frame-ancestors 'self'`라 iframe은 안 된다. 비공개 아티팩트라 따로 저장되는 세션 `ARTIFACT_PARTITION`(`persist:claude`)에서 한 번 로그인해 둔다(이메일 코드). 메인 `artifact-view.ts`가 `will-attach-webview`로 preload·node를 빼고 이 세션·claude.ai 주소만 허용하며, claude.ai 밖 이동·새 창은 외부 브라우저로. 손님 페이지에 포커스가 있으면 앱 창에 키가 오지 않으므로 Ctrl·Alt·⌘ 키(복사·붙여넣기·찾기 등 편집 키 제외)를 `IPC.guestKey`로 넘겨 App이 같은 keydown으로 처리한다. 같은 링크를 다시 올리면(`ArtifactLink.rev`) 새로 고친다
   - 패널의 줄(백그라운드 작업·AGENTS)을 누르면 대화 기록 자리에 세부 내용(`TaskDetail.tsx`)을 펼친다. 셸·모니터는 CLI가 쓰는 출력 파일(`<임시 폴더>/claude…/<프로젝트>/<세션 ID>/tasks/<작업 ID>.output`, `agent/task-output.ts`)을 도는 동안 1초마다 읽는다

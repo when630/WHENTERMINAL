@@ -514,12 +514,17 @@ export function artifactsOf(items: TranscriptItem[]): ArtifactLink[] {
   for (const item of items) {
     if (item.type !== 'tool' || item.name !== 'Artifact' || item.isError || !item.result) continue
     const o = (item.input ?? {}) as Record<string, unknown>
-    // 올리기(action 없음·publish)만. list·read 등은 연결된 페이지가 아니다
-    if (o.action !== undefined && o.action !== 'publish') continue
-    const url = ARTIFACT_URL.exec(item.result)?.[0] ?? (typeof o.url === 'string' ? ARTIFACT_URL.exec(o.url)?.[0] : undefined)
+    // 올리기(action 없음·publish)와 보여 주기(open)만. list·read 등은 연결된 페이지가 아니다
+    const open = o.action === 'open'
+    if (o.action !== undefined && o.action !== 'publish' && !open) continue
+    // open은 결과에 다른 링크가 섞일 수 있어 입력의 url을 먼저 본다
+    const fromInput = typeof o.url === 'string' ? ARTIFACT_URL.exec(o.url)?.[0] : undefined
+    const url = open ? (fromInput ?? ARTIFACT_URL.exec(item.result)?.[0]) : (ARTIFACT_URL.exec(item.result)?.[0] ?? fromInput)
     if (!url) continue
-    const title = str(o.title) || baseName(str(o.file_path)) || url
-    const rev = (byUrl.get(url)?.rev ?? 0) + 1
+    const prev = byUrl.get(url)
+    // open은 내용을 바꾸지 않으므로 새로 고치지 않고(rev 그대로) 앞서 올린 제목을 둔다
+    const title = (open ? prev?.title : undefined) || str(o.title) || baseName(str(o.file_path)) || url.replace(/^https:\/\/claude\.ai\/(?:code\/)?/, '')
+    const rev = (prev?.rev ?? 0) + (open && prev ? 0 : 1)
     byUrl.delete(url)
     byUrl.set(url, { url, title, rev })
   }
