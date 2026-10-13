@@ -7,7 +7,7 @@ import { IS_MAC } from './keys'
 export type HelpContext = 'home' | 'chat' | 'settings'
 
 interface Group {
-  id: ActionScope | 'terminal' | 'commands'
+  id: ActionScope | 'terminal' | 'commands' | 'files'
   title: string
   note: string
   /** 키맵의 동작 (바꾼 키가 그대로 보인다) */
@@ -72,6 +72,22 @@ const GROUPS: Group[] = [
     ],
   },
   {
+    id: 'files',
+    title: 'FILES',
+    note: '파일 찾기·읽기 (/files). 비어 있으면 폴더를 둘러보고, 치면 프로젝트 전체에서 찾아요',
+    actions: ['files'],
+    fixed: [
+      ['up', 'Previous file (or Ctrl+K)'],
+      ['down', 'Next file (or Ctrl+J)'],
+      ['enter', 'Open folder · Insert @path'],
+      ['backspace', 'Up a folder (empty search)'],
+      ['tab', 'Read ↔ Source (md · html)'],
+      ['ctrl D', 'Scroll preview down'],
+      ['ctrl U', 'Scroll preview up'],
+      ['esc', 'Close'],
+    ],
+  },
+  {
     id: 'approval',
     title: 'APPROVAL',
     note: '확인 요청이 왔을 때 (입력창 밖에서)',
@@ -87,6 +103,7 @@ const GROUPS: Group[] = [
       ['/close', 'Close this tab'],
       ['/rename', 'Rename this tab'],
       ['/rewind', 'Rewind files / chat to a message'],
+      ['/files', 'Find & read project files'],
       ['/resume', 'Open a past session'],
       ['/fork', 'Copy this chat into a new tab'],
       ['/export', 'Save the chat as Markdown'],

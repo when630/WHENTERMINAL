@@ -9,7 +9,8 @@ import { memoryFiles, permissionsInfo, setPermissionRule } from './agent/config'
 import { exportMarkdown } from './agent/history'
 import { loginCommand } from './executable'
 import { branchOf, createWorktree, discardWorktree, isGitRepo, mergeWorktree, worktreeChanges } from './worktree'
-import { searchFiles } from './files'
+import { listChildren, searchFiles } from './files'
+import { fetchRemoteImages, handleFileScheme, registerFileScheme, viewFile } from './file-view'
 import { SettingsStore } from './settings'
 import { applyBadge, Notifier } from './notify'
 import { effectiveKeymap, THEMES, toAccelerator, type Settings } from '@shared/keymap'
@@ -88,6 +89,9 @@ let win: BrowserWindow | null = null
 let tray: Tray | null = null
 let quitting = false
 
+// 파일 보기의 wt-file 주소는 앱이 준비되기 전에 등록해야 한다
+registerFileScheme()
+
 if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
@@ -96,6 +100,7 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 function bootstrap(): void {
+  handleFileScheme()
   const store = new ProjectStore()
   settingsStore = new SettingsStore()
   ipcMain.on(IPC.getSettingsSync, (e) => {
@@ -370,6 +375,16 @@ function bootstrap(): void {
     const project = store.get(projectId)
     return project ? searchFiles(cwdOf(project, store.getConversation(projectId, conversationId)), q) : []
   })
+  ipcMain.handle(IPC.listDir, (_e, projectId: string, conversationId: string, dir: string) => {
+    const project = store.get(projectId)
+    return project ? listChildren(cwdOf(project, store.getConversation(projectId, conversationId)), dir) : []
+  })
+  ipcMain.handle(IPC.viewFile, (_e, projectId: string, conversationId: string, path: string, offset?: number) => {
+    const project = store.get(projectId)
+    if (!project) throw new Error(`프로젝트 없음: ${projectId}`)
+    return viewFile(cwdOf(project, store.getConversation(projectId, conversationId)), path, offset)
+  })
+  ipcMain.handle(IPC.fileImages, (_e, urls: string[]) => fetchRemoteImages(Array.isArray(urls) ? urls.filter((u) => typeof u === 'string') : []))
   ipcMain.handle(IPC.peek, (_e, projectId: string, conversationId: string) => manager.peek(projectId, conversationId))
   ipcMain.handle(IPC.clear, (_e, projectId: string, conversationId: string) => {
     manager.clear(projectId, conversationId)

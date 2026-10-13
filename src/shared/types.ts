@@ -458,6 +458,21 @@ export interface TerminalInfo {
 }
 
 /** 입력창 `!명령`으로 터미널에서 돌린 명령의 결과. 출력은 세션에 모델 턴 없이 덧붙는다 */
+/** 파일 보기(FilesOverlay)로 읽은 파일 하나. url은 wt-file 주소(그림·html 미리 보기·md의 상대 경로 그림) */
+export interface FileView {
+  /** 프로젝트(대화 폴더) 안의 상대 경로, / 구분 */
+  path: string
+  url: string
+  kind: 'text' | 'markdown' | 'html' | 'image' | 'binary' | 'dir' | 'missing'
+  size: number
+  /** 글로 읽은 내용 (text·markdown·html). 20MB까지는 전부, 더 크면 offset부터 한 조각 */
+  text?: string
+  /** 이 조각이 시작하는 바이트 위치 */
+  offset?: number
+  /** 뒤에 더 있으면 다음 조각의 위치 (MORE) */
+  next?: number
+}
+
 export interface ShellResult {
   command: string
   output: string
@@ -620,6 +635,9 @@ export const IPC = {
   listCommands: 'agent:list-commands',
   peek: 'agent:peek',
   searchFiles: 'files:search',
+  listDir: 'files:list',
+  viewFile: 'files:view',
+  fileImages: 'files:images',
   saveImage: 'files:save-image',
   worktreeChanges: 'worktree:changes',
   worktreeMerge: 'worktree:merge',
@@ -766,6 +784,11 @@ export interface WhenTerminalApi {
   peek(projectId: string, conversationId: string): Promise<void>
   /** 입력창의 @ 자동완성: 이 대화의 작업 폴더에서 파일 찾기 (상대 경로) */
   searchFiles(projectId: string, conversationId: string, query: string): Promise<string[]>
+  /** 폴더 바로 아래 항목 (폴더는 끝에 /, 먼저). dir은 '' 또는 'src/' */
+  listDir(projectId: string, conversationId: string, dir: string): Promise<string[]>
+  viewFile(projectId: string, conversationId: string, path: string, offset?: number): Promise<FileView>
+  /** 파일 보기 md의 원격 그림을 받아 data URI로 (주소 → data URI, 못 받은 것은 빠진다) */
+  fileImages(urls: string[]): Promise<Record<string, string>>
   /** 끌어다 놓은 파일의 실제 경로 (sandbox라 File.path가 없어 preload의 webUtils로) */
   pathForFile(file: File): string
   /** 붙여넣은 이미지(스크린샷)를 userData/attachments에 저장하고 경로를 돌려준다 */

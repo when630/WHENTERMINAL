@@ -8,7 +8,7 @@
 - `npm run typecheck` — main/preload(`tsconfig.node.json`) + renderer(`tsconfig.web.json`)
 - `npm run build` — `out/`으로 빌드
 - `npm run smoke` — SDK 단발 호출로 구독 인증 확인 (`apiKeySource=none`이면 구독)
-- `npm run test:e2e` — 실제 앱(out/)을 Playwright로 띄워 조작하는 테스트. 모델을 부르지 않음 (설정·단축키·/·@ 메뉴·첨부·대화 닫기·보고함·작업 공간·긴 알림 접기). 기능을 바꾸면 이걸 먼저 돌릴 것
+- `npm run test:e2e` — 실제 앱(out/)을 Playwright로 띄워 조작하는 테스트. 모델을 부르지 않음 (설정·단축키·/·@ 메뉴·첨부·대화 닫기·보고함·작업 공간·긴 알림 접기·파일 찾기). 기능을 바꾸면 이걸 먼저 돌릴 것
 - `npm run test:e2e:live` — 모델을 실제로 부르는 `@live` 테스트 (승인 흐름·대기열·컴팩트·클리어). 구독 사용량을 조금 씀
   - 테스트마다 임시 사용자 데이터·프로젝트를 만든다(`tests/e2e/fixtures.ts`의 `seed`). 실제 데이터는 건드리지 않음
   - 파일 3개를 함께 돌린다(`workers: 3`, 파일 안의 테스트는 차례로). 일부만: `npm run test:e2e -- terminal`(파일 이름), `-- -g "검색"`(테스트 이름)
@@ -79,6 +79,11 @@
   - 도구는 읽기·웹만(`QUICK_DISALLOWED_TOOLS`로 수정·명령·하위 에이전트를 빼고 `QUICK_ALLOWED_TOOLS`는 묻지 않음, 세션 옵션 `tools`). 도구 목록은 띄울 때 고정되므로 미리 띄운 CLI는 쓰지 않는다. 동시 실행 제한에 세지 않는다(manager `quickIds`). 처음 모델·effort는 `haiku`·`low`
   - 열려 있는 동안 App은 `quickAsk` 말고 키를 받지 않고 창이 처리한다: Esc는 답하는 중이면 멈춤·아니면 닫기, 클리어(`clear`) 두 번, Y/A/N, `/clear`·`/compact`. 대화창의 `Item`·`Working`·`PermissionBox`를 그대로 쓴다. 알림을 누르면(`navigate`의 projectId가 quick) 이 창을 연다
   - `peek`·`withProbe`는 대화에서 고른 모델(`modelChoice`)로 띄운다. 빠뜨리면 기본 모델로 표시 모델을 덮어쓴다
+- 파일 찾기·읽기(`FilesOverlay.tsx`, 키맵 `files` 기본 `Ctrl+P`, `/files`, 대화창에서): 찾기 칸이 비어 있으면 대화 폴더(`cwdOf`)를 한 단계씩 둘러보고(`IPC.listDir` → files.ts `listChildren`, `@` 메뉴와 같은 목록·캐시), 치면 전체에서 이름으로(`searchFiles`). 고른 파일은 오른쪽에 바로(`IPC.viewFile` → `main/file-view.ts`, NUL이 있으면 binary): md는 읽기 모드(`Markdown`의 `fileUrl`로 상대 경로 그림, 상대 경로 링크는 `onOpen`으로 앱 안에서 열기), html은 `<iframe sandbox="allow-scripts">`, 그림, 나머지는 `CodeView`(CodeMirror 6 읽기 전용: 보이는 줄만 그림, 언어는 `@codemirror/language-data`의 `matchFilename`으로 그때 불러옴, Ctrl+F 찾기). 문법 색은 테마마다 `--syn-*` 토큰(신호색 빨강은 쓰지 않음). 원문 칸에는 `data-keys-own`을 달고, 그 안의 키는 덮개가 목록 이동으로 가로채지 않는다
+  - 큰 파일: 20MB까지는 한 번에, 넘으면 4MB씩 줄 끝에서 잘라 `offset`·`next`로 나눠 읽고 MORE로 덧붙인다. 2MB 넘는 md·html은 읽기 모드 대신 원문만
+  - 원격 그림: CSP는 외부 그림을 계속 막는다(모델 답의 그림 주소로 대화가 새지 않게). 파일 보기의 md만 자리 표시(`md-remote`)와 LOAD REMOTE IMAGES → `IPC.fileImages`(main `fetchRemoteImages`, image/*·10MB·60개까지) → data URI(`Markdown`의 `remote`). 누르기 전에는 요청이 나가지 않는다. Tab 원문↔읽기, Enter는 폴더 들어가기·파일은 입력창에 `@경로`(`insertPath`), 빈 칸 Backspace 위 폴더, Ctrl+D/U 미리 보기 스크롤
+  - `wt-file://<폴더 키>/<상대 경로>`: CSP가 file:을 막아 html·그림은 이 주소로 읽는다. 앱 준비 전에 `registerSchemesAsPrivileged`(standard·secure), `protocol.handle`은 `viewFile`로 열어 준 폴더(sha1 키)만, 폴더 밖(`../`)은 403. CSP에 `img-src wt-file:`·`frame-src wt-file:`
+  - 덮개 전체가 `data-keys-own`이고, 안을 누르면 포커스를 찾기 칸으로 돌린다(버튼에 포커스가 남으면 App이 Esc를 실행 중단으로 받는다). html 미리 보기 안을 누르면 키는 그 페이지로 간다
 - 대화 검색(`SearchOverlay.tsx`, 키맵 `search` 기본 `Ctrl+Shift+F`): 모든 프로젝트의 열린 대화를 세션 기록(`readHistory`, 끝 400개)에서 찾는다(`agent/search.ts`, 기록 파일 `lastModified`가 같으면 캐시). 띄어 쓴 말이 모두 들어간 내 메시지·답변·도구 호출. 고르면 그 대화를 열고 `jump`로 그 메시지까지 스크롤·강조. 무엇을 찾을지와 몇 번째로 맞았는지(`ordinal`)는 메인·렌더러가 `@shared/search`의 같은 함수로 센다
 - macOS도 지원한다 (`isMac` 분기, `src/main/index.ts`)
   - 단축키는 macOS에서도 Ctrl 기반 그대로. Cmd로 바꾸지 말 것. 화면의 Alt 표기만 `⌥`로 바꾼다 (`ALT_LABEL`)
@@ -121,6 +126,7 @@
   - 고정 키(바꿀 수 없음): Esc, ⌥A~L·Ctrl+1~9 프로젝트 이동, 선택 없을 때 Ctrl+C, 방향키. 대화창·전역 범위 키는 Ctrl/Alt/Meta가 있어야 한다 (입력 중 오작동 방지)
   - 전역 호출 키(`summon`)는 메인이 다시 등록한다. 실패하면 이전 키를 되살리고 저장하지 않는다
 - 단축키 안내는 도움말(`HelpOverlay.tsx`, `help` 기본 `Ctrl+/`, 사이드바 HELP 줄)과 설정의 키맵에만 모은다. 범위별 묶음(지금 화면이 맨 앞)·고정 키·입력창 명령. 새 동작을 ACTIONS에 넣으면 `GROUPS`에도 넣을 것. 열려 있는 동안 App은 Esc(닫기) 말고 키를 받지 않는다
+  - 배치: 스크롤 없이 한눈에 보이도록 창 폭을 거의 다 쓰고 묶음을 여러 단(CSS columns)으로 흘린다. 1500px 미만은 긴 묶음이 단 경계에서 줄 단위로 이어지고(제목·설명은 첫 줄과 붙어 있음), 넓으면 묶음을 통째로 둔다. 높이 800px 이하는 여백을 한 단계 더 줄인다. 1280×820·1366×768·1920×1080에서 스크롤이 없는지 `help.spec.ts`가 본다. 묶음을 늘리면 이 테스트부터 돌릴 것
   - 화면 안의 버튼·라벨·메뉴 머리줄·전광판·확인 문구·툴팁(`title`)에는 단축키를 적지 않는다. 프로젝트의 홈 열 글자(A S D…)는 프로젝트 표시라 그대로 둔다
 - 단축키 표시(도움말·설정)는 `<Keys keys="ctrl shift L" />`(`KeyHint.tsx`)를 쓴다. macOS는 수정·특수 키를 아이콘으로, Windows는 글자와 +로(`Ctrl+Shift+L`) 표시한다. 파일 이름이 `keys.ts`와 대소문자만 다르면 macOS에서 충돌하므로 `KeyHint`
 - `!명령`(Chat.tsx `submit`): 아래 터미널의 지금 셸에서 바로 실행(`execInTerminal`, xterm `term.input`으로 실제 키 입력과 같은 길이라 끝남 감지가 그대로)하고, 프롬프트로 돌아오면 명령 줄 다음부터의 출력(끝 400줄·32KB)을 `IPC.shellOutput` → manager `shellOutput`으로 보낸다. CLI의 bash 모드 꼴(`<bash-input>`·`<bash-stdout>`, `shellMessage`)을 보통 메시지로 보내 모델이 바로 이어 답한다(대기열·한도 보류·한도 두 번 확인도 보통 메시지와 같다). 화면 글은 `display`(`! 명령`): 바로 보내면 말풍선 없이 작업만 시작하고(`task_start`, 출력 항목이 이미 있다), 실행 중·대기 중이면 `! 명령` 대기 말풍선(EDIT은 `! 명령`을 입력창으로). 화면·되살린 기록(`shellNote`)에는 `! 명령` 출력 항목(`notice` mono). 서랍은 펼치되 포커스는 입력창에. 빈 `!`는 터미널 열기. 질문 창은 터미널이 없어 제외

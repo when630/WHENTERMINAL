@@ -12,6 +12,7 @@ import { clock, useNow } from './time'
 import { SubLog, TaskDetail, type DetailTarget } from './TaskDetail'
 import { closeTerminal, execInTerminal, forgetTerminals, pathForComposer, runInTerminal, TerminalDrawer, toggleTerminal } from './terminal'
 import { Markdown } from './Markdown'
+import { FilesOverlay } from './FilesOverlay'
 import { AttachButton, useAttach } from './attach'
 import { WorktreePanel } from './WorktreePanel'
 import { EffortPicker, ModelPicker } from './ModelPicker'
@@ -67,6 +68,8 @@ export interface PanelControl {
   cycleEffort: () => void
   /** 되감기 화면 (/rewind) */
   rewind: () => void
+  /** 파일 찾기·읽기 (/files) 열고 닫기 */
+  files: () => void
 }
 
 export function Chat({ project, projects, conversationId, convs, mode, usage, clearArmed, closeArmedId, projectArmed, onClearRequest, onCloseRequest, onClose, onSelectConversation, onRespond, panelRef, jump, openPanel, away, suggestions }: Props): React.JSX.Element {
@@ -279,6 +282,10 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
   }, [fileOpen, fileQuery, files, agentsList, project.id])
 
   const menuOpen = slashOpen || fileOpen
+  // 파일 찾기·읽기 덮개. 대화를 옮기면 닫는다 (잔상이 다른 대화에 남지 않게 ID로 붙잡는다)
+  const [browseOpen, setBrowseOpen] = useState(false)
+  useEffect(() => setBrowseOpen(false), [conversationId])
+  const browse = usePresence(browseOpen ? conversationId : null, 300)
   const slashShown = usePresence(slashOpen ? true : null, 220)
   const fileShown = usePresence(fileOpen ? true : null, 220)
   const limitShown = usePresence(limit, 220)
@@ -460,6 +467,10 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
       setTool(null)
     },
     rewind: () => openTool({ kind: 'rewind' }),
+    files: () => {
+      setBrowseOpen((v) => !v)
+      if (browseOpen) inputRef.current?.focus()
+    },
     stop: () => {
       if (shownTask) void window.api.stopTask(project.id, conversationId, shownTask.id)
     },
@@ -487,7 +498,7 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
     const text = raw.trim()
     if (!text) return
     // 앱이 직접 처리하는 명령: /compact [요약 지시], /clear, /close, /rename [이름], 그리고 명령 화면들
-    const cmd = /^\/(compact|clear|reset|new|close|rename|rewind|resume|fork|export|mcp|agents|permissions|hooks|add-dir|memory|status|login|goal|tag)\b\s*([\s\S]*)$/.exec(text)
+    const cmd = /^\/(compact|clear|reset|new|close|rename|rewind|resume|fork|export|mcp|agents|permissions|hooks|add-dir|memory|status|login|goal|tag|files)\b\s*([\s\S]*)$/.exec(text)
     if (cmd) {
       setDraft('')
       const arg = cmd[2].trim()
@@ -514,6 +525,7 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
           else setEditingId(conversationId)
           return
         case 'rewind': return openTool({ kind: 'rewind' })
+        case 'files': return setBrowseOpen(true)
         case 'resume': return openTool({ kind: 'resume' })
         case 'fork':
           void window.api.forkConversation(project.id, conversationId, arg || undefined).then(onSelectConversation, (err) => setNotice({ ok: false, text: err instanceof Error ? err.message : String(err) }))
@@ -558,6 +570,21 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
     setDraft('')
     history.push(text)
     void window.api.send(project.id, conversationId, text)
+  }
+
+  /** 입력창 커서 자리(입력창에 포커스가 없으면 끝)에 경로를 넣는다. 앞 글과 붙지 않게 띄운다. 터미널 경로 Ctrl+클릭·파일 찾기의 @경로 */
+  const insertPath = (text: string): void => {
+    const el = inputRef.current
+    const at = el && document.activeElement === el ? el.selectionStart : draft.length
+    const before = draft.slice(0, at)
+    const insert = `${before && !/\s$/.test(before) ? ' ' : ''}${text}`
+    setDraft(before + insert + draft.slice(at))
+    const pos = at + insert.length
+    setCaret(pos)
+    requestAnimationFrame(() => {
+      inputRef.current?.focus()
+      inputRef.current?.setSelectionRange(pos, pos)
+    })
   }
 
   /** ↑↓로 보낸 글 되살리기. 입력창이 비었거나 커서가 첫 줄/끝 줄에 있을 때만 (여러 줄 글 안에서는 줄 이동) */
@@ -979,22 +1006,26 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
             el.setSelectionRange(el.value.length, el.value.length)
           })
         }}
-        onPath={(raw) => {
-          // Ctrl+클릭한 경로를 커서 자리에 넣는다
-          const text = pathForComposer(raw, root)
-          const el = inputRef.current
-          const at = el && document.activeElement === el ? el.selectionStart : draft.length
-          const before = draft.slice(0, at)
-          const insert = `${before && !/\s$/.test(before) ? ' ' : ''}${text}`
-          setDraft(before + insert + draft.slice(at))
-          const pos = at + insert.length
-          setCaret(pos)
-          requestAnimationFrame(() => {
-            inputRef.current?.focus()
-            inputRef.current?.setSelectionRange(pos, pos)
-          })
-        }}
+        // Ctrl+클릭한 경로를 커서 자리에 넣는다
+        onPath={(raw) => insertPath(pathForComposer(raw, root))}
       />
+      {browse.item === conversationId && (
+        <FilesOverlay
+          projectId={project.id}
+          conversationId={conversationId}
+          rootName={project.name}
+          root={root}
+          leaving={browse.leaving}
+          onClose={() => {
+            setBrowseOpen(false)
+            inputRef.current?.focus()
+          }}
+          onInsert={(path) => {
+            setBrowseOpen(false)
+            insertPath(`@${path} `)
+          }}
+        />
+      )}
     </div>
   )
 }

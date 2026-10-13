@@ -8,6 +8,7 @@ const LOCAL: SlashCommandInfo[] = [
   { name: 'clear', description: '컨텍스트를 비우고 다음 메시지부터 새 세션으로 시작해요', argumentHint: '', aliases: ['reset', 'new'], builtin: true },
   { name: 'rename', description: '이 탭의 이름을 붙여요', argumentHint: '[이름]', builtin: true },
   { name: 'rewind', description: '파일·대화를 앞선 메시지 시점으로 되돌려요', argumentHint: '', builtin: true },
+  { name: 'files', description: '프로젝트의 파일·폴더를 찾고 내용을 읽어요. md는 읽기 모드, html은 미리 보기로', argumentHint: '', builtin: true },
   { name: 'resume', description: '이 폴더의 지난 세션을 이어 열어요', argumentHint: '', builtin: true },
   { name: 'fork', description: '지금 대화를 복제해 새 탭에서 따로 이어 가요', argumentHint: '[이름]', builtin: true },
   { name: 'export', description: '대화를 마크다운 파일로 저장해요', argumentHint: '', builtin: true },
