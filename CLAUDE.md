@@ -8,7 +8,7 @@
 - `npm run typecheck` — main/preload(`tsconfig.node.json`) + renderer(`tsconfig.web.json`)
 - `npm run build` — `out/`으로 빌드
 - `npm run smoke` — SDK 단발 호출로 구독 인증 확인 (`apiKeySource=none`이면 구독)
-- `npm run test:e2e` — 실제 앱(out/)을 Playwright로 띄워 조작하는 테스트. 모델을 부르지 않음 (설정·단축키·/·@ 메뉴·첨부·대화 닫기·보고함·작업 공간·긴 답 접기). 기능을 바꾸면 이걸 먼저 돌릴 것
+- `npm run test:e2e` — 실제 앱(out/)을 Playwright로 띄워 조작하는 테스트. 모델을 부르지 않음 (설정·단축키·/·@ 메뉴·첨부·대화 닫기·보고함·작업 공간·긴 알림 접기). 기능을 바꾸면 이걸 먼저 돌릴 것
 - `npm run test:e2e:live` — 모델을 실제로 부르는 `@live` 테스트 (승인 흐름·대기열·컴팩트·클리어). 구독 사용량을 조금 씀
   - 테스트마다 임시 사용자 데이터·프로젝트를 만든다(`tests/e2e/fixtures.ts`의 `seed`). 실제 데이터는 건드리지 않음
   - 파일 3개를 함께 돌린다(`workers: 3`, 파일 안의 테스트는 차례로). 일부만: `npm run test:e2e -- terminal`(파일 이름), `-- -g "검색"`(테스트 이름)
@@ -101,7 +101,7 @@
 - 포커스는 늘 글 입력칸으로(`focus.ts`): 대화창은 입력창, 홈은 작업 지시창. 화면을 옮기거나(마운트), 버튼을 누르거나(`refocusAfterClick`, 루트 onClick), 패널·세부 화면·덮개(도움말·검색, `requestRefocus`)를 닫으면 돌아온다. 예외는 다른 입력칸·터미널(`[data-terminal]`)·펼친 목록(`[data-keys-own]`)·글을 긁는 중·확인 요청(Y/A/N)·홈 보고서 상세(O/E/I)가 떠 있을 때. 홈에서 카드를 키로 고르려면 Esc로 입력칸에서 나온다
 - 툴팁: 요소에는 그냥 `title`을 쓴다. `tooltip.tsx`(`useTooltips`, App 루트)가 처음 올릴 때 `data-tip`으로 옮겨 OS 풍선 대신 `.tip`으로 보여준다. 누른 요소·`aria-expanded=true`인 요소에는 띄우지 않는다
 - 펼치는 목록(모델·effort·셸): `.model-list` + `ListHead`(ModelPicker.tsx) 머리줄 + `.model-row` 한 줄 행. 누른 칸 아래(셸은 위)에 붙어서 내려오고(`drop-in`), 긴 설명은 말줄임 + title
-- 긴 답 접기(`Answer`, Chat.tsx): 다 쓴 답이 900px(`FOLD_AT`)보다 높으면 480px만 보이고 끝을 흐린 뒤 `SHOW ALL · n LINES`로 펼친다. 쓰는 중에는 접지 않고, 다 쓰면 펼친 높이로 한 번 그린 뒤(`settled`) 줄어들며 접힌다(되살린 기록은 처음부터 접힌 채). 검색 점프가 접힌 답을 가리키면 `UNFOLD_EVENT`로 펼친다
+- 긴 알림 접기(`Divider`, Chat.tsx): 백그라운드 에이전트가 끝나면 SDK가 그 보고 전문을 `task_notification.summary`로 보내 `TASK DONE · …` 구분선에 들어간다. 본문이 140자(`DIVIDER_LINE`)를 넘거나 여러 줄이면 머리(`TASK DONE`)와 첫 줄만 한 줄로 보이고, 펼치면 본문을 Markdown 글로. 메인 답은 접지 않는다
 - 답변은 `Markdown.tsx`(react-markdown, 원시 HTML 비허용). 링크는 메인이 외부 브라우저로만 연다 (`setWindowOpenHandler`, `will-navigate` 차단)
 - 알림(`main/notify.ts`): 확인 요청·작업 끝남·터미널 명령 끝남·한도 경고(설정 `notify`의 approval·done·terminal·usage). 누르면 `IPC.navigate`로 그 대화로. 배지는 렌더러가 `setBadge`로 보낸다
 - 대기열(OPEN-003): `AgentManager.send`가 `maxConcurrent`를 넘으면 `queued`로 두고, 상태가 끝나면 `drain()`. 확인 대기도 자리를 차지한다
