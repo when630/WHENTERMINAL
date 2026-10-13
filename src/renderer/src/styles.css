@@ -653,7 +653,8 @@ kbd { display: inline-block; font: 500 11px/1 var(--mono); padding: 3px 5px; col
 .tool-sub { opacity: 0.6; }
 @media (max-width: 980px) { .chat-body.open { grid-template-columns: minmax(0, 1fr) 0px; } }
 .transcript { position: relative; flex: 1; overflow-x: hidden; overflow-y: auto; display: flex; flex-direction: column; padding-bottom: 24px; }
-.transcript > * { width: 100%; }
+/* 기록 항목은 줄어들지 않는다: overflow가 있는 항목(명령 출력 pre)은 flex 기본값이면 기록이 길어질 때 한 줄로 찌그러진다 */
+.transcript > * { width: 100%; flex: none; }
 .placeholder { margin: auto; padding: 24px; text-align: center; font: 26px/1.3 var(--kr); color: var(--gray-2); animation: fade-in var(--t-slow) var(--ease-out) both; }
 /* 첫 메시지가 들어오면 자리를 비켜 주고 제자리에서 사라진다 */
 .placeholder.leaving { position: absolute; inset: 0; margin: 0; display: flex; flex-direction: column; justify-content: center; }
