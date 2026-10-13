@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { cwdOf, EFFORT_LEVELS, openConversations, QUICK_ALLOWED_TOOLS, QUICK_DISALLOWED_TOOLS, QUICK_PROJECT_ID, type AccountStatus, type AgentOption, type DeniedCall, type EffortInfo, type EffortLevel, type McpServerInfo, type ModelOption, type AgentEventEnvelope, type PermissionExtra, type RewindResult, type RewindScope, type SessionOption, type SessionStatus, type ShellResult, type TaskOutput, AgentMode, PermissionDecision, RateLimitInfo, SlashCommandInfo } from '@shared/types'
 import type { LimitLevel } from '@shared/usage'
 import type { ProjectStore } from '../store'
-import { AgentSession, baseOptions, modelLabel, toContext, type BasePrefs } from './session'
+import { AgentSession, baseOptions, modelLabel, shellMessage, toContext, type BasePrefs } from './session'
 
 /** 매니저가 설정에서 읽는 것 */
 export interface ManagerPrefs extends BasePrefs {
@@ -32,7 +32,7 @@ export class AgentManager {
   private quickIds = new Set<string>()
 
   /** 자리가 나길 기다리는 메시지 (OPEN-003). 들어온 순서대로 시작한다. id는 화면의 queuedId */
-  private waiting: { id: string; projectId: string; conversationId: string; text: string }[] = []
+  private waiting: { id: string; projectId: string; conversationId: string; text: string; display?: string }[] = []
 
   /** 미리 띄워 둔 CLI 하나. 새 세션의 첫 메시지가 기동을 기다리지 않게 */
   private readonly spare = new SpareKeeper((cb) => baseOptions(cb, this.prefs()))
@@ -122,26 +122,30 @@ export class AgentManager {
   }
 
   /** `!명령` 출력을 세션에 덧붙인다. 작업이 아니라 동시 실행 수·대기열과 무관 */
+  /** 입력창 `!명령`의 출력: 기록에 보이고 보통 메시지로 보내 모델이 바로 이어 답하게 한다 (대기열·한도 보류도 같이 따른다) */
   shellOutput(projectId: string, conversationId: string, result: ShellResult): void {
-    this.getOrCreate(projectId, conversationId).appendShell(result)
+    const { text, output } = shellMessage(result)
+    this.getOrCreate(projectId, conversationId).noteShell(result.command, output)
+    this.send(projectId, conversationId, text, `! ${result.command}`)
   }
 
-  send(projectId: string, conversationId: string, text: string): void {
+  /** display: 화면·입력창 되돌리기에 쓸 글 (보내는 글과 다를 때) */
+  send(projectId: string, conversationId: string, text: string, display?: string): void {
     const session = this.getOrCreate(projectId, conversationId)
     // 질문 창은 동시 실행 제한을 받지 않는다 (작업이 꽉 차 있어도 바로 답해야 하므로). 제목도 고정
-    if (projectId === QUICK_PROJECT_ID) return session.send(text)
-    this.draftTitle(projectId, conversationId, text)
+    if (projectId === QUICK_PROJECT_ID) return session.send(text, true, undefined, display)
+    this.draftTitle(projectId, conversationId, display ?? text)
     // 이미 실행 중인 대화에 이어 보내는 건 자리를 더 쓰지 않는다
-    if (session.isBusy()) return session.send(text)
+    if (session.isBusy()) return session.send(text, true, undefined, display)
     const alreadyWaiting = this.waiting.some((w) => w.conversationId === conversationId)
     if (alreadyWaiting || this.atCapacity()) {
       const id = randomUUID()
-      this.waiting.push({ id, projectId, conversationId, text })
-      session.enqueue(text, id)
+      this.waiting.push({ id, projectId, conversationId, text, display })
+      session.enqueue(display ?? text, id)
       this.announcePositions()
       return
     }
-    session.send(text)
+    session.send(text, true, undefined, display)
   }
 
   /** 차례를 기다리던 메시지를 빼고 그 글을 돌려준다 (자리 대기열 또는 세션이 들고 있던 것). 이미 보냈으면 null */
@@ -154,7 +158,7 @@ export class AgentManager {
       if (session && !this.waiting.some((x) => x.conversationId === conversationId)) session.cancelQueued()
       this.broadcast({ projectId, conversationId, event: { kind: 'unqueued', queuedId } })
       this.announcePositions()
-      return w.text
+      return w.display ?? w.text
     }
     return this.sessions.get(conversationId)?.dropHeld(queuedId) ?? null
   }
@@ -221,7 +225,7 @@ export class AgentManager {
   drain(): void {
     while (this.waiting.length && !this.atCapacity()) {
       const w = this.waiting.shift()!
-      this.sessions.get(w.conversationId)?.send(w.text, false, w.id)
+      this.sessions.get(w.conversationId)?.send(w.text, false, w.id, w.display)
     }
     this.announcePositions()
   }

@@ -280,7 +280,7 @@ test('입력창 !명령: 터미널에서 바로 실행하고 출력을 메인으
   await expect(term).toHaveClass(/open/)
   await expect.poll(async () => ((await rows.innerText()).match(/bang-mode/g) ?? []).length, { timeout: 30_000 }).toBeGreaterThanOrEqual(2)
   await expect(input).toBeFocused()
-  // 프롬프트로 돌아오면 출력(메아리 줄은 빼고)이 메인으로 간다. 모델은 부르지 않는다
+  // 프롬프트로 돌아오면 출력(메아리 줄은 빼고)이 메인으로 간다. 메인이 보통 메시지로 보내므로 렌더러는 send를 따로 부르지 않는다
   await expect.poll(shell, { timeout: 30_000 }).toHaveLength(1)
   const [r] = await shell()
   expect(r.command).toBe('echo bang-mode')
