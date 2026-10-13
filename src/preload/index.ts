@@ -77,6 +77,7 @@ const api: WhenTerminalApi = {
   onSettingsChanged: (cb) => subscribe(IPC.settingsChanged, cb),
   onOpenSettings: (cb) => subscribe(IPC.openSettings, () => cb()),
   onNavigate: (cb) => subscribe(IPC.navigate, cb),
+  onGuestKey: (cb) => subscribe(IPC.guestKey, cb),
   setBadge: (waiting, unread) => ipcRenderer.send(IPC.setBadge, waiting, unread),
   onEvent: (cb) => subscribe(IPC.event, cb),
   onProjectsChanged: (cb) => subscribe(IPC.projectsChanged, cb),

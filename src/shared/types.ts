@@ -613,6 +613,19 @@ export interface AgentEventEnvelope {
   event: AgentEvent
 }
 
+/** 앱 안에서 아티팩트를 볼 때 쓰는 claude.ai 세션 (로그인 쿠키를 앱 창과 따로 저장) */
+export const ARTIFACT_PARTITION = 'persist:claude'
+
+/** webview가 가진 포커스에서 눌린 키 (메인이 앱 창으로 넘긴다) */
+export interface GuestKey {
+  key: string
+  code: string
+  ctrl: boolean
+  alt: boolean
+  shift: boolean
+  meta: boolean
+}
+
 export const IPC = {
   getHotkey: 'app:get-hotkey',
   listProjects: 'projects:list',
@@ -655,6 +668,7 @@ export const IPC = {
   setSettings: 'settings:set',
   settingsChanged: 'settings:changed',
   openSettings: 'app:open-settings',
+  guestKey: 'app:guest-key',
   navigate: 'app:navigate',
   setBadge: 'app:set-badge',
   // 메인 → 렌더러
@@ -823,6 +837,8 @@ export interface WhenTerminalApi {
   onSettingsChanged(cb: (s: Settings) => void): () => void
   /** macOS 메뉴의 '설정…'(⌘,) */
   onOpenSettings(cb: () => void): () => void
+  /** 앱 안 아티팩트 화면(webview)에서 누른 앱 단축키 */
+  onGuestKey(cb: (key: GuestKey) => void): () => void
   /** 알림을 눌렀을 때 그 대화로 */
   /** terminal이 있으면 그 터미널(termId)을 펼친다 */
   onNavigate(cb: (to: { projectId: string; conversationId: string; terminal?: string }) => void): () => void
