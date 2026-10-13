@@ -45,3 +45,20 @@ test.describe('단축키 도움말', () => {
     await expect(help).toHaveCount(0)
   })
 })
+
+test('도움말은 흔한 창 크기에서 스크롤 없이 한 화면에 들어간다', async ({ app, win }) => {
+  for (const [w, h] of [[1280, 820], [1366, 768], [1920, 1080]]) {
+    await app.evaluate(({ BrowserWindow }, [w, h]) => {
+      const b = BrowserWindow.getAllWindows()[0]
+      b.unmaximize()
+      b.setSize(w, h)
+    }, [w, h])
+    await expect.poll(() => win.evaluate(() => innerWidth)).toBe(w)
+    await win.keyboard.press('Control+Slash')
+    const help = win.locator('.help')
+    await expect(help.locator('.help-sheet')).toBeVisible()
+    await expect.poll(() => help.evaluate((el) => el.scrollHeight <= el.clientHeight), { message: `${w}×${h}` }).toBe(true)
+    await win.keyboard.press('Escape')
+    await expect(help).toHaveCount(0)
+  }
+})
