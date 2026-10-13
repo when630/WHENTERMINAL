@@ -28,7 +28,10 @@ test.describe('단축키 도움말', () => {
     await expect(chat.locator('h2')).toContainText('CHAT')
     await expect(chat.locator('dl > div', { hasText: 'Compact' }).locator('dt')).toContainText('Ctrl+Alt+M')
     await expect(chat.locator('dl > div', { hasText: 'Rename tab' }).locator('dt')).toContainText('Ctrl+Shift+E')
-    await expect(help.locator('.help-group', { hasText: 'COMMANDS' })).toContainText('/rename')
+    await expect(help.locator('.help-group', { has: win.locator('h2', { hasText: 'COMMANDS' }) })).toContainText('/rename')
+    // 입력창 키는 CHAT 바로 뒤의 INPUT 묶음에
+    await expect(help.locator('.help-group').nth(1).locator('h2')).toContainText('INPUT')
+    await expect(help.locator('.help-group').nth(1)).toContainText('Shift+Enter')
     // 터미널 키는 TERMINAL 묶음에 따로 모인다
     const term = help.locator('.help-group', { has: win.locator('h2', { hasText: 'TERMINAL' }) })
     await expect(term.locator('dl > div', { hasText: 'find in output' }).locator('dt')).toContainText('Ctrl+F')
@@ -46,8 +49,8 @@ test.describe('단축키 도움말', () => {
   })
 })
 
-test('도움말은 흔한 창 크기에서 스크롤 없이 한 화면에 들어간다', async ({ app, win }) => {
-  for (const [w, h] of [[1280, 820], [1366, 768], [1920, 1080]]) {
+test('도움말은 화면을 채우고, 묶음이 옆으로 넘치지 않으며, 넓은 창(1920×1080)에서는 스크롤 없이 다 보인다', async ({ app, win }) => {
+  for (const [w, h] of [[1280, 820], [1920, 1080]]) {
     await app.evaluate(({ BrowserWindow }, [w, h]) => {
       const b = BrowserWindow.getAllWindows()[0]
       b.unmaximize()
@@ -55,11 +58,18 @@ test('도움말은 흔한 창 크기에서 스크롤 없이 한 화면에 들어
     }, [w, h])
     await expect.poll(() => win.evaluate(() => innerWidth)).toBe(w)
     await win.keyboard.press('Control+Slash')
-    const help = win.locator('.help')
-    await expect(help.locator('.help-sheet')).toBeVisible()
-    await expect.poll(() => help.evaluate((el) => el.scrollHeight <= el.clientHeight), { message: `${w}×${h}` }).toBe(true)
+    const sheet = win.locator('.help-sheet')
+    await expect(sheet).toBeVisible()
+    // 단 상자가 높이에 묶여 묶음이 오른쪽으로 넘치지 않는다
+    await expect.poll(() => win.locator('.help-grid').evaluate((el) => el.scrollWidth <= el.clientWidth), { message: `${w}×${h}` }).toBe(true)
+    if (w >= 1920) await expect.poll(() => sheet.evaluate((el) => el.scrollHeight <= el.clientHeight)).toBe(true)
+    else {
+      // 좁은 창은 시트 안에서 스크롤되고 머리줄은 위에 붙어 있다
+      await sheet.evaluate((el) => el.scrollTo({ top: el.scrollHeight }))
+      await expect(win.locator('.help-head')).toBeInViewport()
+    }
     await win.screenshot({ path: test.info().outputPath(`help-${w}.png`) })
     await win.keyboard.press('Escape')
-    await expect(help).toHaveCount(0)
+    await expect(win.locator('.help')).toHaveCount(0)
   }
 })

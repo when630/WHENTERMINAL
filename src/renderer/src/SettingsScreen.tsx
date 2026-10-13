@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Presence } from './motion'
 import { ACTIONS, APP_ICONS, conflictsOf, DEFAULT_KEYMAP, effectiveKeymap, SCOPE_LABEL, THEMES, type ActionDef, type ActionId, type ActionScope, type Settings, type ThemeId } from '@shared/keymap'
 import type { TerminalShellOption, UpdateState } from '@shared/types'
 import { Keys } from './KeyHint'
-import { ALT_LABEL, eventToBinding } from './keys'
+import { ALT_LABEL, eventToBinding, matches } from './keys'
 
 interface Props {
   settings: Settings
@@ -58,8 +58,36 @@ function validate(a: ActionDef, binding: string): string | null {
   return null
 }
 
+type SettingsTab = 'general' | 'keys'
+const TAB_KEY = 'wt-settings-tab'
+const TABS: { id: SettingsTab; label: string }[] = [
+  { id: 'general', label: 'GENERAL' },
+  { id: 'keys', label: 'SHORTCUTS' },
+]
+
+/** 마지막에 본 탭 (이 컴퓨터에서만 기억하는 편의) */
+function loadTab(): SettingsTab {
+  try {
+    return localStorage.getItem(TAB_KEY) === 'keys' ? 'keys' : 'general'
+  } catch {
+    return 'general'
+  }
+}
+
 export function SettingsScreen({ settings, activeHotkey, update, onClose, onSaved }: Props): React.JSX.Element {
   const [recording, setRecording] = useState<ActionId | null>(null)
+  // 항목이 많아 일반 설정과 단축키를 탭으로 나눈다
+  const [tab, setTabState] = useState<SettingsTab>(loadTab)
+  const bodyRef = useRef<HTMLElement>(null)
+  const setTab = (t: SettingsTab): void => {
+    setTabState(t)
+    try {
+      localStorage.setItem(TAB_KEY, t)
+    } catch {
+      // 기억하지 못해도 된다
+    }
+    bodyRef.current?.scrollTo({ top: 0 })
+  }
   const [message, setMessage] = useState<{ id: ActionId; text: string } | null>(null)
   const km = effectiveKeymap(settings)
   const changed = Object.keys(settings.keymap).length > 0
@@ -89,6 +117,22 @@ export function SettingsScreen({ settings, activeHotkey, update, onClose, onSave
     setMessage(null)
     void save({ ...settings, keymap }, id)
   }
+
+  // 탭 이동: 키맵의 다음·이전 탭 키(기본 Ctrl+Tab·Ctrl+Shift+Tab). 키를 기록하는 중에는 그 칸이 키를 받는다
+  const recordingRef = useRef(recording)
+  recordingRef.current = recording
+  const tabRef = useRef(tab)
+  tabRef.current = tab
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (recordingRef.current) return
+      if (!matches(e, km.nextConversation) && !matches(e, km.prevConversation)) return
+      e.preventDefault()
+      setTab(tabRef.current === 'general' ? 'keys' : 'general')
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [km.nextConversation, km.prevConversation]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const onRecordKey = (a: ActionDef, e: React.KeyboardEvent): void => {
     e.preventDefault()
@@ -124,8 +168,38 @@ export function SettingsScreen({ settings, activeHotkey, update, onClose, onSave
         </div>
       </header>
 
-      <main className="settings-body">
+      <nav
+        className="set-tabs"
+        role="tablist"
+        aria-label="설정 묶음"
+        onKeyDown={(e) => {
+          // 탭 줄에서 좌우 화살표로도 옮긴다
+          if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+          e.preventDefault()
+          setTab(tab === 'general' ? 'keys' : 'general')
+        }}
+      >
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            id={`set-tab-${t.id}`}
+            aria-selected={tab === t.id}
+            aria-controls={`set-panel-${t.id}`}
+            className={`set-tab ${tab === t.id ? 'on' : ''}`}
+            onClick={() => setTab(t.id)}
+          >
+            {t.label}
+            {t.id === 'keys' && changed && <span className="set-tab-n mono">{Object.keys(settings.keymap).length} CHANGED</span>}
+          </button>
+        ))}
+      </nav>
+
+      <main className="settings-body" ref={bodyRef}>
         {saveError && <div className="msg notice error" role="alert">{saveError}</div>}
+        {tab === 'general' && (
+        <div key="general" className="set-panel" role="tabpanel" id="set-panel-general" aria-labelledby="set-tab-general">
         <section className="set-sec" aria-labelledby="set-theme">
           <h2 id="set-theme" className="col-h">THEME</h2>
           <div className="themes" role="radiogroup" aria-label="색 테마">
@@ -328,6 +402,11 @@ export function SettingsScreen({ settings, activeHotkey, update, onClose, onSave
           })}
         </section>
 
+        </div>
+        )}
+
+        {tab === 'keys' && (
+        <div key="keys" className="set-panel" role="tabpanel" id="set-panel-keys" aria-labelledby="set-tab-keys">
         <section className="set-sec" aria-labelledby="set-keys">
           <h2 id="set-keys" className="col-h">
             SHORTCUTS
@@ -395,6 +474,8 @@ export function SettingsScreen({ settings, activeHotkey, update, onClose, onSave
             ))}
           </div>
         </section>
+        </div>
+        )}
       </main>
     </div>
   )

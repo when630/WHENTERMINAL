@@ -186,10 +186,20 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
     }, 120)
   }, [jump?.nonce, state.items.length, state.restored]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 권한 요청이 오면 입력창에서 포커스를 빼서 Y/A/N이 바로 먹게 한다
+  // 권한 요청이 오면 입력창에서 포커스를 빼서 Y/A/N이 바로 먹게 한다.
+  // 대화창을 열거나(다른 화면에서 돌아옴) 대화를 옮기면 써 둔 글의 끝에 커서를 둔다 (처음 그려진 입력창은 커서가 맨 앞이다)
+  const caretPlaced = useRef<string | null>(null)
   useEffect(() => {
-    if (pending) inputRef.current?.blur()
-    else inputRef.current?.focus()
+    const el = inputRef.current
+    if (pending) return el?.blur()
+    if (!el) return
+    el.focus()
+    if (caretPlaced.current !== conversationId) {
+      caretPlaced.current = conversationId
+      const end = el.value.length
+      el.setSelectionRange(end, end)
+      setCaret(end)
+    }
   }, [pending?.requestId, conversationId])
   // 포커스는 늘 입력창으로: 패널·세부 화면·덮개를 닫거나 버튼을 누른 뒤에도 (focus.ts). 확인 요청이 떠 있으면 Y/A/N을 위해 비워 둔다
   const focusComposer = useCallback((): void => {
@@ -950,7 +960,6 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
         )}
         </div>
         <span className="composer-prompt" aria-hidden="true">&gt;</span>
-        <AttachButton onClick={attach.pick} />
         <div className="composer-body">
           <label htmlFor="composer-input" className="sr-only">메시지</label>
           <textarea
@@ -992,6 +1001,8 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
             }}
           />
         </div>
+        {/* 첨부는 입력칸 오른쪽 끝 (끌어다 놓기·이미지 붙여넣기도 된다) */}
+        <AttachButton onClick={attach.pick} />
       </div>
 
       <TerminalDrawer

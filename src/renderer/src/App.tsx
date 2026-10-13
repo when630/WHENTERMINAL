@@ -295,6 +295,20 @@ export function App(): React.JSX.Element {
     setView((v) => (v.screen === 'chat' && v.projectId === projectId ? { screen: 'home' } : v))
   }, [projects])
 
+  /** 프로젝트 순서 바꾸기: 화면은 바로 바꾸고 메인에 저장한다 (메인이 보내는 목록으로 다시 맞춰진다) */
+  const moveProject = useCallback((projectId: string, to: number) => {
+    setProjects((list) => {
+      const from = list.findIndex((p) => p.id === projectId)
+      const at = Math.max(0, Math.min(list.length - 1, to))
+      if (from < 0 || at === from) return list
+      const next = [...list]
+      const [p] = next.splice(from, 1)
+      next.splice(at, 0, p)
+      return next
+    })
+    void window.api.moveProject(projectId, to)
+  }, [])
+
   const requestRemoveProject = useCallback((projectId: string) => {
     confirmTwice('project', projectId, () => void removeProject(projectId))
   }, [confirmTwice, removeProject])
@@ -359,6 +373,15 @@ export function App(): React.JSX.Element {
     if (quickOpen) return
     // 자리 비움(AWAY) 켜고 끄기: 어디서든
     if (is('away')) return take(toggleAway)
+    // 지금 연 프로젝트를 사이드바 목록에서 한 칸 위·아래로
+    if (is('projectUp') || is('projectDown')) {
+      const step = is('projectUp') ? -1 : 1
+      return take(() => {
+        if (view.screen !== 'chat') return
+        const i = projects.findIndex((p) => p.id === view.projectId)
+        if (i >= 0) moveProject(view.projectId, i + step)
+      })
+    }
     if (is('help')) {
       return take(() => {
         setSearchOpen(false)
@@ -538,6 +561,7 @@ export function App(): React.JSX.Element {
         flash={flashShown.item ? { text: flashShown.item, leaving: flashShown.leaving } : null}
         armedProjectId={armed?.kind === 'project' ? armed.id : null}
         onRemoveProjectRequest={requestRemoveProject}
+        onMoveProject={moveProject}
         away={settings.away}
         onToggleAway={toggleAway}
       />

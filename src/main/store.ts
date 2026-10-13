@@ -65,6 +65,17 @@ export class ProjectStore {
     this.save()
   }
 
+  /** 프로젝트를 목록의 to번째 자리로 옮긴다 (홈 열 글자·Alt+A~L도 이 순서를 따른다) */
+  moveProject(projectId: string, to: number): void {
+    const from = this.projects.findIndex((p) => p.id === projectId)
+    if (from < 0) return
+    const at = Math.max(0, Math.min(this.projects.length - 1, to))
+    if (at === from) return
+    const [p] = this.projects.splice(from, 1)
+    this.projects.splice(at, 0, p)
+    this.save()
+  }
+
   addConversation(projectId: string, extra: Partial<Conversation> = {}, id?: string): Conversation {
     const project = this.get(projectId)
     if (!project) throw new Error(`프로젝트 없음: ${projectId}`)

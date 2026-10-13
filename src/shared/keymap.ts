@@ -10,7 +10,7 @@ export type ActionId =
   | 'allow' | 'always' | 'deny'
   | 'nextConversation' | 'prevConversation' | 'closeConversation' | 'closeProject' | 'clear' | 'compact' | 'cycleMode' | 'interrupt'
   | 'panelNext' | 'panelPrev' | 'panelBack' | 'stopTask' | 'renameConversation' | 'newConversation' | 'terminal'
-  | 'terminalNew' | 'terminalNext' | 'terminalPrev' | 'terminalClose' | 'terminalFind' | 'cycleEffort' | 'rewind' | 'away' | 'files'
+  | 'terminalNew' | 'terminalNext' | 'terminalPrev' | 'terminalClose' | 'terminalFind' | 'cycleEffort' | 'rewind' | 'away' | 'files' | 'projectUp' | 'projectDown'
 
 export type ActionScope = 'system' | 'anywhere' | 'home' | 'chat' | 'approval'
 
@@ -38,6 +38,9 @@ export const ACTIONS: ActionDef[] = [
   { id: 'search', label: 'Search all conversations', scope: 'anywhere', default: 'Ctrl+Shift+F' },
   { id: 'help', label: 'Keyboard shortcuts', scope: 'anywhere', default: 'Ctrl+/' },
   { id: 'away', label: 'Away mode on / off', scope: 'anywhere', default: 'Ctrl+Shift+A' },
+  // 지금 연 프로젝트를 사이드바 목록에서 한 칸 옮긴다 (Alt+글자 프로젝트 이동은 Shift 없이만 받아 겹치지 않는다)
+  { id: 'projectUp', label: 'Move project up', scope: 'anywhere', default: 'Alt+Shift+K' },
+  { id: 'projectDown', label: 'Move project down', scope: 'anywhere', default: 'Alt+Shift+J' },
   { id: 'addProject', label: 'Add project', scope: 'home', default: 'Ctrl+N' },
   { id: 'focusAsk', label: 'Focus task input', scope: 'home', default: 'I' },
   { id: 'down', label: 'Next item', scope: 'home', default: 'J' },

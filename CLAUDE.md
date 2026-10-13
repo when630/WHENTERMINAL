@@ -27,6 +27,7 @@
   - 대화창 상단 둘째 줄: 왼쪽 하위 대화 탭, 오른쪽 모델·effort·모드(누르면 다음 모드)
   - effort(`EffortPicker`, 키맵 `cycleEffort`): 고른 값은 `Conversation.effort`. 세션 시작 옵션 `effort`, 살아 있으면 `applyFlagSettings({ effortLevel })`(null이면 모델 기본값). SDK의 `system/init`에는 effort가 오지 않으므로, 고르지 않았을 때는 `resolveSettings`의 `modelSettings[모델].effortLevel`·`effortLevel`을 흐리게 보인다. 단계는 `supportedModels()`의 `supportedEffortLevels`
   - 브랜치: 대화창 위 경로 줄에 `BRANCH 이름`(*는 커밋 안 한 변경). `branchOf(cwdOf)`(worktree.ts)를 대화를 열 때·상태가 바뀔 때·창 focus·30초마다 읽는다
+  - 대화창을 열거나 대화를 옮기면 입력창에 포커스를 주고 커서를 써 둔 글의 끝에 둔다(`caretPlaced`, 처음 그려진 textarea는 커서가 맨 앞이다)
   - 입력 초안(`drafts.ts` `useDraft`): 대화마다(`대화 ID`)·홈 작업 지시창은 프로젝트마다(`home:프로젝트 ID`) localStorage에. 보내면 지운다. 없어진 대화의 초안은 앱을 켤 때 `pruneDrafts`
   - 대화창을 열면 메시지 없이 `peek`으로 컨텍스트 사용률·모델을 읽는다 (저장된 세션을 이어 연 CLI 또는 빈 CLI에서 `getContextUsage` 후 바로 닫음, 0.3~0.7초)
   - CLI 미리 띄우기(`agent/spare.ts` `SpareKeeper`, SDK `prewarm` 알파 API): 홈 작업 지시창·세션 없는 대화의 입력창에 글을 치기 시작하면 `IPC.prewarm` → 스페어 CLI 하나를 주차해 둔다(10분 안 쓰면 닫음, 주차 중 약 250MB). 새 세션(이어 열기 아님)의 첫 메시지는 `takeSpare`로 가져가 `claim`(폴더·모드·모델·`settings.effortLevel`). 세션마다 같은 옵션은 `baseOptions()` 한 곳에 (prewarm 때 고정되므로 여기에 넣지 않은 옵션은 claim할 수 없다). claim이 거절되면(`claimed` reject, `not_claimed` 결과) `query()`로 다시 띄우고 `inflight` 메시지를 다시 보낸다. 콜백(`canUseTool` 등)은 `SessionCallbacks` 묶음을 `bind`로 세션에 연결
@@ -53,6 +54,7 @@
   - '항상 허용'은 SDK `suggestions`를 그대로 `updatedPermissions`로 돌려준다. 범위는 CLI가 정한 대로(파일 편집은 이 세션의 acceptEdits, 폴더 밖 읽기는 세션, 명령·WebFetch는 프로젝트 `localSettings`)이고 넓히지 않는다. `describeAlways()`가 무엇을 어디까지 기억하는지 풀어 `PermissionRequest.always`로 보내고 버튼에 `npm view * · PROJECT`처럼 보인다(섞이면 가장 좁은 범위). 제안이 없으면(`cd .. && git status`처럼 이어 붙인 명령) 한 번 허용과 같으므로 `suppressAlwaysAllow`로 버튼·A 키를 감춘다
 - 대화창에서 `Esc`는 실행 중단 전용. 나가기(홈)는 `Ctrl+H` (기획서 초안의 ``Ctrl+` ``에서 변경)
 - 사용자는 40% 배열 키보드를 쓴다. 단축키는 알파벳 + Ctrl/Alt/Shift만으로 되게 하고, 숫자·방향키·F키·백틱은 보조로만 둔다 (`src/renderer/src/keys.ts`)
+  - 프로젝트 순서: 사이드바 줄을 끌어다 놓기(`Sidebar` `onMoveProject`) 또는 키맵 `projectUp`/`projectDown`(기본 `Alt+Shift+K/J`, 지금 연 프로젝트를 한 칸). `IPC.moveProject` → `store.moveProject`, 렌더러는 먼저 바꿔 보이고 `projectsChanged`로 맞춘다. 홈 열 글자·Alt+A~L은 이 순서를 따른다. 순서가 바뀌면 줄이 이전 자리에서 미끄러진다(하위 대화 펼침은 움직이지 않음)
   - 프로젝트 이동: `Alt+A S D F G H J K L` = 1~9 (보조: `Ctrl+1~9`, 홈에서 `1~9`). 그래서 프로젝트는 `MAX_PROJECTS`(9)개까지만: 넘으면 렌더러가 사이드바 `flash`로 안내하고 메인 `addProject`도 null (OPEN-007)
   - 홈 카드 선택: `H J K L` (보조: 방향키), 열기 `O`/`Enter`
   - 중단: `Esc` / `Ctrl+[` / 선택 글자 없을 때 `Ctrl+C`
@@ -100,7 +102,7 @@
   - 패널의 줄(백그라운드 작업·AGENTS)을 누르면 대화 기록 자리에 세부 내용(`TaskDetail.tsx`)을 펼친다. 셸·모니터는 CLI가 쓰는 출력 파일(`<임시 폴더>/claude…/<프로젝트>/<세션 ID>/tasks/<작업 ID>.output`, `agent/task-output.ts`)을 도는 동안 1초마다 읽는다
   - 하위 에이전트: `forwardSubagentText`로 받은 `parent_tool_use_id` 메시지를 `sub`·`sub_result` 이벤트로 보내 `ConversationState.subs`(Agent 도구 호출 ID별)에 쌓는다. `task_progress`는 `progress`. 앞에서 기다리는 에이전트는 AGENTS, 백그라운드 에이전트는 BACKGROUND에 나온다. 대화 기록의 Agent 도구를 펼치면 `SubLog`
 - 기록·보고서: 대화창을 열 때 화면 기록이 비어 있으면 `getSessionMessages`로 되살린다(`agent/history.ts`). 끝난 작업의 보고서는 `Conversation.lastTask`에 저장하고, 보관 전 보고서가 있는 대화를 닫으면 `closedAt`으로 숨기기만 한다. 탭·목록은 `openConversations()` 기준
-- 첨부는 경로로: 입력창에 파일을 끌어다 놓기·첨부 버튼(`pickFiles`)·이미지 붙여넣기(`saveImage`로 userData/attachments에 저장)를 하면 경로를 넣는다. 작업 폴더 안은 `@상대경로`. 끌어다 놓은 파일 경로는 sandbox라 preload의 `webUtils.getPathForFile`로
+- 첨부는 경로로 (첨부 버튼은 입력칸 오른쪽 끝, 홈 작업 지시창은 SEND 앞): 입력창에 파일을 끌어다 놓기·첨부 버튼(`pickFiles`)·이미지 붙여넣기(`saveImage`로 userData/attachments에 저장)를 하면 경로를 넣는다. 작업 폴더 안은 `@상대경로`. 끌어다 놓은 파일 경로는 sandbox라 preload의 `webUtils.getPathForFile`로
 - 포커스는 늘 글 입력칸으로(`focus.ts`): 대화창은 입력창, 홈은 작업 지시창. 화면을 옮기거나(마운트), 버튼을 누르거나(`refocusAfterClick`, 루트 onClick), 패널·세부 화면·덮개(도움말·검색, `requestRefocus`)를 닫으면 돌아온다. 예외는 다른 입력칸·터미널(`[data-terminal]`)·펼친 목록(`[data-keys-own]`)·글을 긁는 중·확인 요청(Y/A/N)·홈 보고서 상세(O/E/I)가 떠 있을 때. 홈에서 카드를 키로 고르려면 Esc로 입력칸에서 나온다
 - 툴팁: 요소에는 그냥 `title`을 쓴다. `tooltip.tsx`(`useTooltips`, App 루트)가 처음 올릴 때 `data-tip`으로 옮겨 OS 풍선 대신 `.tip`으로 보여준다. 누른 요소·`aria-expanded=true`인 요소에는 띄우지 않는다
 - 펼치는 목록(모델·effort·셸): `.model-list` + `ListHead`(ModelPicker.tsx) 머리줄 + `.model-row` 한 줄 행. 누른 칸 아래(셸은 위)에 붙어서 내려오고(`drop-in`), 긴 설명은 말줄임 + title
@@ -124,13 +126,14 @@
   - 자동 업데이트에 꼭 필요: `release/WHENTERMINAL-Setup-X.Y.Z.exe`, `.exe.blockmap`, `latest.yml`. 설치 파일 이름은 `latest.yml`과 맞도록 대시로 고정해 두었다(`nsis.artifactName`). 이름을 바꿔 올리면 업데이트가 404로 실패한다
   - 그 밖에 zip(Windows·macOS)과 dmg. `dist` 스크립트는 `--publish never`라 빌드만 하고 올리지 않는다
 - 설정(`SettingsScreen.tsx`, `Ctrl+,` / macOS 메뉴 ⌘,): `userData/settings.json` (`src/main/settings.ts`). 첫 화면 전에 preload가 동기로 읽어(`initialSettings`) 테마 깜빡임이 없다
+  - 탭 두 개: GENERAL(테마·아이콘·실행·업데이트·알림)과 SHORTCUTS(키맵). 마지막에 본 탭은 localStorage `wt-settings-tab`. 키맵 `nextConversation`/`prevConversation`(기본 Ctrl+Tab)으로도 넘기고(키를 기록하는 중에는 아님), 탭 줄에서 좌우 화살표. 도움말 ANYWHERE에 `Settings: switch tab`
   - 테마: `:root[data-theme]`로 색 토큰만 바꾼다 (포스터·종이·세이지·먹·밤). 새 색을 쓸 때는 직접 색 대신 역할 토큰(`--sel-bg/fg`, `--on-signal`, `--code-bg/fg`, `--line`, `--shadow`)을 쓸 것
   - 단축키: 동작 목록·기본값은 `src/shared/keymap.ts`(`ACTIONS`), 판정은 `matches()`(keys.ts). App의 키 처리와 화면의 키 표시는 모두 `useKeymap()`을 거친다. 새 단축키는 ACTIONS에 추가하고 하드코딩하지 말 것
   - 고정 키(바꿀 수 없음): Esc, ⌥A~L·Ctrl+1~9 프로젝트 이동, 선택 없을 때 Ctrl+C, 방향키. 대화창·전역 범위 키는 Ctrl/Alt/Meta가 있어야 한다 (입력 중 오작동 방지)
   - 전역 호출 키(`summon`)는 메인이 다시 등록한다. 실패하면 이전 키를 되살리고 저장하지 않는다
 - 단축키 안내는 도움말(`HelpOverlay.tsx`, `help` 기본 `Ctrl+/`, 사이드바 HELP 줄)과 설정의 키맵에만 모은다. 범위별 묶음(지금 화면이 맨 앞)·고정 키·입력창 명령. 새 동작을 ACTIONS에 넣으면 `GROUPS`에도 넣을 것. 열려 있는 동안 App은 Esc(닫기) 말고 키를 받지 않는다
   - 안쪽 구분선(단 사이·묶음 아래·줄 사이)은 두지 않고 여백으로 나눈다
-  - 배치: 스크롤 없이 한눈에 보이도록 창 폭을 거의 다 쓰고 묶음을 여러 단(CSS columns)으로 흘린다. 1500px 미만은 긴 묶음이 단 경계에서 줄 단위로 이어지고(제목·설명은 첫 줄과 붙어 있음), 넓으면 묶음을 통째로 둔다. 높이 800px 이하는 여백을 한 단계 더 줄인다. 1280×820·1366×768·1920×1080에서 스크롤이 없는지 `help.spec.ts`가 본다. 묶음을 늘리면 이 테스트부터 돌릴 것
+  - 배치: 가독성 우선. 화면을 다 채우고(시트 높이 100%) 묶음 사이·줄 사이에 여유를 두며, 묶음은 단 경계에서 쪼개지 않는다(`break-inside: avoid`). 단 상자(`.help-grid`)에 높이를 주면 넘친 묶음이 오른쪽으로 단을 더 만들므로 높이는 내용대로 두고 시트가 스크롤한다(머리줄은 sticky). 1920×1080 이상은 스크롤 없이 다 보이고, 1280×820은 시트 안에서 스크롤. 대화창이면 CHAT 다음에 입력창 키 묶음 INPUT(Enter·Tab·↑↓·/·@·!)이 온다. `help.spec.ts`가 가로 넘침 없음·1920에서 스크롤 없음을 본다
   - 화면 안의 버튼·라벨·메뉴 머리줄·전광판·확인 문구·툴팁(`title`)에는 단축키를 적지 않는다. 프로젝트의 홈 열 글자(A S D…)는 프로젝트 표시라 그대로 둔다
 - 단축키 표시(도움말·설정)는 `<Keys keys="ctrl shift L" />`(`KeyHint.tsx`)를 쓴다. macOS는 수정·특수 키를 아이콘으로, Windows는 글자와 +로(`Ctrl+Shift+L`) 표시한다. 파일 이름이 `keys.ts`와 대소문자만 다르면 macOS에서 충돌하므로 `KeyHint`
 - `!명령`(Chat.tsx `submit`): 아래 터미널의 지금 셸에서 바로 실행(`execInTerminal`, xterm `term.input`으로 실제 키 입력과 같은 길이라 끝남 감지가 그대로)하고, 프롬프트로 돌아오면 명령 줄 다음부터의 출력(끝 400줄·32KB)을 `IPC.shellOutput` → manager `shellOutput`으로 보낸다. CLI의 bash 모드 꼴(`<bash-input>`·`<bash-stdout>`, `shellMessage`)을 보통 메시지로 보내 모델이 바로 이어 답한다(대기열·한도 보류·한도 두 번 확인도 보통 메시지와 같다). 화면 글은 `display`(`! 명령`): 바로 보내면 말풍선 없이 작업만 시작하고(`task_start`, 출력 항목이 이미 있다), 실행 중·대기 중이면 `! 명령` 대기 말풍선(EDIT은 `! 명령`을 입력창으로). 화면·되살린 기록(`shellNote`)에는 `! 명령` 출력 항목(`notice` mono). 서랍은 펼치되 포커스는 입력창에. 빈 `!`는 터미널 열기. 질문 창은 터미널이 없어 제외
