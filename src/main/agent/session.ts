@@ -80,6 +80,8 @@ export function subscriptionEnv(): Record<string, string | undefined> {
   delete env.ANTHROPIC_AUTH_TOKEN
   // SDK로 띄운 CLI는 Artifact 도구가 기본으로 꺼져 있다(sdk_default_off). CLI처럼 켜 둔다. 사용자 설정 enableArtifact: false는 여전히 우선
   env.CLAUDE_CODE_ARTIFACT ??= '1'
+  // 턴이 완전히 끝났다는 신호(session_state_changed)를 받는다. 없으면 SDK 안에서만 쓰고 넘겨주지 않는다
+  env.CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS = '1'
   return env
 }
 
@@ -204,6 +206,11 @@ export class AgentSession {
   private held: HeldMessage[] = []
   /** `!명령` 출력 중 아직 세션에 붙이지 못한 것 (CLI가 바쁘거나 떠 있지 않을 때). 다음 메시지 앞에 흘려보낸다 */
   private pendingShell: string[] = []
+  /**
+   * 큐에 넣었지만 아직 결과가 오지 않은 `!명령` 출력. CLI는 shouldQuery: false 메시지에도 모델 턴 없는 빈 result(num_turns 0)를
+   * 따로 돌려주므로, 그걸 작업 끝으로 받지 않게 개수만큼 걸러 낸다. claim이 거절되면 새 프로세스로 다시 보낸다
+   */
+  private shellInflight: string[] = []
   /** ExitPlanMode를 승인한 뒤 바꿀 모드. CLI가 플랜 모드를 빠져나온 직후(status)에 적용한다 */
   private afterPlan: AgentMode | null = null
   private afterPlanTimer: ReturnType<typeof setTimeout> | null = null
@@ -218,6 +225,11 @@ export class AgentSession {
    * 명령이 모델 턴을 열면(모델이 바로 일을 시작) 그때 작업으로 올린다 (promoteCommand)
    */
   private quietCommand: string | null = null
+  /**
+   * 턴이 열려 있지 않을 때 온 확인 요청(메인 턴이 끝난 뒤 백그라운드 에이전트가 묻는 것 등) 직전의 상태.
+   * 답하면 RUNNING이 아니라 이 상태로 돌아간다. 그사이 턴이 열리면 'running'. waiting_approval을 벗어나면 비운다
+   */
+  private askFrom: AgentStatus | null = null
   /** AWAY에서 거절했다가 사용자가 승인한 호출. 같은 도구·입력이 다시 오면 한 번 묻지 않고 허용한다 */
   private preapproved = new Set<string>()
 
@@ -268,7 +280,7 @@ export class AgentSession {
    * 실행 중(또는 컴팩트 중)이면 들고 있다가 지금 턴이 끝난 뒤 보낸다
    */
   send(text: string, echo = true, queuedId?: string): void {
-    if (this.isBusy() || this.manualCompact) {
+    if (this.turnOpen() || this.manualCompact) {
       const id = queuedId ?? randomUUID()
       if (echo) this.emit({ kind: 'user', text, next: true, queuedId: id })
       this.held.push({ id, text })
@@ -298,7 +310,9 @@ export class AgentSession {
   private dispatch(text: string, uuid: string): void {
     if (!this.q) this.start()
     this.quietCommand = null
-    this.setStatus('running')
+    // 턴 밖의 확인 요청을 기다리는 중이면 표시는 그대로 두고, 답한 뒤 RUNNING으로
+    if (this.status === 'waiting_approval') this.askFrom = 'running'
+    else this.setStatus('running')
     this.inflight.push({ text, uuid })
     this.flushShell()
     this.queue!.push(text, uuid)
@@ -307,7 +321,12 @@ export class AgentSession {
   /** 붙이지 못했던 `!명령` 출력을 지금 큐에 (모델 턴 없이). 실제 메시지 앞에 넣어야 그 메시지에 합쳐진다 */
   private flushShell(): void {
     if (!this.queue) return
-    for (const text of this.pendingShell.splice(0)) this.queue.push(text, undefined, { shouldQuery: false })
+    for (const text of this.pendingShell.splice(0)) this.pushShell(text)
+  }
+
+  private pushShell(text: string): void {
+    this.shellInflight.push(text)
+    this.queue!.push(text, undefined, { shouldQuery: false })
   }
 
   /**
@@ -318,7 +337,7 @@ export class AgentSession {
     const output = r.output.replace(/\s+$/, '')
     const text = `<bash-input>${r.command}</bash-input>\n<bash-stdout>${r.truncated ? '… (앞부분은 잘랐어요)\n' : ''}${output}</bash-stdout>`
     this.emit({ kind: 'notice', text: `! ${r.command}\n${output || '(출력 없음)'}`, tone: 'info', mono: true })
-    if (this.q && this.queue && !this.isBusy() && !this.manualCompact && this.status !== 'queued') this.queue.push(text, undefined, { shouldQuery: false })
+    if (this.q && this.queue && !this.turnOpen() && !this.manualCompact && this.status !== 'queued') this.pushShell(text)
     else this.pendingShell.push(text)
   }
 
@@ -327,7 +346,7 @@ export class AgentSession {
    * 실행 중이면 거절 (턴 사이에 끼면 지금 턴에 섞인다)
    */
   command(text: string): void {
-    if (this.isBusy() || this.manualCompact || this.status === 'queued') return this.emit({ kind: 'error', message: '작업이 끝난 뒤에 보낼 수 있어요' })
+    if (this.turnOpen() || this.manualCompact || this.status === 'queued') return this.emit({ kind: 'error', message: '작업이 끝난 뒤에 보낼 수 있어요' })
     if (!this.q) this.start()
     this.quietCommand = text
     this.queue!.push(text)
@@ -340,6 +359,44 @@ export class AgentSession {
     this.quietCommand = null
     this.emit({ kind: 'user', text })
     this.setStatus('running')
+  }
+
+  /**
+   * 사람이 보내지 않은 턴이 열렸다: 백그라운드 셸·에이전트가 끝난 알림(<task-notification>), Monitor 이벤트, 예약된 깨우기 등으로
+   * CLI가 스스로 모델을 다시 부른 것. 끝난 작업을 다시 실행 중으로 돌려 result에서 끝나게 한다
+   */
+  private resumeTurn(): void {
+    if (this.quietCommand || this.manualCompact || this.interrupted || this.status === 'queued' || this.status === 'running') return
+    // 백그라운드 확인 요청을 기다리는 중에 턴이 열렸다: 답하면 RUNNING으로
+    if (this.status === 'waiting_approval') {
+      if (this.askFrom) this.askFrom = 'running'
+      return
+    }
+    this.setStatus('running')
+  }
+
+  /** 모델 턴이 열려 있다 (실행 중, 또는 턴 안에서 확인을 기다림). 턴 밖의 확인 요청만 기다리면 아니다 */
+  private turnOpen(): boolean {
+    return this.status === 'running' || (this.status === 'waiting_approval' && (this.askFrom === null || this.askFrom === 'running'))
+  }
+
+  /** 확인 요청이 모두 풀렸다: 턴 안이면 RUNNING, 턴 밖에서 물었던 것이면 그 전 상태로 (작업 끝 알림 없이) */
+  private approvalsSettled(): void {
+    if (this.pending.size > 0 || this.status !== 'waiting_approval') return
+    const back = this.askFrom ?? 'running'
+    this.setStatus(back, back !== 'running')
+  }
+
+  /**
+   * CLI가 턴이 완전히 끝났다고 알려 왔다 (session_state_changed idle, 백그라운드 에이전트 대기까지 끝난 뒤).
+   * Esc로 끊은 턴의 result를 기다리던 표시를 지우고, result 없이 RUNNING에 남았으면 정리한다
+   */
+  private onIdle(): void {
+    this.interrupted = false
+    if (this.status !== 'running' || this.inflight.length || this.shellInflight.length || this.pending.size || this.manualCompact || this.quietCommand) return
+    console.warn('result 없이 턴이 끝나 상태를 정리함')
+    this.setStatus('done')
+    this.sendHeld()
   }
 
   /** AWAY에서 거절한 호출을 승인한다. 같은 호출이 다시 오면 묻지 않고 허용 (한 번씩) */
@@ -356,7 +413,7 @@ export class AgentSession {
       this.pending.delete(requestId)
       this.emit({ kind: 'permission_resolved', requestId })
     }
-    if (this.status === 'waiting_approval') this.setStatus('running')
+    this.approvalsSettled()
   }
 
   /** 묻지 않고 거절하면서 보고서에 남긴다 */
@@ -400,6 +457,12 @@ export class AgentSession {
     const dropped = this.held.splice(0)
     for (const h of dropped) this.emit({ kind: 'unqueued', queuedId: h.id })
     if (dropped.length) this.emit({ kind: 'task_note', text: `CANCELLED · 차례를 기다리던 메시지 ${dropped.length}개를 보내지 않았어요` })
+    // 턴 밖의 확인 요청만 기다리던 중: 끊을 턴이 없으니(result도 오지 않는다) 요청만 거절한다
+    if (this.status === 'waiting_approval' && this.askFrom && this.askFrom !== 'running') {
+      this.denyAllPending('사용자가 중단함')
+      this.approvalsSettled()
+      return
+    }
     if (!this.q || (this.status !== 'running' && this.status !== 'waiting_approval')) return
     this.interrupted = true
     // 끊은 메시지는 claim이 거절되더라도 다시 보내지 않는다
@@ -459,7 +522,7 @@ export class AgentSession {
       if (p.toolName === 'ExitPlanMode' && extra.planMode) this.armAfterPlan(extra.planMode)
     }
     this.emit({ kind: 'permission_resolved', requestId })
-    if (this.pending.size === 0 && this.status === 'waiting_approval') this.setStatus('running')
+    this.approvalsSettled()
   }
 
   /** 플랜을 승인한 뒤 CLI가 모드를 되돌리면(status) 고른 모드로 바꾼다. 소식이 없으면 잠시 뒤 그냥 바꾼다 */
@@ -492,10 +555,16 @@ export class AgentSession {
     this.queue = null
     this.claiming = false
     this.inflight = []
+    this.shellInflight = []
+    this.quietCommand = null
+    // 끊은 턴의 result는 닫은 프로세스에서 오지 않는다. 남겨 두면 새 세션의 첫 result를 버린다
+    this.interrupted = false
+    if (this.manualCompact) this.endCompacting()
     this.setBackground([])
     this.sessionId = sessionId
     this.model = undefined
-    if (this.status === 'running' || this.status === 'waiting_approval') this.setStatus('stopped')
+    if (this.status === 'waiting_approval' && this.askFrom && this.askFrom !== 'running') this.setStatus(this.askFrom, true)
+    else if (this.status === 'running' || this.status === 'waiting_approval') this.setStatus('stopped')
   }
 
   /** 추가 폴더를 바꾼다. 살아 있으면 바로, 아니면 다음 시작 때 */
@@ -585,8 +654,11 @@ export class AgentSession {
         this.queue?.close()
         q.close()
         const resend = this.inflight.splice(0)
+        const shell = this.shellInflight.splice(0)
         this.queue = new MessageQueue()
         this.startCold()
+        // `!명령` 출력이 그 메시지보다 앞에 있어야 합쳐진다
+        for (const text of shell) this.pushShell(text)
         for (const m of resend) this.queue.push(m.text, m.uuid)
       },
     )
@@ -673,8 +745,10 @@ export class AgentSession {
     signal.addEventListener('abort', () => {
       if (!this.pending.delete(requestId)) return
       this.emit({ kind: 'permission_resolved', requestId })
-      if (this.pending.size === 0 && this.status === 'waiting_approval') this.setStatus('running')
+      this.approvalsSettled()
     })
+    // 턴 밖에서 온 요청이면 답한 뒤 돌아갈 상태를 기억한다
+    if (this.status !== 'running' && this.status !== 'waiting_approval') this.askFrom = this.status
     // 상태를 먼저 바꿔야 요청 이벤트 처리 중 즉시 응답이 와도 'running'으로 정상 복귀한다
     this.setStatus('waiting_approval')
     this.emit({ kind: 'permission_request', request: { requestId, ...request } })
@@ -711,13 +785,16 @@ export class AgentSession {
         this.queue = null
         this.claiming = false
         this.inflight = []
+        this.shellInflight = []
         this.quietCommand = null
         // 백그라운드 작업은 CLI 프로세스와 함께 끝난다
         this.setBackground([])
         this.interrupted = false
         if (this.manualCompact) this.endCompacting()
+        // 턴 밖의 확인 요청만 기다리던 중이면 그 전 상태로
+        if (this.status === 'waiting_approval' && this.askFrom && this.askFrom !== 'running') this.setStatus(this.askFrom, true)
         // 결과 없이 끝났으면(프로세스가 죽는 등) 실행 중으로 남지 않게 한다
-        if (this.status === 'running' || this.status === 'waiting_approval') {
+        else if (this.status === 'running' || this.status === 'waiting_approval') {
           this.emit({ kind: 'error', message: '세션이 예기치 않게 끝났어요' })
           this.setStatus('error')
         }
@@ -772,6 +849,9 @@ export class AgentSession {
           this.emit({ kind: 'compacted', trigger: m.trigger, preTokens: m.pre_tokens, postTokens: m.post_tokens })
           this.endCompacting()
           void this.refreshContext()
+        } else if (msg.subtype === 'session_state_changed') {
+          // subscriptionEnv의 CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS로 받는다. idle이 턴이 끝났다는 확실한 신호
+          if (msg.state === 'idle') this.onIdle()
         } else if (msg.subtype === 'task_started') {
           if (msg.tool_use_id) this.taskTools.set(msg.task_id, msg.tool_use_id)
           // background_tasks_changed가 먼저 왔으면 도구 호출만 채워 넣는다
@@ -830,7 +910,11 @@ export class AgentSession {
         break
       case 'stream_event':
         // 명령(/goal)이 모델 턴을 열었다
-        if (this.quietCommand && msg.parent_tool_use_id === null && msg.event.type === 'message_start') this.promoteCommand()
+        if (msg.parent_tool_use_id === null && msg.event.type === 'message_start') {
+          if (this.quietCommand) this.promoteCommand()
+          // 알림·모니터 등으로 CLI가 스스로 연 턴
+          else this.resumeTurn()
+        }
         if (msg.parent_tool_use_id === null && msg.event.type === 'content_block_delta') {
           if (msg.event.delta.type === 'text_delta') this.emit({ kind: 'text_delta', text: msg.event.delta.text })
           else if (msg.event.delta.type === 'thinking_delta') this.emit({ kind: 'thinking_delta', text: msg.event.delta.thinking })
@@ -854,6 +938,7 @@ export class AgentSession {
         }
         // 스트리밍 시작을 놓쳤어도 답이 오면 작업으로 올린다
         if (this.quietCommand) this.promoteCommand()
+        else this.resumeTurn()
         for (const block of msg.message.content) {
           if (block.type === 'text') this.emit({ kind: 'assistant_text', text: block.text })
           else if (block.type === 'thinking') this.emit({ kind: 'thinking', text: block.thinking })
@@ -895,7 +980,11 @@ export class AgentSession {
       case 'result':
         // 미리 띄운 CLI가 claim을 거절하면 보냈던 메시지에 not_claimed 오류 결과가 온다. 새 프로세스로 다시 보내므로 작업 끝으로 치지 않는다
         if (this.claiming && msg.subtype !== 'success' && msg.errors?.some((e) => e.startsWith('not_claimed'))) break
-        this.inflight = []
+        // `!명령` 출력(shouldQuery: false)의 빈 결과: 모델 턴이 없었으니 작업 끝이 아니다. 바로 뒤에 보낸 메시지의 작업은 계속된다
+        if (this.shellInflight.length && msg.num_turns === 0) {
+          this.shellInflight.shift()
+          break
+        }
         void this.refreshContext()
         if (this.quietCommand) {
           // /goal 같은 명령의 결과: 작업이 아니다
@@ -917,8 +1006,21 @@ export class AgentSession {
           if (this.status === 'stopped') this.emit({ kind: 'result', subtype: msg.subtype, durationMs: msg.duration_ms, costUsd: msg.total_cost_usd })
           break
         }
+        // 끊은 턴의 result는 위에서 걸렀다. 그 뒤에 보낸 메시지는 그때까지 inflight로 남아야 claim 거절 때 다시 보낸다
+        this.inflight = []
+        // 자리를 기다리는 동안 CLI가 스스로 연 턴(백그라운드 알림 등)의 결과: 기다리는 메시지의 작업이 아니므로 상태·보고서를 그대로 둔다
+        if (this.status === 'queued') break
         this.emit({ kind: 'result', subtype: msg.subtype, durationMs: msg.duration_ms, costUsd: msg.total_cost_usd })
-        if (this.status !== 'stopped') this.setStatus(msg.subtype === 'success' && !msg.is_error ? 'done' : 'error')
+        if (this.status !== 'stopped') {
+          const fin: AgentStatus = msg.subtype === 'success' && !msg.is_error ? 'done' : 'error'
+          const asking = this.status === 'waiting_approval' && this.pending.size > 0
+          this.setStatus(fin)
+          // 턴은 끝났지만 백그라운드 에이전트의 확인 요청이 남아 있다: 작업은 끝내고 확인 대기로 되돌린다
+          if (asking) {
+            this.setStatus('waiting_approval')
+            this.askFrom = fin
+          }
+        }
         this.sendHeld()
         break
     }
@@ -999,9 +1101,11 @@ export class AgentSession {
     this.opts.emit({ kind: this.deltaKind, text })
   }
 
-  private setStatus(status: AgentStatus): void {
+  /** quiet: 확인 요청에 답하고 전 상태로 돌아가는 것. 작업이 새로 끝난 게 아니므로 보고서·알림을 건드리지 않는다 */
+  private setStatus(status: AgentStatus, quiet = false): void {
+    if (status !== 'waiting_approval') this.askFrom = null
     if (this.status === status) return
     this.status = status
-    this.emit({ kind: 'status', status })
+    this.emit(quiet ? { kind: 'status', status, quiet } : { kind: 'status', status })
   }
 }

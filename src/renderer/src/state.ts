@@ -118,6 +118,14 @@ export function applyEvent(prev: ConversationState | undefined, event: AgentEven
     case 'status':
       s.status = event.status
       if (event.status !== 'running' && event.status !== 'waiting_approval') finalizeStreaming()
+      // 확인 요청에 답하고 전 상태로 돌아간 것: 작업은 그대로
+      if (event.quiet) break
+      // 끝난 작업에 CLI가 스스로 턴을 열었다 (백그라운드 작업 알림·모니터 등): 같은 작업을 이어 간다.
+      // 밀려난 앞 작업(finishedTask)은 이미 저장했으니 지운다. 남기면 도는 동안 그 보고서가 다시 저장된다
+      if (event.status === 'running' && s.task?.finishedAt) {
+        task({ finishedAt: undefined, stage: Math.min(s.task.stage, STAGES.length - 1), activity: 'RESUMED', unread: false, priorDurationMs: s.task.durationMs })
+        s.finishedTask = undefined
+      }
       if (s.task && (event.status === 'done' || event.status === 'error' || event.status === 'stopped')) {
         task({ finishedAt: now, stage: event.status === 'done' ? STAGES.length : s.task.stage, unread: true })
       }
@@ -253,7 +261,7 @@ export function applyEvent(prev: ConversationState | undefined, event: AgentEven
       break
     case 'result':
       finalizeStreaming()
-      task({ durationMs: event.durationMs, costUsd: event.costUsd, activity: 'REPORTED' })
+      task({ durationMs: (s.task?.priorDurationMs ?? 0) + event.durationMs, costUsd: event.costUsd, activity: 'REPORTED' })
       if (event.subtype !== 'success') s.items.push({ type: 'notice', text: `종료: ${event.subtype}`, tone: 'error', at: now })
       break
     case 'error':
