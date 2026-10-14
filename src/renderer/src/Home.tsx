@@ -122,7 +122,7 @@ export function Home(props: Props): React.JSX.Element {
             {runningRows.map(({ item: r, leaving }) => (
               <TaskCard key={r.conversationId} r={r} now={now} selected={r.conversationId === selectedId} leaving={leaving} onSelect={props.onSelect} onOpen={props.onOpenTask} onRespond={props.onRespond} />
             ))}
-            <Presence as="h2" show={idleRows.length > 0} className="col-h col-h-sub">
+            <Presence as="h2" show={idleRows.length > 0} className="col-h col-h-sub" data-layout-id="head:idle" data-layout-kind="head">
               NO RUNNING <span className="disp">{idle.length}</span>
             </Presence>
             {idleRows.map(({ item: r, leaving }) => (
