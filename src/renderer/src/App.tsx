@@ -523,6 +523,13 @@ export function App(): React.JSX.Element {
         void window.api.setMode(projectId, conversationId, MODE_CYCLE[(MODE_CYCLE.indexOf(cur) + 1) % MODE_CYCLE.length])
       })
     }
+    // 덮개(파일 보기 등)가 떠 있으면 Esc·Ctrl+C는 실행 중단이 아니다. 포커스가 덮개 밖(body)으로 빠져 키가 여기로 와도
+    // Esc는 덮개를 닫는다 (덮개 안의 키는 위 data-keys-own에서 이미 덮개 몫)
+    const modal = document.querySelector('[aria-modal="true"]:not(.leaving)')
+    if (modal && (e.key === 'Escape' || isInterruptCopy(e, code))) {
+      if (e.key === 'Escape' && modal.classList.contains('files')) take(() => chatPanelRef.current?.files())
+      return
+    }
     // 중단: Esc(고정), 선택한 글자가 없을 때의 Ctrl+C (터미널과 같은 감각)
     if (e.key === 'Escape' || isInterruptCopy(e, code)) return take(() => void window.api.interrupt(projectId, conversationId))
     const pending = convs[conversationId]?.permissions[0]

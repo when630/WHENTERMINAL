@@ -237,3 +237,20 @@ test('원문의 찾기 칸에서 Esc는 찾기만 닫고 실행을 멈추지 않
   await expect(overlay.locator('.cm-search')).toHaveCount(0)
   expect(await app.evaluate(() => (globalThis as unknown as { interrupted: number }).interrupted)).toBe(0)
 })
+
+test('포커스가 덮개 밖으로 빠져도 Esc는 파일 보기를 닫고 실행을 멈추지 않는다', async ({ app, win }) => {
+  await app.evaluate(({ ipcMain }) => {
+    const g = globalThis as unknown as { interrupted: number }
+    g.interrupted = 0
+    ipcMain.removeHandler('agent:interrupt')
+    ipcMain.handle('agent:interrupt', () => void g.interrupted++)
+  })
+  await win.keyboard.press('Alt+KeyA')
+  await win.keyboard.press('Control+p')
+  const overlay = win.locator('.overlay.files')
+  await expect(overlay).toBeVisible()
+  await win.evaluate(() => (document.activeElement as HTMLElement).blur())
+  await win.keyboard.press('Escape')
+  await expect(overlay).toHaveCount(0)
+  expect(await app.evaluate(() => (globalThis as unknown as { interrupted: number }).interrupted)).toBe(0)
+})
