@@ -169,4 +169,4 @@
   - 반복 애니메이션은 transform·opacity만 움직인다 (배경 위치 등 다시 그리기 유발 금지). 전광판은 rAF로 일정 속도
   - 글꼴 조각이 data URI로 인라인되므로 CSP에 `font-src 'self' data:`가 필요하다
   - 스크롤바는 styles.css 맨 위 `::-webkit-scrollbar` 디자인 하나로 통일한다. 스크롤 요소에 `scrollbar-width: thin`·`scrollbar-color`를 쓰면 Chromium이 그 디자인을 무시하고 OS 기본 막대를 그리므로 쓰지 말 것(숨길 때 `none`만). 좁은 곳은 그 선택자에 `::-webkit-scrollbar { width: 8px }`
-  - 모서리는 둥글리지 않는다. `data-layout-id` 요소(진행 띠·보고 줄)에는 CSS 등장 애니메이션을 걸지 말 것. 위치 이동 애니메이션(`motion.tsx`)과 충돌한다
+  - 모서리는 둥글리지 않는다. `data-layout-id` 요소(진행 띠·보고 줄)에는 CSS 등장 애니메이션을 걸지 말 것. 위치 이동 애니메이션(`motion.tsx`)과 충돌한다. 새로 나타나는 보고 줄(따라 옮겨 온 진행 띠가 없을 때)은 위에서 떨어지고, 나머지는 아래에서 떠오른다(`useLayoutMotion`). 홈 머리줄 `TASKS RUNNING`은 도는 작업이 0개면 `NO RUNNING`으로 굴러 바뀐다(`.hh-flip`)

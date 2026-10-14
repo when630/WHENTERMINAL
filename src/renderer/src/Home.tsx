@@ -78,7 +78,13 @@ export function Home(props: Props): React.JSX.Element {
         <header className="home-head">
           <div className="hh-cell hh-run">
             <span className="big disp"><Odo n={running.length} /></span>
-            <h1 className="hh-label">TASKS<br />RUNNING</h1>
+            {/* 도는 작업이 없으면 라벨이 위로 빠지고 NO RUNNING이 아래에서 올라온다 (생기면 거꾸로) */}
+            <h1 className="hh-label hh-flip" aria-label={running.length ? 'TASKS RUNNING' : 'NO RUNNING'}>
+              <span className={`hh-flip-col ${running.length ? '' : 'idle'}`} aria-hidden="true">
+                <span>TASKS<br />RUNNING</span>
+                <span>NO<br />RUNNING</span>
+              </span>
+            </h1>
           </div>
           <div className="hh-cell hh-time">
             <span className="hh-small">

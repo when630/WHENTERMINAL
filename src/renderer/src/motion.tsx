@@ -56,7 +56,9 @@ export function useLayoutMotion(container: RefObject<HTMLElement | null>, dispat
         dispatchOrigin.current = null
       }
       if (!from) {
-        el.animate([{ opacity: 0, transform: 'translateY(8px)' }, { opacity: 1, transform: 'none' }], { duration: 360, easing: EASE })
+        // 새 보고서는 위에서 떨어지듯 (아래 카드들은 같은 렌더에서 한 칸씩 밀려 내려간다). 나머지는 아래에서 떠오른다
+        const enter = kind === 'report' ? 'translateY(-28px)' : 'translateY(8px)'
+        el.animate([{ opacity: 0, transform: enter }, { opacity: 1, transform: 'none' }], { duration: kind === 'report' ? 520 : 360, easing: EASE })
         return
       }
       const dx = from.x - now.x

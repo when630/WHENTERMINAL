@@ -236,6 +236,12 @@ kbd { display: inline-block; font: 500 11px/1 var(--mono); padding: 3px 5px; col
 .mid { font: 900 60px/0.9 var(--disp); letter-spacing: -0.04em; --odo-h: 0.9em; }
 .hh-label { font: 22px/1.05 var(--kr); padding-bottom: 6px; }
 .hh-small { font: 600 11px/1 var(--disp); letter-spacing: 0.12em; }
+/* TASKS RUNNING ↔ NO RUNNING: 두 라벨을 세로로 쌓고 한 칸씩 굴린다. 여백이 다음 라벨을 비추지 않게 padding 대신 margin */
+.hh-flip { overflow: hidden; height: 2.1em; padding-bottom: 0; margin-bottom: 6px; }
+.hh-flip-col { display: flex; flex-direction: column; transition: transform 0.7s var(--ease-io); }
+.hh-flip-col > span { display: block; height: 2.1em; }
+.hh-flip-col.idle { transform: translateY(-50%); }
+@media (prefers-reduced-motion: reduce) { .hh-flip-col { transition: none; } }
 .clipwrap { display: inline-block; overflow: hidden; vertical-align: bottom; }
 .roll-in { display: inline-block; animation: roll-in 0.7s var(--ease) both; }
 @keyframes roll-in { from { transform: translateY(105%); } }
