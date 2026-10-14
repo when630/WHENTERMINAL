@@ -10,7 +10,7 @@ export type ActionId =
   | 'allow' | 'always' | 'deny'
   | 'nextConversation' | 'prevConversation' | 'closeConversation' | 'closeProject' | 'clear' | 'compact' | 'cycleMode'
   | 'panelNext' | 'panelPrev' | 'panelBack' | 'stopTask' | 'renameConversation' | 'newConversation' | 'terminal'
-  | 'terminalNew' | 'terminalNext' | 'terminalPrev' | 'terminalClose' | 'terminalFind' | 'cycleEffort' | 'rewind' | 'away' | 'files' | 'projectUp' | 'projectDown'
+  | 'terminalNew' | 'terminalNext' | 'terminalPrev' | 'terminalClose' | 'terminalFind' | 'cycleEffort' | 'rewind' | 'away' | 'files' | 'projectUp' | 'projectDown' | 'palette' | 'git'
 
 export type ActionScope = 'system' | 'anywhere' | 'home' | 'chat' | 'approval'
 
@@ -37,6 +37,7 @@ export const ACTIONS: ActionDef[] = [
   { id: 'openSettings', label: 'Settings', scope: 'anywhere', default: 'Ctrl+,' },
   { id: 'search', label: 'Search all conversations', scope: 'anywhere', default: 'Ctrl+Shift+F' },
   { id: 'help', label: 'Keyboard shortcuts', scope: 'anywhere', default: 'Ctrl+/' },
+  { id: 'palette', label: 'Command palette', scope: 'anywhere', default: 'Ctrl+Shift+P' },
   { id: 'away', label: 'Away mode on / off', scope: 'anywhere', default: 'Ctrl+Shift+A' },
   // 지금 연 프로젝트를 사이드바 목록에서 한 칸 옮긴다 (Alt+글자 프로젝트 이동은 Shift 없이만 받아 겹치지 않는다)
   { id: 'projectUp', label: 'Move project up', scope: 'anywhere', default: 'Alt+Shift+K' },
@@ -55,6 +56,7 @@ export const ACTIONS: ActionDef[] = [
   { id: 'deny', label: 'Deny', scope: 'approval', default: 'N' },
   { id: 'newConversation', label: 'New tab', scope: 'chat', default: 'Ctrl+Shift+T' },
   { id: 'files', label: 'Find & read project files', scope: 'chat', default: 'Ctrl+P' },
+  { id: 'git', label: 'Git: branches, commits & diffs', scope: 'chat', default: 'Ctrl+G' },
   { id: 'terminal', label: 'Terminal: open / focus / fold', scope: 'chat', default: 'Ctrl+T' },
   { id: 'terminalNew', label: 'Terminal: new tab', scope: 'chat', default: 'Ctrl+Alt+T' },
   { id: 'terminalNext', label: 'Terminal: next tab', scope: 'chat', default: 'Ctrl+Alt+J' },

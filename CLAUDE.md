@@ -8,7 +8,7 @@
 - `npm run typecheck` — main/preload(`tsconfig.node.json`) + renderer(`tsconfig.web.json`)
 - `npm run build` — `out/`으로 빌드
 - `npm run smoke` — SDK 단발 호출로 구독 인증 확인 (`apiKeySource=none`이면 구독)
-- `npm run test:e2e` — 실제 앱(out/)을 Playwright로 띄워 조작하는 테스트. 모델을 부르지 않음 (설정·단축키·/·@ 메뉴·첨부·대화 닫기·보고함·작업 공간·긴 알림 접기·파일 찾기). 기능을 바꾸면 이걸 먼저 돌릴 것
+- `npm run test:e2e` — 실제 앱(out/)을 Playwright로 띄워 조작하는 테스트. 모델을 부르지 않음 (설정·단축키·/·@ 메뉴·첨부·대화 닫기·보고함·작업 공간·긴 알림 접기·파일 찾기·명령 팔레트·git 화면). 기능을 바꾸면 이걸 먼저 돌릴 것
 - `npm run test:e2e:live` — 모델을 실제로 부르는 `@live` 테스트 (승인 흐름·대기열·컴팩트·클리어). 구독 사용량을 조금 씀
   - 테스트마다 임시 사용자 데이터·프로젝트를 만든다(`tests/e2e/fixtures.ts`의 `seed`). 실제 데이터는 건드리지 않음
   - 파일 3개를 함께 돌린다(`workers: 3`, 파일 안의 테스트는 차례로). 일부만: `npm run test:e2e -- terminal`(파일 이름), `-- -g "검색"`(테스트 이름)
@@ -89,6 +89,14 @@
   - 목록(files.ts `listAll`, `@` 메뉴와 같이 씀)은 git이면 `git -c core.quotepath=false ls-files -z`. 빼면 git이 한글 경로를 `"ë…"`로 이스케이프해 이름이 깨지고 열리지 않는다
   - 덮개는 `createPortal`로 body에 붙인다(대화 영역이 fixed의 기준 상자라 사이드바까지 덮지 못한다). 창 폭을 거의 다 쓴다(최대 2200px)
   - 덮개 전체가 `data-keys-own`이고, 안을 누르면 포커스를 찾기 칸으로 돌린다(버튼에 포커스가 남으면 App이 Esc를 실행 중단으로 받는다). html 미리 보기 안을 누르면 키는 그 페이지로 간다
+- 명령 팔레트(`PaletteOverlay.tsx`, 키맵 `palette` 기본 `Ctrl+Shift+P`, 어디서든): 키맵 동작(지금 화면에서 쓸 수 있는 것, 홈 카드 이동·Y/A/N·터미널 찾기 제외)·인자 없는 입력창 명령(`SlashMenu`의 `LOCAL` 일부)·모든 프로젝트의 열린 탭·프로젝트·테마를 이름으로 찾아 실행한다. 목록은 App의 `paletteEntries`
+  - 동작은 App 키 처리에 `forced`(동작 ID)를 넘겨 단축키와 똑같이 처리한다(키를 비워 둔 동작도 실행된다). 입력창 명령은 `PanelControl.command` → `submit(…, keepDraft)`라 쓰던 글이 지워지지 않는다
+  - 고른 것은 팔레트가 닫힌 뒤(`runAfter`·`runNonce` 효과)에 실행하고, 닫거나 고를 때 찾기 칸 포커스를 먼저 놓는다(나가는 동안 쥐고 있으면 입력창이 포커스를 못 가져가고 그 뒤의 키가 팔레트로 간다). 나가는 중에 다시 열면 그리는 중에 글을 비운다
+  - 빈 칸이면 최근에 고른 것(localStorage `wt-palette-recent`, 6개)이 맨 위에 `RECENT`. 줄 오른쪽에 같은 일을 하는 단축키(`<Keys>`, 바꾼 키 그대로, 프로젝트는 ⌥글자)를 보인다. 키를 익히는 곳이라 '화면에 단축키를 적지 않는다'의 예외
+- git 화면(`GitPanel.tsx`, `ToolPanel`의 `git`, 키맵 `git` 기본 `Ctrl+G`, `/git`, 대화창 위 GIT 버튼은 git 저장소일 때만): 대화 기록 자리에 세 칸. 왼쪽은 커밋 안 한 변경(작업 공간마다)·ALL BRANCHES·브랜치(HEAD·다른 작업 공간에 체크아웃된 것 WT·upstream ↑↓), 가운데는 고른 브랜치의 커밋 기록과 갈래 선, 오른쪽은 고른 커밋·변경의 diff(`DiffBody`, 작업 공간 CHANGES와 같은 모양). 쓰기는 두 가지, 모두 두 번 눌러야 한다(3초): 왼쪽에서 고른 로컬 브랜치로 CHECKOUT(키 C, 지금 브랜치·다른 작업 공간에 체크아웃된 것은 안 됨, `git switch`), 커밋 안 한 변경을 메시지 칸에 적고 COMMIT(Enter, `add -A` 뒤 commit). 대화가 실행 중이면(`busy`) 둘 다 막는다. 병합·푸시는 없다. 상단 GIT·CHANGES 버튼은 펼쳐 두면 `.tb-btn.on`(검정 반전, 빨강은 확인 대기·오류에만)
+  - 메인 `main/git-view.ts`: 대화 폴더(`cwdOf`) 기준. `gitOverview`(for-each-ref·worktree list), `gitLog`(`--date-order`, 300개씩 `skip`), `gitDiff`(커밋은 첫 부모와, 첫 커밋은 빈 트리와 / 커밋 안 한 변경은 HEAD와 + 새 파일), `gitCheckout`·`gitCommit`(실패하면 git 메시지 그대로). `core.quotepath=false`·`maxBuffer` 64MB. 다른 작업 공간의 변경은 그 저장소의 `worktree list`에 있는 폴더만
+  - 갈래 선은 렌더러 `layoutGraph`가 커밋의 부모로 그린다(`--graph` 글자 대신 SVG, 칸은 옮기지 않고 빈 칸을 다시 씀 → 더 읽어도 앞 그림이 그대로). 줄 높이 `ROW_H`와 CSS `.git-row` 높이가 같아야 선이 이어진다. 폭은 목록에서 가장 넓은 줄에 맞춘다
+  - 키: 칸은 `role="listbox"`(diff 칸은 `data-focus-stay`, focus.ts `OWN`)라 포커스가 입력창으로 끌려가지 않고, App의 키(Esc 중단·Ctrl+B 돌아가기 …)는 그대로 받는다. H/L 칸, J/K 줄(diff 칸은 스크롤), Enter 다음 칸, Ctrl+D/U 반 쪽. 저장소를 읽어 칸이 그려지면 커밋 칸에 포커스
 - 대화 검색(`SearchOverlay.tsx`, 키맵 `search` 기본 `Ctrl+Shift+F`): 모든 프로젝트의 열린 대화를 세션 기록(`readHistory`, 끝 400개)에서 찾는다(`agent/search.ts`, 기록 파일 `lastModified`가 같으면 캐시). 띄어 쓴 말이 모두 들어간 내 메시지·답변·도구 호출. 고르면 그 대화를 열고 `jump`로 그 메시지까지 스크롤·강조. 무엇을 찾을지와 몇 번째로 맞았는지(`ordinal`)는 메인·렌더러가 `@shared/search`의 같은 함수로 센다
 - macOS도 지원한다 (`isMac` 분기, `src/main/index.ts`)
   - 단축키는 macOS에서도 Ctrl 기반 그대로. Cmd로 바꾸지 말 것. 화면의 Alt 표기만 `⌥`로 바꾼다 (`ALT_LABEL`)
@@ -138,7 +146,7 @@
 - 단축키 안내는 도움말(`HelpOverlay.tsx`, `help` 기본 `Ctrl+/`, 사이드바 HELP 줄)과 설정의 키맵에만 모은다. 범위별 묶음(지금 화면이 맨 앞)·고정 키·입력창 명령. 새 동작을 ACTIONS에 넣으면 `GROUPS`에도 넣을 것. 열려 있는 동안 App은 Esc(닫기) 말고 키를 받지 않는다
   - 안쪽 구분선(단 사이·묶음 아래·줄 사이)은 두지 않고 여백으로 나눈다
   - 배치: 가독성 우선. 화면을 다 채우고(시트 높이 100%) 묶음 사이·줄 사이에 여유를 두며, 묶음은 단 경계에서 쪼개지 않는다(`break-inside: avoid`). 단 상자(`.help-grid`)에 높이를 주면 넘친 묶음이 오른쪽으로 단을 더 만들므로 높이는 내용대로 두고 시트가 스크롤한다(머리줄은 sticky). 1920×1080 이상은 스크롤 없이 다 보이고, 1280×820은 시트 안에서 스크롤. 대화창이면 CHAT 다음에 입력창 키 묶음 INPUT(Enter·Tab·↑↓·/·@·!)이 온다. `help.spec.ts`가 가로 넘침 없음·1920에서 스크롤 없음을 본다
-  - 화면 안의 버튼·라벨·메뉴 머리줄·전광판·확인 문구·툴팁(`title`)에는 단축키를 적지 않는다. 프로젝트의 홈 열 글자(A S D…)는 프로젝트 표시라 그대로 둔다
+  - 화면 안의 버튼·라벨·메뉴 머리줄·전광판·확인 문구·툴팁(`title`)에는 단축키를 적지 않는다(명령 팔레트의 줄은 예외). 프로젝트의 홈 열 글자(A S D…)는 프로젝트 표시라 그대로 둔다
 - 단축키 표시(도움말·설정)는 `<Keys keys="ctrl shift L" />`(`KeyHint.tsx`)를 쓴다. macOS는 수정·특수 키를 아이콘으로, Windows는 글자와 +로(`Ctrl+Shift+L`) 표시한다. 파일 이름이 `keys.ts`와 대소문자만 다르면 macOS에서 충돌하므로 `KeyHint`
 - `!명령`(Chat.tsx `submit`): 아래 터미널의 지금 셸에서 바로 실행(`execInTerminal`, xterm `term.input`으로 실제 키 입력과 같은 길이라 끝남 감지가 그대로)하고, 프롬프트로 돌아오면 명령 줄 다음부터의 출력(끝 400줄·32KB)을 `IPC.shellOutput` → manager `shellOutput`으로 보낸다. CLI의 bash 모드 꼴(`<bash-input>`·`<bash-stdout>`, `shellMessage`)을 보통 메시지로 보내 모델이 바로 이어 답한다(대기열·한도 보류·한도 두 번 확인도 보통 메시지와 같다). 화면 글은 `display`(`! 명령`): 바로 보내면 말풍선 없이 작업만 시작하고(`task_start`, 출력 항목이 이미 있다), 실행 중·대기 중이면 `! 명령` 대기 말풍선(EDIT은 `! 명령`을 입력창으로). 화면·되살린 기록(`shellNote`)에는 `! 명령` 출력 항목(`notice` mono). 서랍은 펼치되 포커스는 입력창에. 빈 `!`는 터미널 열기. 질문 창은 터미널이 없어 제외
 - 슬래시 명령 후보: 입력창에 `/`를 치면 `SlashMenu`. 목록은 살아 있는 세션의 `supportedCommands()`, 없으면 메시지 없이 CLI만 띄워 받아 프로젝트 폴더별로 5분 캐시 (`src/main/agent/commands.ts`). 앱이 직접 처리하는 명령은 `SlashMenu.tsx`의 `LOCAL`과 `Chat.tsx`의 `submit`에 같이 적는다

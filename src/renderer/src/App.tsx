@@ -6,12 +6,14 @@ import { Chat, type PanelControl } from './Chat'
 import type { ToolPanel } from './panels'
 import { Sidebar } from './Sidebar'
 import { Ticker } from './Ticker'
-import { isEscape, isInterruptCopy, matches, physicalCode, projectIndexFromKey } from './keys'
-import { effectiveKeymap, type ActionId, type Settings } from '@shared/keymap'
+import { HOME_ROW, isEscape, isInterruptCopy, matches, physicalCode, projectIndexFromKey } from './keys'
+import { ACTIONS, effectiveKeymap, THEMES, type ActionId, type Settings } from '@shared/keymap'
 import { applyTheme, KeymapContext } from './settings'
 import { SettingsScreen } from './SettingsScreen'
 import { HelpOverlay } from './HelpOverlay'
 import { SearchOverlay } from './SearchOverlay'
+import { PaletteOverlay, type PaletteEntry } from './PaletteOverlay'
+import { LOCAL } from './SlashMenu'
 import { QuickAsk } from './QuickAsk'
 import type { SearchHit } from '@shared/types'
 import { usePresence } from './motion'
@@ -51,6 +53,11 @@ export function App(): React.JSX.Element {
   // 프로젝트 없이 묻는 질문 창 (키맵 quickAsk). 닫아도 대화는 남는다
   const [quickOpen, setQuickOpen] = useState(false)
   const quick = usePresence(quickOpen ? true : null, 300)
+  // 명령 팔레트 (키맵 palette). 고른 것은 팔레트가 닫힌 뒤에 실행한다 (runAfter)
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  const palette = usePresence(paletteOpen ? true : null, 300)
+  const runAfter = useRef<(() => void) | null>(null)
+  const [runNonce, setRunNonce] = useState(0)
   const [jump, setJump] = useState<{ conversationId: string; query: string; ordinal: number; nonce: number } | null>(null)
   const openHit = (hit: SearchHit, query: string): void => {
     setSearchOpen(false)
@@ -348,15 +355,16 @@ export function App(): React.JSX.Element {
   }
 
   // 전역 키 처리 (기획서 7장, 40% 배열 기준은 keys.ts). 최신 상태를 쓰기 위해 ref로 핸들러를 갱신한다.
-  const handlerRef = useRef<(e: KeyboardEvent) => void>(() => {})
-  handlerRef.current = (e: KeyboardEvent) => {
+  // forced: 명령 팔레트에서 고른 동작. 키 대신 그 동작으로 판정해 단축키와 똑같이 처리한다
+  const handlerRef = useRef<(e: KeyboardEvent, forced?: ActionId) => void>(() => {})
+  handlerRef.current = (e: KeyboardEvent, forced?: ActionId) => {
     // 입력창의 명령 후보 메뉴나 설정의 키 입력칸, 펼친 목록·덮개(그 안의 찾기 칸 등 포함)는 그쪽이 키를 처리한다.
     // 단 data-pass-esc(질문 상자)의 Esc는 실행 중단으로
     const own = (e.target as HTMLElement | null)?.closest?.<HTMLElement>('[data-menu-open="true"], [data-keys-own="true"]')
     if (own && !(e.key === 'Escape' && own.dataset.passEsc === 'true')) return
     // 터미널에 포커스가 있으면 키는 셸 몫이다 (Esc·Ctrl+C·Ctrl+L·Ctrl+K …). 앱을 오가는 키 몇 개만 앱이 받는다
     if ((e.target as HTMLElement | null)?.closest?.('[data-terminal]')) {
-      const app = (['terminal', 'terminalNew', 'terminalNext', 'terminalPrev', 'terminalClose', 'goHome', 'help', 'search', 'nextConversation', 'prevConversation', 'newConversation', 'openSettings'] as ActionId[]).some((id) => matches(e, km[id]))
+      const app = (['terminal', 'terminalNew', 'terminalNext', 'terminalPrev', 'terminalClose', 'goHome', 'help', 'palette', 'search', 'nextConversation', 'prevConversation', 'newConversation', 'openSettings'] as ActionId[]).some((id) => matches(e, km[id]))
       if (!app && projectIndexFromKey(e, physicalCode(e)) === null) return
       // 셸에는 가지 않게
       e.stopPropagation()
@@ -364,7 +372,7 @@ export function App(): React.JSX.Element {
     const code = physicalCode(e)
     const tag = (e.target as HTMLElement | null)?.tagName
     const typing = tag === 'TEXTAREA' || tag === 'INPUT'
-    const is = (id: ActionId): boolean => matches(e, km[id])
+    const is = (id: ActionId): boolean => (forced ? id === forced : matches(e, km[id]))
     const take = (fn: () => void): void => {
       e.preventDefault()
       fn()
@@ -376,6 +384,7 @@ export function App(): React.JSX.Element {
       return take(() => {
         setHelpOpen(false)
         setSearchOpen(false)
+        setPaletteOpen(false)
         setQuickOpen((v) => !v)
         // 질문 창에 leaving이 붙은 뒤에 (focus.ts의 data-focus-owner)
         if (quickOpen) requestAnimationFrame(requestRefocus)
@@ -393,9 +402,18 @@ export function App(): React.JSX.Element {
         if (i >= 0) moveProject(view.projectId, i + step)
       })
     }
+    if (is('palette')) {
+      return take(() => {
+        setHelpOpen(false)
+        setSearchOpen(false)
+        setPaletteOpen((v) => !v)
+        if (paletteOpen) requestRefocus()
+      })
+    }
     if (is('help')) {
       return take(() => {
         setSearchOpen(false)
+        setPaletteOpen(false)
         setHelpOpen((v) => !v)
         if (helpOpen) requestRefocus()
       })
@@ -403,15 +421,17 @@ export function App(): React.JSX.Element {
     if (is('search')) {
       return take(() => {
         setHelpOpen(false)
+        setPaletteOpen(false)
         setSearchOpen((v) => !v)
         if (searchOpen) requestRefocus()
       })
     }
-    if (helpOpen || searchOpen) {
+    if (helpOpen || searchOpen || paletteOpen) {
       if (isEscape(e)) {
         take(() => {
           setHelpOpen(false)
           setSearchOpen(false)
+          setPaletteOpen(false)
           requestRefocus()
         })
       }
@@ -517,6 +537,7 @@ export function App(): React.JSX.Element {
     if (is('cycleEffort')) return take(() => chatPanelRef.current?.cycleEffort())
     if (is('rewind')) return take(() => chatPanelRef.current?.rewind())
     if (is('files')) return take(() => chatPanelRef.current?.files())
+    if (is('git')) return take(() => chatPanelRef.current?.git())
     // 새 탭: 탭 줄의 +와 같다 (설정에 따라 작업 공간을 만든다)
     if (is('newConversation')) {
       return take(() => void window.api.addConversation(projectId).then((c) => setView({ screen: 'chat', projectId, conversationId: c.id })))
@@ -555,6 +576,49 @@ export function App(): React.JSX.Element {
   }, [])
 
   const chatProject = view.screen === 'chat' ? projects.find((p) => p.id === view.projectId) : undefined
+
+  // 팔레트에서 고른 것: 팔레트가 닫히고(키 처리의 덮개 확인을 지난 뒤) 실행한다
+  useEffect(() => {
+    if (paletteOpen || !runAfter.current) return
+    const fn = runAfter.current
+    runAfter.current = null
+    requestRefocus()
+    fn()
+  }, [runNonce, paletteOpen])
+  const paletteEntries = useMemo((): PaletteEntry[] => {
+    if (!paletteOpen) return []
+    const screen = view.screen
+    const out: PaletteEntry[] = []
+    // 키맵 동작: 지금 화면에서 쓸 수 있는 것만. 홈 카드 이동·확인 요청 답·터미널 안 찾기처럼 그 자리에서만 뜻이 있는 것은 뺀다
+    const skip = new Set<ActionId>(['summon', 'palette', 'down', 'up', 'toRunning', 'toReports', 'open', 'archive', 'newTask', 'allow', 'always', 'deny', 'terminalFind'])
+    for (const a of ACTIONS) {
+      if (skip.has(a.id)) continue
+      if (a.scope === 'chat' && screen !== 'chat') continue
+      if (a.scope === 'home' && screen !== 'home') continue
+      out.push({ id: `action:${a.id}`, group: 'ACTION', label: a.label, keywords: a.id, keys: km[a.id] || undefined, run: () => handlerRef.current(new KeyboardEvent('keydown'), a.id) })
+    }
+    // 입력창 명령 중 인자 없이 바로 되는 것 (키맵 동작과 겹치는 것은 뺀다)
+    if (screen === 'chat') {
+      const direct = new Set(['git', 'files', 'resume', 'fork', 'export', 'mcp', 'agents', 'permissions', 'memory', 'status'])
+      for (const c of LOCAL) {
+        if (!direct.has(c.name)) continue
+        out.push({ id: `cmd:${c.name}`, group: 'COMMAND', label: `/${c.name}`, note: c.description, keywords: c.aliases?.join(' '), run: () => chatPanelRef.current?.command(c.name) })
+      }
+    }
+    // 열린 탭: 모든 프로젝트
+    projects.forEach((p, i) => {
+      for (const c of openConversations(p)) {
+        if (view.screen === 'chat' && view.conversationId === c.id) continue
+        out.push({ id: `tab:${c.id}`, group: 'TAB', label: c.title, note: p.name, mark: HOME_ROW[i], keywords: c.tag ? `#${c.tag}` : undefined, run: () => openChat(p.id, c.id) })
+      }
+    })
+    projects.forEach((p, i) => out.push({ id: `project:${p.id}`, group: 'PROJECT', label: p.name, note: p.path, mark: HOME_ROW[i], keys: `alt ${HOME_ROW[i]}`, run: () => openProject(i) }))
+    for (const t of THEMES) {
+      if (t.id === settings.theme) continue
+      out.push({ id: `theme:${t.id}`, group: 'THEME', label: `Theme · ${t.name}`, note: t.note, run: () => void window.api.setSettings({ ...settings, theme: t.id }).then((r) => setSettings(r.settings)) })
+    }
+    return out
+  }, [paletteOpen, view, projects, settings, km, openChat, openProject])
 
   return (
     <KeymapContext.Provider value={km}>
@@ -661,6 +725,21 @@ export function App(): React.JSX.Element {
           onClose={() => {
             setQuickOpen(false)
             requestAnimationFrame(requestRefocus)
+          }}
+        />
+      )}
+      {palette.item && (
+        <PaletteOverlay
+          entries={paletteEntries}
+          leaving={palette.leaving}
+          onRun={(entry) => {
+            runAfter.current = entry.run
+            setPaletteOpen(false)
+            setRunNonce((n) => n + 1)
+          }}
+          onClose={() => {
+            setPaletteOpen(false)
+            requestRefocus()
           }}
         />
       )}
