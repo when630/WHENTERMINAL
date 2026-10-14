@@ -11,10 +11,10 @@ interface Props {
   onDiscarded: (nextConversationId: string) => void
 }
 
-const STATUS_LABEL: Record<string, string> = { A: 'NEW', M: 'MODIFIED', D: 'DELETED', R: 'RENAMED', C: 'COPIED' }
+export const STATUS_LABEL: Record<string, string> = { A: 'NEW', M: 'MODIFIED', D: 'DELETED', R: 'RENAMED', C: 'COPIED' }
 
 /** unified diff → 파일별 묶음 */
-function splitDiff(diff: string): { path: string; lines: string[] }[] {
+export function splitDiff(diff: string): { path: string; lines: string[] }[] {
   const out: { path: string; lines: string[] }[] = []
   for (const line of diff.split('\n')) {
     const m = /^diff --git a\/(.+?) b\/(.+)$/.exec(line)
@@ -66,7 +66,6 @@ export function WorktreePanel({ projectId, conversationId, refreshKey, onClose, 
     onDiscarded(await window.api.worktreeDiscard(projectId, conversationId))
   }
 
-  const files = data ? splitDiff(data.diff) : []
   const nothing = !!data && data.files.length === 0 && data.ahead === 0
 
   return (
@@ -101,31 +100,45 @@ export function WorktreePanel({ projectId, conversationId, refreshKey, onClose, 
         {data === null && <div className="empty">작업 공간이 없는 대화예요.</div>}
         {nothing && <div className="empty">바뀐 것이 없어요. {data!.target} 브랜치와 같아요.</div>}
         {data && data.files.length === 0 && data.ahead > 0 && <div className="empty">커밋 {data.ahead}개가 아직 {data.target} 브랜치에 들어가지 않았어요.</div>}
-        {data && data.files.length > 0 && (
-          <ul className="wt-files">
-            {data.files.map((f) => (
-              <li key={f.path}>
-                <span className={`wt-st st-${f.status}`}>{STATUS_LABEL[f.status] ?? f.status}</span>
-                <span className="mono">{f.path}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-        {files.map((f) => (
-          <div key={f.path} className="wt-file">
-            <div className="wt-file-h mono">{f.path}</div>
-            <pre className="wt-diff">
-              {f.lines.map((l, i) => (
-                <span key={i} className={l.startsWith('@@') ? 'hunk' : l.startsWith('+') ? 'add' : l.startsWith('-') ? 'del' : ''}>
-                  {l}
-                  {'\n'}
-                </span>
-              ))}
-            </pre>
-          </div>
-        ))}
+        {data && <DiffBody files={data.files} diff={data.diff} />}
         {data?.truncated && <div className="empty">diff가 너무 길어 앞부분만 보여요.</div>}
       </div>
     </section>
+  )
+}
+
+/** 바뀐 파일 목록과 파일별 diff (작업 공간 CHANGES·git 화면). 목록의 파일을 누르면 그 diff로 */
+export function DiffBody({ files, diff }: { files: { path: string; status: string }[]; diff: string }): React.JSX.Element {
+  const parts = splitDiff(diff)
+  const jump = (path: string, e: React.MouseEvent): void => {
+    const box = (e.currentTarget as HTMLElement).closest('.wt-diffs')
+    box?.querySelector(`[data-diff-path="${CSS.escape(path)}"]`)?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+  }
+  return (
+    <div className="wt-diffs">
+      {files.length > 0 && (
+        <ul className="wt-files">
+          {files.map((f) => (
+            <li key={f.path} onClick={(e) => jump(f.path, e)}>
+              <span className={`wt-st st-${f.status}`}>{STATUS_LABEL[f.status] ?? f.status}</span>
+              <span className="mono">{f.path}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {parts.map((f) => (
+        <div key={f.path} className="wt-file" data-diff-path={f.path}>
+          <div className="wt-file-h mono">{f.path}</div>
+          <pre className="wt-diff">
+            {f.lines.map((l, i) => (
+              <span key={i} className={l.startsWith('@@') ? 'hunk' : l.startsWith('+') ? 'add' : l.startsWith('-') ? 'del' : ''}>
+                {l}
+                {'\n'}
+              </span>
+            ))}
+          </pre>
+        </div>
+      ))}
+    </div>
   )
 }

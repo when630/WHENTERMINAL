@@ -7,7 +7,7 @@ import { IS_MAC } from './keys'
 export type HelpContext = 'home' | 'chat' | 'settings'
 
 interface Group {
-  id: ActionScope | 'terminal' | 'commands' | 'files' | 'input'
+  id: ActionScope | 'terminal' | 'commands' | 'files' | 'git' | 'input'
   title: string
   note: string
   /** 키맵의 동작 (바꾼 키가 그대로 보인다) */
@@ -23,7 +23,7 @@ const GROUPS: Group[] = [
     id: 'anywhere',
     title: 'ANYWHERE',
     note: '어느 화면에서든',
-    actions: ['help', 'search', 'goHome', 'dispatch', 'quickAsk', 'away', 'openSettings', 'projectUp', 'projectDown'],
+    actions: ['help', 'palette', 'search', 'goHome', 'dispatch', 'quickAsk', 'away', 'openSettings', 'projectUp', 'projectDown'],
     fixed: [
       ['alt A S D F G H J K L', 'Go to project 1–9'],
       ['ctrl 1…9', 'Go to project (alt.)'],
@@ -45,7 +45,7 @@ const GROUPS: Group[] = [
     id: 'chat',
     title: 'CHAT',
     note: '대화창. 입력 중에도 Ctrl 조합은 동작해요',
-    actions: ['newConversation', 'nextConversation', 'prevConversation', 'renameConversation', 'closeConversation', 'closeProject', 'clear', 'compact', 'rewind', 'cycleMode', 'cycleEffort', 'panelNext', 'panelPrev', 'panelBack', 'stopTask'],
+    actions: ['git', 'newConversation', 'nextConversation', 'prevConversation', 'renameConversation', 'closeConversation', 'closeProject', 'clear', 'compact', 'rewind', 'cycleMode', 'cycleEffort', 'panelNext', 'panelPrev', 'panelBack', 'stopTask'],
   },
   {
     id: 'input',
@@ -97,6 +97,23 @@ const GROUPS: Group[] = [
     ],
   },
   {
+    id: 'git',
+    title: 'GIT',
+    note: '브랜치·커밋 기록·diff (/git). 체크아웃·커밋은 두 번 눌러요',
+    actions: ['git'],
+    fixed: [
+      ['H', 'Previous column (or ←)'],
+      ['L', 'Next column (or →)'],
+      ['J', 'Next row · Scroll diff (or ↓)'],
+      ['K', 'Previous row · Scroll diff (or ↑)'],
+      ['enter', 'Go to the next column'],
+      ['ctrl D', 'Diff: half page down'],
+      ['ctrl U', 'Diff: half page up'],
+      ['C', 'Check out the picked branch (twice)'],
+      ['enter', 'Commit message box: commit (twice)'],
+    ],
+  },
+  {
     id: 'approval',
     title: 'APPROVAL',
     note: '확인 요청이 왔을 때 (입력창 밖에서)',
@@ -113,6 +130,7 @@ const GROUPS: Group[] = [
       ['/rename', 'Rename this tab'],
       ['/rewind', 'Rewind files / chat to a message'],
       ['/files', 'Find & read project files'],
+      ['/git', 'Branches · commits · diffs'],
       ['/resume', 'Open a past session'],
       ['/fork', 'Copy this chat into a new tab'],
       ['/export', 'Save the chat as Markdown'],
