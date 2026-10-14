@@ -25,23 +25,33 @@ export function boxIn(el: Element, container: HTMLElement): Box {
  * 같은 id가 다른 모양으로 나타나면 (진행 카드 → 보고서 카드) 이전 크기에서 새 크기로 변형되며 이동한다.
  * dispatchOrigin에 위치를 넣어 두면, 다음에 새로 나타나는 진행 카드는 그 자리(작업 지시창)에서 튀어나온다.
  */
+/** RUNNING ↔ NO RUNNING으로 오가는 카드 */
+const TRAVEL_KINDS = new Set(['task', 'idle'])
+const isTravel = (a: string | undefined, b: string): boolean => a !== undefined && a !== b && TRAVEL_KINDS.has(a) && TRAVEL_KINDS.has(b)
+const TRAVEL_MS = 700
+
 export function useLayoutMotion(container: RefObject<HTMLElement | null>, dispatchOrigin: RefObject<{ box: Box; at: number } | null>): void {
   const boxes = useRef(new Map<string, Box>())
   const kinds = useRef(new Map<string, string>())
   const mounted = useRef(false)
+  /** 바로 앞 렌더에 있던 id. 없다가 다시 나타난 요소는 예전 자리에서 날아오지 않고 새로 들어온다 */
+  const present = useRef(new Set<string>())
 
   useLayoutEffect(() => {
     const root = container.current
     if (!root) return
     const reduced = reducedMotion()
     const seen = new Set<string>()
+    // 자리만 옮기는 요소는 모아 두었다가 한꺼번에: 같은 렌더에 RUNNING ↔ NO RUNNING으로 오가는 카드가 있으면 그 카드와 같은 시간·곡선으로 밀려야 자연스럽다
+    const moves: { el: HTMLElement; dx: number; dy: number }[] = []
+    let travel = false
     root.querySelectorAll<HTMLElement>('[data-layout-id]').forEach((el) => {
       const id = el.dataset.layoutId!
       const kind = el.dataset.layoutKind ?? ''
       seen.add(id)
       if (el.getAnimations().some((a) => a.playState === 'running')) return
       const now = boxIn(el, root)
-      const prev = boxes.current.get(id)
+      const prev = present.current.has(id) ? boxes.current.get(id) : undefined
       const prevKind = kinds.current.get(id)
       boxes.current.set(id, now)
       kinds.current.set(id, kind)
@@ -56,6 +66,15 @@ export function useLayoutMotion(container: RefObject<HTMLElement | null>, dispat
         dispatchOrigin.current = null
       }
       if (!from) {
+        if (kind === 'report') {
+          // 새 보고서는 위에서 밀고 내려온다: 제 높이만큼 위에서 시작하고 자리 윗변 위쪽은 잘라, 자리 윗변에서 빠져나오듯 보인다.
+          // 아래 카드들이 밀려 내려가는 움직임(아래 else, 520ms)과 시간·곡선을 맞춘다
+          el.animate(
+            [{ transform: 'translateY(-100%)', clipPath: 'inset(100% 0 0 0)' }, { transform: 'none', clipPath: 'inset(0 0 0 0)' }],
+            { duration: 520, easing: EASE },
+          )
+          return
+        }
         el.animate([{ opacity: 0, transform: 'translateY(8px)' }, { opacity: 1, transform: 'none' }], { duration: 360, easing: EASE })
         return
       }
@@ -63,7 +82,29 @@ export function useLayoutMotion(container: RefObject<HTMLElement | null>, dispat
       const dy = from.y - now.y
       const sizeChanged = Math.abs(from.w - now.w) > 2 || Math.abs(from.h - now.h) > 2
       if (Math.abs(dx) < 1 && Math.abs(dy) < 1 && !(morph && sizeChanged)) return
-      if (morph) {
+      if (morph && isTravel(prevKind, kind)) {
+        travel = true
+        // 진행 띠 ↔ 쉬는 줄(RUNNING ↔ NO RUNNING): 늘이지 않고 카드째 옮긴다. 천천히 출발해 천천히 닿게(in-out) 해서 오가는 게 보이게 하고,
+        // 커지는 쪽은 예전 높이에서 아래로 펼친다. 글자는 처음에만 살짝 바꿔 끼운다
+        const grow = Math.max(0, now.h - from.h)
+        // 지나가는 줄들 위로 (뒤에 오는 형제가 앞을 덮지 않게)
+        el.style.position = 'relative'
+        el.style.zIndex = '2'
+        const anim = el.animate(
+          [
+            { transform: `translate(${dx}px, ${dy}px)`, clipPath: `inset(0 0 ${grow}px 0)` },
+            { transform: 'none', clipPath: 'inset(0 0 0 0)' },
+          ],
+          { duration: TRAVEL_MS, easing: EASE_IO },
+        )
+        const settle = (): void => {
+          el.style.position = ''
+          el.style.zIndex = ''
+        }
+        anim.onfinish = settle
+        anim.oncancel = settle
+        el.querySelector('.lx-in')?.animate([{ opacity: 0.25 }, { opacity: 1, offset: 0.3 }, { opacity: 1 }], { duration: TRAVEL_MS, easing: 'linear' })
+      } else if (morph) {
         const sx = now.w > 0 ? from.w / now.w : 1
         const sy = now.h > 0 ? from.h / now.h : 1
         el.animate(
@@ -75,9 +116,13 @@ export function useLayoutMotion(container: RefObject<HTMLElement | null>, dispat
         )
         el.querySelector('.lx-in')?.animate([{ opacity: 0 }, { opacity: 0, offset: 0.4 }, { opacity: 1 }], { duration: 640, easing: 'ease-out' })
       } else {
-        el.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'none' }], { duration: 520, easing: EASE })
+        moves.push({ el, dx, dy })
       }
     })
+    for (const { el, dx, dy } of moves) {
+      el.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'none' }], travel ? { duration: TRAVEL_MS, easing: EASE_IO } : { duration: 520, easing: EASE })
+    }
+    present.current = seen
     // 사라진 id는 잠시 기억해 둔다: 같은 렌더에서 다른 모양으로 다시 나타날 수 있다
     for (const id of boxes.current.keys()) if (!seen.has(id) && boxes.current.size > 200) boxes.current.delete(id)
     mounted.current = true
@@ -150,7 +195,7 @@ export function usePresenceList<T>(items: T[], keyOf: (item: T) => string, ms = 
   return out
 }
 
-type Tag = 'span' | 'div' | 'section' | 'nav' | 'p' | 'i' | 'ul' | 'ol' | 'li'
+type Tag = 'span' | 'div' | 'section' | 'nav' | 'p' | 'i' | 'ul' | 'ol' | 'li' | 'h2'
 
 /**
  * show가 false가 돼도 잠시 마지막 내용을 'leaving' 클래스로 남기는 감싸개 (usePresence를 요소 하나에 바로).

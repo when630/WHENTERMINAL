@@ -267,6 +267,21 @@ kbd { display: inline-block; font: 500 11px/1 var(--mono); padding: 3px 5px; col
 .col-rep { flex: 2 1 320px; border-left: var(--rule-thick); }
 .col-h { margin: 0; display: flex; align-items: baseline; gap: 10px; padding: 12px 24px 10px; border-bottom: var(--rule); font: 24px/1 var(--kr); }
 .col-h .disp { font-size: 24px; }
+/* RUNNING이 비었다는 안내는 카드가 올라오면 바로 비킨다 (남아서 나가는 동안 자리를 차지하면 카드가 두 번에 나눠 움직인다) */
+.col-run > .empty.leaving { display: none; }
+/* RUNNING 아래의 NO RUNNING: 쉬는 대화 한 줄씩 */
+.col-h-sub { border-top: var(--rule-thick); margin-top: -1px; }
+.idle-row { border-bottom: var(--rule); background: var(--paper); color: var(--ink); cursor: default; transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out); }
+.idle-row:hover { background: var(--wash); }
+.idle-row.selected { background: var(--sel-bg); color: var(--sel-fg); }
+.idle-row .lx-in { display: flex; align-items: baseline; gap: 12px; padding: 10px 24px; min-width: 0; }
+.idle-key { flex: none; width: 22px; font: 900 22px/0.8 var(--disp); letter-spacing: -0.04em; }
+.idle-proj { flex: none; font: 600 11.5px/1 var(--disp); letter-spacing: 0.1em; text-transform: uppercase; }
+.idle-tt { flex: 1; min-width: 0; font-size: 14.5px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.idle-st { flex: none; font: 900 12px/1 var(--disp); letter-spacing: 0.06em; }
+.idle-st.bad { color: var(--signal); }
+.idle-row.selected .idle-st.bad { color: inherit; }
+.idle-ago { flex: none; font: 11.5px var(--mono); opacity: 0.7; }
 .empty { padding: 18px 24px; color: var(--gray); font-weight: 600; border-bottom: var(--rule); }
 
 /* 진행 중: 프로젝트 띠 */

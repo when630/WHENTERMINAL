@@ -103,6 +103,7 @@
   - ARTIFACTS 줄을 누르면 대화 기록 자리에 앱 안 화면(`ToolPanel`의 `artifact`, `<webview>`)으로 펼친다. claude.ai는 `frame-ancestors 'self'`라 iframe은 안 된다. 비공개 아티팩트라 따로 저장되는 세션 `ARTIFACT_PARTITION`(`persist:claude`)에서 한 번 로그인해 둔다(이메일 코드). 메인 `artifact-view.ts`가 `will-attach-webview`로 preload·node를 빼고 이 세션·claude.ai 주소만 허용하며, claude.ai 밖 이동·새 창은 외부 브라우저로. 손님 페이지에 포커스가 있으면 앱 창에 키가 오지 않으므로 Ctrl·Alt·⌘ 키(복사·붙여넣기·찾기 등 편집 키 제외)를 `IPC.guestKey`로 넘겨 App이 같은 keydown으로 처리한다. 같은 링크를 다시 올리면(`ArtifactLink.rev`) 새로 고친다
   - 패널의 줄(백그라운드 작업·AGENTS)을 누르면 대화 기록 자리에 세부 내용(`TaskDetail.tsx`)을 펼친다. 셸·모니터는 CLI가 쓰는 출력 파일(`<임시 폴더>/claude…/<프로젝트>/<세션 ID>/tasks/<작업 ID>.output`, `agent/task-output.ts`)을 도는 동안 1초마다 읽는다
   - 하위 에이전트: `forwardSubagentText`로 받은 `parent_tool_use_id` 메시지를 `sub`·`sub_result` 이벤트로 보내 `ConversationState.subs`(Agent 도구 호출 ID별)에 쌓는다. `task_progress`는 `progress`. 앞에서 기다리는 에이전트는 AGENTS, 백그라운드 에이전트는 BACKGROUND에 나온다. 대화 기록의 Agent 도구를 펼치면 `SubLog`
+- 홈 하단 목록: 왼쪽 RUNNING 아래에 NO RUNNING(쉬는 대화: 열린 대화 중 작업을 끝낸 것, `collectTasks`의 `idle`), 오른쪽 REPORTS. 진행 띠(`TaskCard`)와 쉬는 줄(`IdleCard`)은 같은 layout id(대화 ID)라 작업을 시작·끝내면 위아래로 오가고, 보고서 카드는 `rep:대화 ID`라 따로 위에서 내려온다. 끝난 작업은 NO RUNNING과 REPORTS 양쪽에 나온다. 키 이동 순서는 RUNNING → NO RUNNING → REPORTS이고 쉬는 줄을 고른 값은 `IDLE_KEY`(`idle:`)를 붙여 같은 대화의 보고서와 구분한다
 - 기록·보고서: 대화창을 열 때 화면 기록이 비어 있으면 `getSessionMessages`로 되살린다(`agent/history.ts`). 끝난 작업의 보고서는 `Conversation.lastTask`에 저장하고, 보관 전 보고서가 있는 대화를 닫으면 `closedAt`으로 숨기기만 한다. 탭·목록은 `openConversations()` 기준
 - 첨부는 경로로 (첨부 버튼은 입력칸 오른쪽 끝, 홈 작업 지시창은 SEND 앞): 입력창에 파일을 끌어다 놓기·첨부 버튼(`pickFiles`)·이미지 붙여넣기(`saveImage`로 userData/attachments에 저장)를 하면 경로를 넣는다. 작업 폴더 안은 `@상대경로`. 끌어다 놓은 파일 경로는 sandbox라 preload의 `webUtils.getPathForFile`로
 - 확인 요청이 오면 입력칸에서 포커스를 빼 Y/A/N을 바로 받는다. 단 치던 글이 있거나 1.5초 안에 쳤으면 그대로 두고(`stillTyping`, 치던 글자가 승인·거절로 먹지 않게) Tab으로 빠져나와 답한다. 질문 창도 같다
@@ -169,4 +170,4 @@
   - 반복 애니메이션은 transform·opacity만 움직인다 (배경 위치 등 다시 그리기 유발 금지). 전광판은 rAF로 일정 속도
   - 글꼴 조각이 data URI로 인라인되므로 CSP에 `font-src 'self' data:`가 필요하다
   - 스크롤바는 styles.css 맨 위 `::-webkit-scrollbar` 디자인 하나로 통일한다. 스크롤 요소에 `scrollbar-width: thin`·`scrollbar-color`를 쓰면 Chromium이 그 디자인을 무시하고 OS 기본 막대를 그리므로 쓰지 말 것(숨길 때 `none`만). 좁은 곳은 그 선택자에 `::-webkit-scrollbar { width: 8px }`
-  - 모서리는 둥글리지 않는다. `data-layout-id` 요소(진행 띠·보고 줄)에는 CSS 등장 애니메이션을 걸지 말 것. 위치 이동 애니메이션(`motion.tsx`)과 충돌한다
+  - 모서리는 둥글리지 않는다. `data-layout-id` 요소(진행 띠·보고 줄)에는 CSS 등장 애니메이션을 걸지 말 것. 위치 이동 애니메이션(`motion.tsx`)과 충돌한다. 새로 나타나는 보고 줄은 위에서 떨어지고, 나머지는 아래에서 떠오른다(`useLayoutMotion`)
