@@ -8,7 +8,7 @@ export type ActionId =
   | 'summon' | 'goHome' | 'dispatch' | 'quickAsk' | 'openSettings' | 'search' | 'help'
   | 'addProject' | 'focusAsk' | 'down' | 'up' | 'toRunning' | 'toReports' | 'open' | 'archive' | 'newTask'
   | 'allow' | 'always' | 'deny'
-  | 'nextConversation' | 'prevConversation' | 'closeConversation' | 'closeProject' | 'clear' | 'compact' | 'cycleMode' | 'interrupt'
+  | 'nextConversation' | 'prevConversation' | 'closeConversation' | 'closeProject' | 'clear' | 'compact' | 'cycleMode'
   | 'panelNext' | 'panelPrev' | 'panelBack' | 'stopTask' | 'renameConversation' | 'newConversation' | 'terminal'
   | 'terminalNew' | 'terminalNext' | 'terminalPrev' | 'terminalClose' | 'terminalFind' | 'cycleEffort' | 'rewind' | 'away' | 'files' | 'projectUp' | 'projectDown'
 
@@ -70,14 +70,13 @@ export const ACTIONS: ActionDef[] = [
   { id: 'closeProject', label: 'Close project (twice)', scope: 'chat', default: 'Ctrl+Shift+W' },
   { id: 'cycleMode', label: 'Cycle mode', scope: 'chat', default: 'Shift+Tab' },
   { id: 'cycleEffort', label: 'Cycle effort', scope: 'chat', default: 'Ctrl+Shift+O' },
-  { id: 'interrupt', label: 'Interrupt (alt. to Esc)', scope: 'chat', default: 'Ctrl+[' },
   // 오른쪽 패널의 하위 에이전트·백그라운드 작업 세부 내용
   { id: 'panelNext', label: 'Next agent / task details', scope: 'chat', default: 'Ctrl+J' },
   { id: 'panelPrev', label: 'Previous agent / task details', scope: 'chat', default: 'Ctrl+Shift+J' },
   { id: 'panelBack', label: 'Back to chat', scope: 'chat', default: 'Ctrl+B' },
   { id: 'stopTask', label: 'Stop shown task', scope: 'chat', default: 'Ctrl+Shift+X' },
   { id: 'renameConversation', label: 'Rename tab', scope: 'chat', default: 'Ctrl+Shift+E' },
-  { id: 'rewind', label: 'Rewind files / chat', scope: 'chat', default: 'Ctrl+Shift+Z' },
+  { id: 'rewind', label: 'Rewind files / chat', scope: 'chat', default: 'Ctrl+Alt+Z' },
 ]
 
 export type Keymap = Record<ActionId, string>

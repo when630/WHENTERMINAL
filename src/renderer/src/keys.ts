@@ -31,9 +31,9 @@ export function projectIndexFromKey(e: KeyboardEvent, code: string): number | nu
   return null
 }
 
-/** Esc 또는 Ctrl+[ (Esc가 레이어에 있는 배열을 위한 vim식 대체 키) */
-export function isEscape(e: KeyboardEvent, code: string): boolean {
-  return e.key === 'Escape' || (e.ctrlKey && !e.shiftKey && !e.altKey && code === 'BracketLeft')
+/** Esc */
+export function isEscape(e: KeyboardEvent): boolean {
+  return e.key === 'Escape'
 }
 
 /** 입력창에서 선택한 글자가 없을 때의 Ctrl+C. 터미널처럼 실행 중단으로 쓴다 */

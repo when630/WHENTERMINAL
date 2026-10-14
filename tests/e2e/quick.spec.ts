@@ -84,3 +84,11 @@ test('질문 창: 답하는 중의 Esc는 닫지 않고 멈춘다', async ({ app
   await expect(win.locator('.overlay.quick')).toBeVisible()
   expect(await app.evaluate(() => (globalThis as unknown as { interrupted: number }).interrupted)).toBe(1)
 })
+
+test('질문 창: 포커스가 창 밖으로 빠져도 Esc로 닫힌다', async ({ win }) => {
+  await win.keyboard.press('Control+Shift+k')
+  await expect(win.locator('#quick-input')).toBeFocused()
+  await win.evaluate(() => (document.activeElement as HTMLElement).blur())
+  await win.keyboard.press('Escape')
+  await expect(win.locator('.overlay.quick')).toHaveCount(0)
+})

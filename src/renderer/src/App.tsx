@@ -345,9 +345,10 @@ export function App(): React.JSX.Element {
   // 전역 키 처리 (기획서 7장, 40% 배열 기준은 keys.ts). 최신 상태를 쓰기 위해 ref로 핸들러를 갱신한다.
   const handlerRef = useRef<(e: KeyboardEvent) => void>(() => {})
   handlerRef.current = (e: KeyboardEvent) => {
-    // 입력창의 명령 후보 메뉴나 설정의 키 입력칸이 열려 있으면 그쪽이 키를 처리한다
-    const owner = (e.target as HTMLElement | null)?.dataset
-    if (owner?.menuOpen === 'true' || owner?.keysOwn === 'true') return
+    // 입력창의 명령 후보 메뉴나 설정의 키 입력칸, 펼친 목록·덮개(그 안의 찾기 칸 등 포함)는 그쪽이 키를 처리한다.
+    // 단 data-pass-esc(질문 상자)의 Esc는 실행 중단으로
+    const own = (e.target as HTMLElement | null)?.closest?.<HTMLElement>('[data-menu-open="true"], [data-keys-own="true"]')
+    if (own && !(e.key === 'Escape' && own.dataset.passEsc === 'true')) return
     // 터미널에 포커스가 있으면 키는 셸 몫이다 (Esc·Ctrl+C·Ctrl+L·Ctrl+K …). 앱을 오가는 키 몇 개만 앱이 받는다
     if ((e.target as HTMLElement | null)?.closest?.('[data-terminal]')) {
       const app = (['terminal', 'terminalNew', 'terminalNext', 'terminalPrev', 'terminalClose', 'goHome', 'help', 'search', 'nextConversation', 'prevConversation', 'newConversation', 'openSettings'] as ActionId[]).some((id) => matches(e, km[id]))
@@ -371,7 +372,8 @@ export function App(): React.JSX.Element {
         setHelpOpen(false)
         setSearchOpen(false)
         setQuickOpen((v) => !v)
-        if (quickOpen) requestRefocus()
+        // 질문 창에 leaving이 붙은 뒤에 (focus.ts의 data-focus-owner)
+        if (quickOpen) requestAnimationFrame(requestRefocus)
       })
     }
     if (quickOpen) return
@@ -401,7 +403,7 @@ export function App(): React.JSX.Element {
       })
     }
     if (helpOpen || searchOpen) {
-      if (isEscape(e, code)) {
+      if (isEscape(e)) {
         take(() => {
           setHelpOpen(false)
           setSearchOpen(false)
@@ -431,20 +433,20 @@ export function App(): React.JSX.Element {
     if (view.screen === 'home') {
       if (is('addProject')) return take(addProject)
       if (typing) {
-        if (isEscape(e, code)) take(() => (e.target as HTMLElement).blur())
+        if (isEscape(e)) take(() => (e.target as HTMLElement).blur())
         return
       }
 
       // 보고서 상세가 열려 있을 때
       const open = reports.find((r) => r.conversationId === openReportId)
       if (open) {
-        if (isEscape(e, code)) take(() => sheetCloseRef.current?.())
+        if (isEscape(e)) take(() => sheetCloseRef.current?.())
         else if (is('open') || e.key === 'Enter') take(() => openChat(open.project.id, open.conversationId))
         else if (is('archive')) take(() => archive(open.conversationId))
         else if (is('newTask')) take(() => newTaskFor(open.projectIndex))
         return
       }
-      if (isEscape(e, code)) return setSelectedId(null)
+      if (isEscape(e)) return setSelectedId(null)
       if (is('focusAsk')) return take(() => inputRef.current?.focus())
       if (!e.ctrlKey && !e.altKey && !e.metaKey && /^Digit[1-9]$/.test(code)) return take(() => openProject(Number(code.slice(5)) - 1))
 
@@ -521,8 +523,8 @@ export function App(): React.JSX.Element {
         void window.api.setMode(projectId, conversationId, MODE_CYCLE[(MODE_CYCLE.indexOf(cur) + 1) % MODE_CYCLE.length])
       })
     }
-    // 중단: Esc(고정), 키맵의 보조 키, 선택한 글자가 없을 때의 Ctrl+C (터미널과 같은 감각)
-    if (e.key === 'Escape' || is('interrupt') || isInterruptCopy(e, code)) return take(() => void window.api.interrupt(projectId, conversationId))
+    // 중단: Esc(고정), 선택한 글자가 없을 때의 Ctrl+C (터미널과 같은 감각)
+    if (e.key === 'Escape' || isInterruptCopy(e, code)) return take(() => void window.api.interrupt(projectId, conversationId))
     const pending = convs[conversationId]?.permissions[0]
     const decision = decisionOf(e)
     // 질문·플랜 승인·MCP 입력·거절 대화 상자는 한 키로 답할 수 없다 (답을 골라야 한다)
@@ -645,7 +647,7 @@ export function App(): React.JSX.Element {
           onRespond={respond}
           onClose={() => {
             setQuickOpen(false)
-            requestRefocus()
+            requestAnimationFrame(requestRefocus)
           }}
         />
       )}

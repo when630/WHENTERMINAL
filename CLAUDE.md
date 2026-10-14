@@ -57,7 +57,7 @@
   - 프로젝트 순서: 사이드바 줄을 끌어다 놓기(`Sidebar` `onMoveProject`) 또는 키맵 `projectUp`/`projectDown`(기본 `Alt+Shift+K/J`, 지금 연 프로젝트를 한 칸). `IPC.moveProject` → `store.moveProject`, 렌더러는 먼저 바꿔 보이고 `projectsChanged`로 맞춘다. 홈 열 글자·Alt+A~L은 이 순서를 따른다. 순서가 바뀌면 줄이 이전 자리에서 미끄러진다(하위 대화 펼침은 움직이지 않음)
   - 프로젝트 이동: `Alt+A S D F G H J K L` = 1~9 (보조: `Ctrl+1~9`, 홈에서 `1~9`). 그래서 프로젝트는 `MAX_PROJECTS`(9)개까지만: 넘으면 렌더러가 사이드바 `flash`로 안내하고 메인 `addProject`도 null (OPEN-007)
   - 홈 카드 선택: `H J K L` (보조: 방향키), 열기 `O`/`Enter`
-  - 중단: `Esc` / `Ctrl+[` / 선택 글자 없을 때 `Ctrl+C`
+  - 중단: `Esc` / 선택 글자 없을 때 `Ctrl+C`. Esc 대체 키(Ctrl+[)는 두지 않는다. 닫기·취소도 모두 Esc
   - 패널 세부 내용: `Ctrl+J`/`Ctrl+Shift+J` 패널 순서(AGENTS → BACKGROUND)대로 펼치고 마지막 다음은 대화 기록, `Ctrl+B` 돌아가기, `Ctrl+Shift+X` 펼친 작업 멈춤. App이 Chat의 `panelRef`(`PanelControl`)로 다룬다
   - Alt 니모닉과 겹치지 않도록 Windows에서는 기본 메뉴를 없앴다 (`Menu.setApplicationMenu(null)`). 개발 중 `Ctrl+Shift+I` 개발자 도구, `Ctrl+Shift+R` 새로고침
 - Windows 창은 테두리 없는 창(`frame: false`): 제목 표시줄·창 버튼이 없다. 사이드바 로고(`.side .brand`, `-webkit-app-region: drag`)를 잡고 옮기고 더블클릭하면 최대화, 크기 조절은 가장자리, 닫기는 `Alt+F4`(트레이로 숨김). macOS는 기본 제목 표시줄 그대로
@@ -80,7 +80,7 @@
 - 새 탭: 키맵 `newConversation`(기본 `Ctrl+Shift+T`). 탭 줄의 +와 같다
 - 질문 창(`QuickAsk.tsx`, 키맵 `quickAsk` 기본 `Ctrl+Shift+K`, 앱 안에서만): 프로젝트 없이 묻는 덮개 창. 숨은 프로젝트 `QUICK_PROJECT_ID`(`userData/quick.json`, 폴더 `userData/quick`)의 대화 하나를 이어 쓴다. `store.get()`으로는 찾지만 `list()`에는 없어 사이드바·홈·9개 상한·Alt+A~L·검색에서 빠진다
   - 도구는 읽기·웹만(`QUICK_DISALLOWED_TOOLS`로 수정·명령·하위 에이전트를 빼고 `QUICK_ALLOWED_TOOLS`는 묻지 않음, 세션 옵션 `tools`). 도구 목록은 띄울 때 고정되므로 미리 띄운 CLI는 쓰지 않는다. 동시 실행 제한에 세지 않는다(manager `quickIds`). 처음 모델·effort는 `haiku`·`low`
-  - 열려 있는 동안 App은 `quickAsk` 말고 키를 받지 않고 창이 처리한다: Esc는 답하는 중이면 멈춤·아니면 닫기, 클리어(`clear`) 두 번, Y/A/N, `/clear`·`/compact`. 대화창의 `Item`·`Working`·`PermissionBox`를 그대로 쓴다. 알림을 누르면(`navigate`의 projectId가 quick) 이 창을 연다
+  - 열려 있는 동안 App은 `quickAsk` 말고 키를 받지 않고 창이 window 리스너로 처리한다(포커스가 창 밖으로 빠져도 먹게). `data-focus-owner`라 `requestRefocus`도 이 창만 받는다(닫을 때는 leaving이 붙은 다음 프레임에 요청): Esc는 답하는 중이면 멈춤·아니면 닫기, 클리어(`clear`) 두 번, Y/A/N, `/clear`·`/compact`. 대화창의 `Item`·`Working`·`PermissionBox`를 그대로 쓴다. 알림을 누르면(`navigate`의 projectId가 quick) 이 창을 연다
   - `peek`·`withProbe`는 대화에서 고른 모델(`modelChoice`)로 띄운다. 빠뜨리면 기본 모델로 표시 모델을 덮어쓴다
 - 파일 찾기·읽기(`FilesOverlay.tsx`, 키맵 `files` 기본 `Ctrl+P`, `/files`, 대화창에서): 찾기 칸이 비어 있으면 대화 폴더(`cwdOf`)를 한 단계씩 둘러보고(`IPC.listDir` → files.ts `listChildren`, `@` 메뉴와 같은 목록·캐시), 치면 전체에서 이름으로(`searchFiles`). 고른 파일은 오른쪽에 바로(`IPC.viewFile` → `main/file-view.ts`, NUL이 있으면 binary): md는 읽기 모드(`Markdown`의 `fileUrl`로 상대 경로 그림, 상대 경로 링크는 `onOpen`으로 앱 안에서 열기), html은 `<iframe sandbox="allow-scripts">`, 그림, 나머지는 `CodeView`(CodeMirror 6 읽기 전용: 보이는 줄만 그림, 언어는 `@codemirror/language-data`의 `matchFilename`으로 그때 불러옴, Ctrl+F 찾기). 문법 색은 테마마다 `--syn-*` 토큰(신호색 빨강은 쓰지 않음). 원문 칸에는 `data-keys-own`을 달고, 그 안의 키는 덮개가 목록 이동으로 가로채지 않는다
   - 큰 파일: 20MB까지는 한 번에, 넘으면 4MB씩 줄 끝에서 잘라 `offset`·`next`로 나눠 읽고 MORE로 덧붙인다. 2MB 넘는 md·html은 읽기 모드 대신 원문만
@@ -105,6 +105,7 @@
   - 하위 에이전트: `forwardSubagentText`로 받은 `parent_tool_use_id` 메시지를 `sub`·`sub_result` 이벤트로 보내 `ConversationState.subs`(Agent 도구 호출 ID별)에 쌓는다. `task_progress`는 `progress`. 앞에서 기다리는 에이전트는 AGENTS, 백그라운드 에이전트는 BACKGROUND에 나온다. 대화 기록의 Agent 도구를 펼치면 `SubLog`
 - 기록·보고서: 대화창을 열 때 화면 기록이 비어 있으면 `getSessionMessages`로 되살린다(`agent/history.ts`). 끝난 작업의 보고서는 `Conversation.lastTask`에 저장하고, 보관 전 보고서가 있는 대화를 닫으면 `closedAt`으로 숨기기만 한다. 탭·목록은 `openConversations()` 기준
 - 첨부는 경로로 (첨부 버튼은 입력칸 오른쪽 끝, 홈 작업 지시창은 SEND 앞): 입력창에 파일을 끌어다 놓기·첨부 버튼(`pickFiles`)·이미지 붙여넣기(`saveImage`로 userData/attachments에 저장)를 하면 경로를 넣는다. 작업 폴더 안은 `@상대경로`. 끌어다 놓은 파일 경로는 sandbox라 preload의 `webUtils.getPathForFile`로
+- 확인 요청이 오면 입력칸에서 포커스를 빼 Y/A/N을 바로 받는다. 단 치던 글이 있거나 1.5초 안에 쳤으면 그대로 두고(`stillTyping`, 치던 글자가 승인·거절로 먹지 않게) Tab으로 빠져나와 답한다. 질문 창도 같다
 - 포커스는 늘 글 입력칸으로(`focus.ts`): 대화창은 입력창, 홈은 작업 지시창. 화면을 옮기거나(마운트), 버튼을 누르거나(`refocusAfterClick`, 루트 onClick), 패널·세부 화면·덮개(도움말·검색, `requestRefocus`)를 닫으면 돌아온다. 예외는 다른 입력칸·터미널(`[data-terminal]`)·펼친 목록(`[data-keys-own]`)·글을 긁는 중·확인 요청(Y/A/N)·홈 보고서 상세(O/E/I)가 떠 있을 때. 홈에서 카드를 키로 고르려면 Esc로 입력칸에서 나온다
 - 툴팁: 요소에는 그냥 `title`을 쓴다. `tooltip.tsx`(`useTooltips`, App 루트)가 처음 올릴 때 `data-tip`으로 옮겨 OS 풍선 대신 `.tip`으로 보여준다. 누른 요소·`aria-expanded=true`인 요소에는 띄우지 않는다
 - 펼치는 목록(모델·effort·셸): `.model-list` + `ListHead`(ModelPicker.tsx) 머리줄 + `.model-row` 한 줄 행. 누른 칸 아래(셸은 위)에 붙어서 내려오고(`drop-in`), 긴 설명은 말줄임 + title
@@ -153,6 +154,7 @@
 - 차례를 기다리는 메시지(`queuedId`): 자리 대기열(manager `waiting`)과 세션이 들고 있는 것(`held`) 모두 EDIT(입력창으로 되돌림)·CANCEL(`dropQueued`)
 - 입력창 ↑↓: 보낸 글 기록(`usePromptHistory`, localStorage `wt-hist:`). 입력이 비었거나 첫/끝 줄일 때만. `@`는 파일·폴더(끝에 `/`)·`@agent-이름`(`supportedAgents`)
   - 메뉴가 열린 입력창에는 `data-menu-open`을 달아 App의 전역 키 처리(Esc 중단, Ctrl+K 등)를 건너뛴다
+  - App은 키를 받은 요소부터 위로(`closest`) `data-menu-open`·`data-keys-own`을 찾는다. 덮개·목록 안의 어느 칸(파일 보기의 CodeMirror 찾기 칸 등)에서 눌러도 App으로 가지 않는다. 질문 상자는 `data-pass-esc`라 Esc만 실행 중단으로
 - preload는 sandbox라 CJS(`index.cjs`)로 빌드됨. preload에서는 `electron` 외 모듈 import 금지 (`@shared` 상수는 번들에 포함되므로 허용)
 - UI 문구: 라벨은 영어 대문자, 문장은 한국어 해요체
   - 라벨(상태·모드·단계·버튼·제목·칸 이름·단축키 안내·진행 문구): `RUNNING` `NEEDS YOU` `COMPACT` `READ session.ts`. 설정의 항목 이름만 문장형 영어(`Clear (twice)`)
