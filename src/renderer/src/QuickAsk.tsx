@@ -7,6 +7,7 @@ import { useDraft } from './drafts'
 import { isEscape, matches, physicalCode } from './keys'
 import { useKeymap } from './settings'
 import { usePresence } from './motion'
+import { stillTyping, useRefocus } from './focus'
 
 interface Props {
   convs: ConversationMap
@@ -79,11 +80,17 @@ export function QuickAsk({ convs, usage, leaving, onClose, onRespond }: Props): 
     el.scrollTo({ top: el.scrollHeight, behavior: streaming ? 'instant' : 'smooth' })
   }, [state.items.length, lastItem, !!permission.item, working.item])
 
-  // 열 때·확인 요청이 끝났을 때 입력창으로. 확인 요청이 오면 Y/A/N을 위해 비운다
+  // 열 때·확인 요청이 끝났을 때 입력창으로. 확인 요청이 오면 Y/A/N을 위해 비운다 (치던 글이 있으면 그대로, 대화창과 같다)
+  const lastTyped = useRef(0)
   useEffect(() => {
-    if (pending) inputRef.current?.blur()
-    else inputRef.current?.focus()
+    if (!pending) inputRef.current?.focus()
+    else if (!stillTyping(inputRef.current, lastTyped.current)) inputRef.current?.blur()
   }, [pending?.requestId, project?.id])
+  // 목록을 닫은 뒤 등 포커스를 돌려 달라는 요청 (focus.ts). 확인 요청이 떠 있으면 Y/A/N을 위해 비워 둔다
+  const refocus = useCallback((): void => {
+    if (!pending) inputRef.current?.focus({ preventScroll: true })
+  }, [pending])
+  useRefocus(refocus, true)
 
   // 이 창을 연 뒤에 들어온 항목만 등장 애니메이션
   const seen = useRef<number | null>(null)
@@ -132,12 +139,13 @@ export function QuickAsk({ convs, usage, leaving, onClose, onRespond }: Props): 
     if (project && conv && pending) onRespond(project.id, conv.id, pending.requestId, decision, extra)
   }
 
-  const onKey = (e: React.KeyboardEvent): void => {
-    const ev = e.nativeEvent
+  // 키는 window에서 받는다: 포커스가 창 밖(body)으로 빠져도 Esc·Y/A/N이 먹게. App은 이 창이 열려 있으면 키를 받지 않는다
+  const onKey = (e: KeyboardEvent): void => {
+    const ev = e
     const code = physicalCode(ev)
     // 펼친 목록(모델·effort)은 제 키를 스스로 처리한다 (Esc로 목록만 닫기)
-    if ((e.target as HTMLElement).closest('[data-keys-own]') || e.defaultPrevented) return
-    if (isEscape(ev, code)) {
+    if ((e.target as HTMLElement | null)?.closest?.('[data-keys-own]') || e.defaultPrevented) return
+    if (isEscape(ev)) {
       e.preventDefault()
       if (busy && project && conv) void window.api.interrupt(project.id, conv.id)
       else onClose()
@@ -148,7 +156,7 @@ export function QuickAsk({ convs, usage, leaving, onClose, onRespond }: Props): 
       clear()
       return
     }
-    const typing = (e.target as HTMLElement).tagName === 'TEXTAREA' || (e.target as HTMLElement).tagName === 'INPUT'
+    const typing = (e.target as HTMLElement | null)?.tagName === 'TEXTAREA' || (e.target as HTMLElement | null)?.tagName === 'INPUT'
     if (pending && !typing && !needsChoice(pending.toolName)) {
       const decision: PermissionDecision | null = matches(ev, km.allow) ? 'allow' : matches(ev, km.always) ? 'always' : matches(ev, km.deny) ? 'deny' : null
       if (!decision) return
@@ -159,9 +167,20 @@ export function QuickAsk({ convs, usage, leaving, onClose, onRespond }: Props): 
     }
   }
 
+  const keyRef = useRef(onKey)
+  keyRef.current = onKey
+  const leavingRef = useRef(leaving)
+  leavingRef.current = leaving
+  useEffect(() => {
+    // 닫히는 동안(leaving)은 App이 키를 받는다
+    const on = (e: KeyboardEvent): void => void (!leavingRef.current && keyRef.current(e))
+    window.addEventListener('keydown', on)
+    return () => window.removeEventListener('keydown', on)
+  }, [])
+
   const ctx = state.context?.percent ?? conv?.contextPercent
   return (
-    <div className={`overlay quick ${leaving ? 'leaving' : ''}`} role="dialog" aria-modal="true" aria-label="빠른 질문" onKeyDown={onKey} onClick={(e) => e.target === e.currentTarget && onClose()}>
+    <div className={`overlay quick ${leaving ? 'leaving' : ''}`} data-focus-owner role="dialog" aria-modal="true" aria-label="빠른 질문" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="overlay-sheet quick-sheet" onClick={(e) => {
         // 버튼·빈 곳을 누른 뒤에도 입력창으로 (확인 요청이 떠 있으면 Y/A/N을 위해 비워 둔다)
         const t = e.target as HTMLElement
@@ -242,6 +261,13 @@ export function QuickAsk({ convs, usage, leaving, onClose, onRespond }: Props): 
               placeholder={busy ? '답하는 중이에요 · 지금 입력하면 다음 차례로 보내요' : '질문 입력 · /clear · /compact'}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => {
+                lastTyped.current = Date.now()
+                // 확인 요청을 기다리는 동안: 입력창에서 빠져나와 Y/A/N으로 답한다
+                if (e.key === 'Tab' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey && pending) {
+                  e.preventDefault()
+                  e.currentTarget.blur()
+                  return
+                }
                 if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                   e.preventDefault()
                   submit()

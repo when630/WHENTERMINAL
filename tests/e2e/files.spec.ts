@@ -216,3 +216,24 @@ test('git 프로젝트의 한글 이름 파일·폴더도 찾고, 둘러보고, 
   await win.keyboard.press('Enter')
   await expect(composer).toHaveValue('@문서/기획서 초안.md ')
 })
+
+test('원문의 찾기 칸에서 Esc는 찾기만 닫고 실행을 멈추지 않는다', async ({ app, win }) => {
+  await app.evaluate(({ ipcMain }) => {
+    const g = globalThis as unknown as { interrupted: number }
+    g.interrupted = 0
+    ipcMain.removeHandler('agent:interrupt')
+    ipcMain.handle('agent:interrupt', () => void g.interrupted++)
+  })
+  await win.keyboard.press('Alt+KeyA')
+  await win.keyboard.press('Control+p')
+  const overlay = win.locator('.overlay.files')
+  await win.keyboard.type('app.ts')
+  await expect(overlay.locator('.cm-content')).toContainText('export const answer = 42')
+  await overlay.locator('.cm-content').click()
+  await win.keyboard.press('Control+f')
+  const find = overlay.locator('.cm-search input[name="search"]')
+  await expect(find).toBeFocused()
+  await win.keyboard.press('Escape')
+  await expect(overlay.locator('.cm-search')).toHaveCount(0)
+  expect(await app.evaluate(() => (globalThis as unknown as { interrupted: number }).interrupted)).toBe(0)
+})

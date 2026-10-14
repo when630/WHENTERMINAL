@@ -10,13 +10,19 @@ export function requestRefocus(): void {
   window.dispatchEvent(new Event(EVENT))
 }
 
-/** 지금 화면의 입력칸이 requestRefocus에 응답한다 */
-export function useRefocus(focus: () => void): void {
+/**
+ * 지금 화면의 입력칸이 requestRefocus에 응답한다. 포커스를 혼자 갖는 덮개(`data-focus-owner`, 질문 창)가 떠 있으면
+ * 그 덮개(owner)만 응답한다. 덮개를 닫을 때는 leaving이 붙은 뒤에 요청해야 아래 화면이 받는다
+ */
+export function useRefocus(focus: () => void, owner = false): void {
   useEffect(() => {
-    const on = (): void => focus()
+    const on = (): void => {
+      if (!owner && document.querySelector('[data-focus-owner]:not(.leaving)')) return
+      focus()
+    }
     window.addEventListener(EVENT, on)
     return () => window.removeEventListener(EVENT, on)
-  }, [focus])
+  }, [focus, owner])
 }
 
 /** 포커스가 가 있어도 되는 곳 (여기면 입력칸으로 끌어오지 않는다) */
@@ -37,4 +43,12 @@ export function refocusAfterClick(e: React.MouseEvent, input: () => HTMLElement 
     if (active && active !== document.body && active.closest(OWN)) return
     if (document.activeElement !== el) el.focus({ preventScroll: true })
   })
+}
+
+/**
+ * 확인 요청이 왔을 때 입력칸을 그대로 둘지: 포커스가 있고 치던 글이 있거나 방금(1.5초 안) 쳤으면.
+ * 이때 입력칸을 비우면 치던 글자가 Y/A/N으로 먹는다. 비우지 않은 입력칸은 Tab으로 빠져나와 답한다
+ */
+export function stillTyping(el: HTMLTextAreaElement | null | undefined, lastTyped: number): boolean {
+  return !!el && document.activeElement === el && (!!el.value.trim() || Date.now() - lastTyped < 1500)
 }

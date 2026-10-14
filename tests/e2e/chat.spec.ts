@@ -130,3 +130,55 @@ test('다른 화면에 갔다가 돌아오면 써 둔 글의 끝에 커서가 �
   await win.keyboard.type('!')
   await expect(input).toHaveValue('써 둔 글이에요!')
 })
+
+test('확인 요청: 치던 글이 있으면 입력창에 남고 Tab으로 빠져나와 Y로 답한다, 비어 있으면 바로 Y', async ({ app, win }) => {
+  await app.evaluate(({ ipcMain }) => {
+    const g = globalThis as unknown as { answers: string[] }
+    g.answers = []
+    ipcMain.removeHandler('agent:respond-permission')
+    ipcMain.handle('agent:respond-permission', (_e, _p: string, _c: string, requestId: string, decision: string) => void g.answers.push(`${requestId}:${decision}`))
+  })
+  const answers = (): Promise<string[]> => app.evaluate(() => (globalThis as unknown as { answers: string[] }).answers)
+  const ask = (requestId: string): Promise<void> =>
+    app.evaluate(({ BrowserWindow }, requestId) => {
+      BrowserWindow.getAllWindows()[0].webContents.send('agent:event', { projectId: 'p1', conversationId: 'c1', event: { kind: 'permission_request', request: { requestId, toolName: 'Bash', input: { command: 'ls' } } } })
+    }, requestId)
+  await win.keyboard.press('Alt+a')
+  const input = win.locator('#composer-input')
+  await input.click()
+  await win.keyboard.type('add')
+  await ask('r1')
+  await expect(win.locator('.permission')).toBeVisible()
+  // 치던 글자가 승인·거절로 먹지 않는다
+  await win.keyboard.type(' more')
+  await expect(input).toHaveValue('add more')
+  await expect(input).toBeFocused()
+  expect(await answers()).toEqual([])
+  await input.press('Tab')
+  await expect(input).not.toBeFocused()
+  await win.keyboard.press('y')
+  await expect.poll(answers).toEqual(['r1:allow'])
+  await app.evaluate(({ BrowserWindow }) => {
+    BrowserWindow.getAllWindows()[0].webContents.send('agent:event', { projectId: 'p1', conversationId: 'c1', event: { kind: 'permission_resolved', requestId: 'r1' } })
+  })
+  await expect(win.locator('.permission')).toHaveCount(0)
+
+  // 비어 있고 한동안 치지 않았으면 바로 Y/A/N
+  await input.fill('')
+  await win.waitForTimeout(1600)
+  await ask('r2')
+  await expect(input).not.toBeFocused()
+  await win.keyboard.press('n')
+  await expect.poll(answers).toEqual(['r1:allow', 'r2:deny'])
+})
+
+test('effort 목록을 Enter로 고르면 입력창으로 돌아온다', async ({ win }) => {
+  test.setTimeout(60_000)
+  await win.keyboard.press('Alt+a')
+  await win.locator('.meta', { hasText: 'EFFORT' }).click()
+  const list = win.locator('.effort-list')
+  await expect(list.locator('.model-row', { hasText: /^LOW/ })).toBeVisible({ timeout: 30_000 })
+  await win.keyboard.press('ArrowDown')
+  await win.keyboard.press('Enter')
+  await expect(win.locator('#composer-input')).toBeFocused()
+})

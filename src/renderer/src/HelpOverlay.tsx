@@ -45,7 +45,7 @@ const GROUPS: Group[] = [
     id: 'chat',
     title: 'CHAT',
     note: '대화창. 입력 중에도 Ctrl 조합은 동작해요',
-    actions: ['newConversation', 'nextConversation', 'prevConversation', 'renameConversation', 'closeConversation', 'closeProject', 'clear', 'compact', 'rewind', 'cycleMode', 'cycleEffort', 'interrupt', 'panelNext', 'panelPrev', 'panelBack', 'stopTask'],
+    actions: ['newConversation', 'nextConversation', 'prevConversation', 'renameConversation', 'closeConversation', 'closeProject', 'clear', 'compact', 'rewind', 'cycleMode', 'cycleEffort', 'panelNext', 'panelPrev', 'panelBack', 'stopTask'],
   },
   {
     id: 'input',
@@ -57,6 +57,7 @@ const GROUPS: Group[] = [
       ['esc', 'Interrupt'],
       ['ctrl C', 'Interrupt (no text selected)'],
       ['tab', 'Accept suggested prompt (empty input)'],
+      ['tab', 'Leave the input to answer Y / A / N (approval waiting)'],
       ['up', 'Previous prompt (empty input or first line)'],
       ['down', 'Next prompt'],
       ['1…4', 'Pick an option (question box)'],

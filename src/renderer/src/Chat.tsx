@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { refocusAfterClick, useRefocus } from './focus'
+import { refocusAfterClick, stillTyping, useRefocus } from './focus'
 import { ALWAYS_SCOPE_LABEL, ALWAYS_SCOPE_TIP, ELICITATION_TOOL, MODE_CYCLE, MODE_LABEL, openConversations, REFUSAL_TOOL, STATUS_LABEL, type AgentOption, type AskQuestion, type EffortInfo, type EffortLevel, type GitBranch, type UsageInfo, type SlashCommandInfo, type AgentMode, type PermissionDecision, type PermissionExtra, type PermissionRequest, type Project, type BackgroundTask, type AgentProgress, type RefusalChoice, type SubItem } from '@shared/types'
 import { agentInfo, artifactsOf, describeBackground, emptyConversation, foldSummaries, isAgentTool, relPath, runningAgents, STAGES, subActivity, summarizeInput, type ArtifactLink, type ConversationMap, type TaskInfo, type ToolItem, type TranscriptItem } from './state'
 import type { GoalInfo, MemoryRecall } from '@shared/types'
@@ -186,12 +186,17 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
     }, 120)
   }, [jump?.nonce, state.items.length, state.restored]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 권한 요청이 오면 입력창에서 포커스를 빼서 Y/A/N이 바로 먹게 한다.
+  // 권한 요청이 오면 입력창에서 포커스를 빼서 Y/A/N이 바로 먹게 한다. 단 치던 글이 있거나 방금 쳤으면 그대로 둔다
+  // (치던 글자가 승인·거절로 먹지 않게). 그때는 Tab으로 입력창에서 빠져나와 답한다.
   // 대화창을 열거나(다른 화면에서 돌아옴) 대화를 옮기면 써 둔 글의 끝에 커서를 둔다 (처음 그려진 입력창은 커서가 맨 앞이다)
   const caretPlaced = useRef<string | null>(null)
+  const lastTyped = useRef(0)
   useEffect(() => {
     const el = inputRef.current
-    if (pending) return el?.blur()
+    if (pending) {
+      if (!stillTyping(el, lastTyped.current)) el?.blur()
+      return
+    }
     if (!el) return
     el.focus()
     if (caretPlaced.current !== conversationId) {
@@ -344,7 +349,7 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
       setMenuIndex((i) => (i + step + menuCount) % menuCount)
       return true
     }
-    if (e.key === 'Escape' || (plainCtrl && e.code === 'BracketLeft')) {
+    if (e.key === 'Escape') {
       setDismissed(draft)
       return true
     }
@@ -985,6 +990,7 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
             onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
             onPaste={attach.onPaste}
             onKeyDown={(e) => {
+              lastTyped.current = Date.now()
               if (menuKey(e) || historyKey(e)) {
                 e.preventDefault()
                 return
@@ -994,6 +1000,12 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
                 e.preventDefault()
                 setDraft(ghost)
                 setCaret(ghost.length)
+                return
+              }
+              // 확인 요청을 기다리는 동안: 입력창에서 빠져나와 Y/A/N으로 답한다
+              if (e.key === 'Tab' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey && pending) {
+                e.preventDefault()
+                e.currentTarget.blur()
                 return
               }
               if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -1787,7 +1799,7 @@ function QuestionBox({ cls, questions, agentId, onRespond }: { cls: string; ques
     }
   }
   return (
-    <div className={`${cls} question`} role="alert" ref={boxRef} tabIndex={-1} data-keys-own="true" onKeyDown={onKey}>
+    <div className={`${cls} question`} role="alert" ref={boxRef} tabIndex={-1} data-keys-own="true" data-pass-esc="true" onKeyDown={onKey}>
       <div className="permission-head">
         <span className="q" aria-hidden="true">?</span>
         <div>

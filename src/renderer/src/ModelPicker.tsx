@@ -2,6 +2,14 @@ import { useEffect, useRef, useState } from 'react'
 import { EFFORT_LABEL, type EffortInfo, type EffortLevel, type ModelOption, type UsageInfo } from '@shared/types'
 import { modelFamily as family } from '@shared/usage'
 import { usePresence } from './motion'
+import { requestRefocus } from './focus'
+
+/** 목록을 닫으면 입력창으로. 사라지는 동안(leaving) 남은 목록에 포커스가 있으면 입력창이 끌어오지 않으므로 먼저 뺀다 */
+function leaveList(): void {
+  const active = document.activeElement as HTMLElement | null
+  if (active?.closest('.model-list')) active.blur()
+  requestRefocus()
+}
 
 /** 펼친 목록의 머리줄: 이름·개수와 키 안내 */
 export function ListHead({ label, count }: { label: string; count?: number }): React.JSX.Element {
@@ -54,6 +62,7 @@ export function ModelPicker({ projectId, conversationId, current, choice, usage 
 
   const pick = (m: ModelOption): void => {
     setOpen(false)
+    leaveList()
     void window.api.setModel(projectId, conversationId, m)
   }
 
@@ -63,7 +72,10 @@ export function ModelPicker({ projectId, conversationId, current, choice, usage 
     const step = e.key === 'ArrowDown' || (ctrl && (e.code === 'KeyN' || e.code === 'KeyJ')) ? 1 : e.key === 'ArrowUp' || (ctrl && (e.code === 'KeyP' || e.code === 'KeyK')) ? -1 : 0
     if (step) setIndex((i) => (i + step + list.length) % list.length)
     else if (e.key === 'Enter') pick(list[index])
-    else if (e.key === 'Escape') setOpen(false)
+    else if (e.key === 'Escape') {
+      setOpen(false)
+      leaveList()
+    }
     else return
     e.preventDefault()
     e.stopPropagation()
@@ -143,6 +155,7 @@ export function EffortPicker({ choice, info, onPick }: EffortProps): React.JSX.E
 
   const pick = (e: EffortLevel | null): void => {
     setOpen(false)
+    leaveList()
     onPick(e)
   }
   const onKey = (e: React.KeyboardEvent): void => {
@@ -150,7 +163,10 @@ export function EffortPicker({ choice, info, onPick }: EffortProps): React.JSX.E
     const step = e.key === 'ArrowDown' || (ctrl && (e.code === 'KeyN' || e.code === 'KeyJ')) ? 1 : e.key === 'ArrowUp' || (ctrl && (e.code === 'KeyP' || e.code === 'KeyK')) ? -1 : 0
     if (step) setIndex((i) => (i + step + rows.length) % rows.length)
     else if (e.key === 'Enter') pick(rows[index])
-    else if (e.key === 'Escape') setOpen(false)
+    else if (e.key === 'Escape') {
+      setOpen(false)
+      leaveList()
+    }
     else return
     e.preventDefault()
     e.stopPropagation()
