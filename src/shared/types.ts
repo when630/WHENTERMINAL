@@ -375,6 +375,68 @@ export interface GitBranch {
   dirty: boolean
 }
 
+/** git 화면(/git)의 왼쪽 칸: 브랜치·작업 공간·커밋 안 한 변경 수 */
+export interface GitOverview {
+  /** 저장소 최상위 폴더 */
+  root: string
+  /** 이 대화 폴더의 지금 브랜치 (분리된 HEAD면 짧은 커밋, 커밋이 하나도 없으면 브랜치 이름) */
+  head: string
+  detached: boolean
+  branches: GitBranchInfo[]
+  worktrees: GitWorktreeInfo[]
+  /** 이 대화 폴더에서 커밋하지 않은 파일 수 (새 파일 포함) */
+  changed: number
+}
+
+export interface GitBranchInfo {
+  name: string
+  /** 이 대화 폴더에서 체크아웃된 브랜치 */
+  current: boolean
+  sha: string
+  /** 마지막 커밋 시각 (ms) */
+  date: number
+  subject: string
+  upstream?: string
+  ahead: number
+  behind: number
+  /** 다른 작업 공간에 체크아웃되어 있으면 그 폴더 */
+  worktree?: string
+}
+
+export interface GitWorktreeInfo {
+  path: string
+  /** 분리된 HEAD면 없음 */
+  branch?: string
+  sha: string
+  /** 이 대화 폴더 */
+  here: boolean
+  /** 저장소의 원래 폴더 (첫 작업 공간) */
+  main: boolean
+}
+
+export interface GitCommitInfo {
+  sha: string
+  short: string
+  parents: string[]
+  author: string
+  /** ms */
+  date: number
+  /** HEAD -> main, origin/main, tag: v1 … */
+  refs: string[]
+  subject: string
+}
+
+/** git 화면 오른쪽 칸에 보일 것: 커밋 하나 또는 작업 공간의 커밋 안 한 변경 */
+export type GitDiffTarget = { kind: 'commit'; sha: string } | { kind: 'working'; path?: string }
+
+export interface GitDiff {
+  files: { path: string; status: string }[]
+  diff: string
+  truncated: boolean
+  /** 커밋이면 그 정보와 본문 */
+  commit?: GitCommitInfo & { body: string; email: string }
+}
+
 /** 입력창에서 /로 고를 수 있는 명령 (SDK SlashCommand와 같은 모양) */
 export interface SlashCommandInfo {
   name: string
@@ -662,6 +724,11 @@ export const IPC = {
   getEffort: 'agent:get-effort',
   setEffort: 'agent:set-effort',
   gitBranch: 'git:branch',
+  gitOverview: 'git:overview',
+  gitLog: 'git:log',
+  gitDiff: 'git:diff',
+  gitCheckout: 'git:checkout',
+  gitCommit: 'git:commit',
   loadHistory: 'agent:load-history',
   getSettingsSync: 'settings:get-sync',
   appInfo: 'app:info',
@@ -826,6 +893,16 @@ export interface WhenTerminalApi {
   setEffort(projectId: string, conversationId: string, effort: EffortLevel | null): Promise<void>
   /** 대화 폴더의 지금 브랜치. git 저장소가 아니면 null */
   gitBranch(projectId: string, conversationId: string): Promise<GitBranch | null>
+  /** git 화면: 브랜치·작업 공간 목록. git 저장소가 아니면 null */
+  gitOverview(projectId: string, conversationId: string): Promise<GitOverview | null>
+  /** git 화면: 커밋 기록 (최근 것부터, 부모 포함). ref가 null이면 모든 브랜치 */
+  gitLog(projectId: string, conversationId: string, ref: string | null, skip: number): Promise<GitCommitInfo[]>
+  /** git 화면: 커밋 하나 또는 작업 공간의 커밋 안 한 변경 */
+  gitDiff(projectId: string, conversationId: string, target: GitDiffTarget): Promise<GitDiff>
+  /** git 화면: 대화 폴더를 로컬 브랜치로 옮긴다 */
+  gitCheckout(projectId: string, conversationId: string, branch: string): Promise<{ ok: boolean; message: string }>
+  /** git 화면: 작업 공간 폴더(path가 없으면 대화 폴더)의 변경을 모두 커밋한다 */
+  gitCommit(projectId: string, conversationId: string, path: string | undefined, message: string): Promise<{ ok: boolean; message: string }>
   /** 저장된 세션의 지난 대화를 읽어 'history' 이벤트로 보낸다 (화면 기록이 비어 있을 때) */
   loadHistory(projectId: string, conversationId: string): Promise<void>
   /** 첫 화면을 그리기 전에 테마를 적용하려고 동기로 읽는다 */

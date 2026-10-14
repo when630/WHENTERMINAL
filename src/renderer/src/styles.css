@@ -475,6 +475,54 @@ kbd { display: inline-block; font: 500 11px/1 var(--mono); padding: 3px 5px; col
 .wt-diff .add { display: inline; box-shadow: inset 4px 0 0 var(--signal); }
 .wt-diff .del { color: color-mix(in srgb, var(--code-fg) 45%, var(--code-bg)); text-decoration: line-through; }
 .wt-diff .hunk { color: color-mix(in srgb, var(--code-fg) 60%, var(--code-bg)); }
+.wt-files li { cursor: pointer; }
+/* git 화면 (/git): 브랜치·작업 공간 | 커밋 기록(갈래 선) | diff. 좁으면 diff가 아래로 */
+.git { container-type: inline-size; }
+.git-cols { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(190px, 250px) minmax(300px, 1fr) minmax(360px, 1.25fr); }
+.git-col { min-height: 0; min-width: 0; overflow: auto; outline: none; border-right: var(--rule); }
+.git-col:last-child { border-right: 0; }
+/* 키를 받는 칸: 머리줄 아래 굵은 선 */
+.git-col:focus .git-h, .git-col:focus-within .git-h { box-shadow: inset 0 -3px 0 var(--line); color: var(--ink); }
+.git-diff:focus { box-shadow: inset 0 3px 0 var(--line); }
+.git-h { position: sticky; top: 0; z-index: 1; margin: 0; padding: 10px 16px 8px; background: var(--paper); font: 600 10.5px/1 var(--disp); letter-spacing: 0.14em; color: var(--gray); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transition: box-shadow var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out); }
+.git-ref-wrap .git-h { position: static; margin-top: 8px; }
+.git-ref { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 6px 16px; font-size: 13px; cursor: pointer; transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out); }
+.git-ref-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
+.git-ref.current .git-ref-name { text-decoration: underline; text-underline-offset: 3px; }
+.git-ref-sub, .git-track { flex: none; font-size: 11.5px; color: var(--gray); white-space: nowrap; }
+.git-head { flex: none; padding: 1px 5px; border: 1.5px solid currentColor; font: 900 10px/1.2 var(--disp); letter-spacing: 0.06em; }
+/* 줄 높이는 GitPanel의 ROW_H와 같아야 위아래 갈래 선이 이어진다 */
+.git-row { display: flex; align-items: center; gap: 8px; min-width: 0; height: 26px; padding: 0 16px 0 10px; font-size: 13px; white-space: nowrap; cursor: pointer; transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out); }
+.git-graph { flex: none; align-self: stretch; height: 26px; overflow: visible; }
+.git-graph line { stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.git-graph circle { fill: currentColor; }
+.git-graph circle.merge { fill: var(--paper); stroke: currentColor; stroke-width: 2; }
+.git-row.sel .git-graph circle.merge { fill: var(--sel-bg); }
+.git-sha { flex: none; font-size: 12px; color: var(--gray); }
+.git-subject { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.git-when { flex: none; font-size: 11.5px; color: var(--gray); }
+.git-badge { flex: none; max-width: 180px; overflow: hidden; text-overflow: ellipsis; padding: 1px 6px; border: 1.5px solid currentColor; font: 700 10.5px/1.3 var(--font); white-space: nowrap; }
+.git-badge.head { background: var(--sel-bg); color: var(--sel-fg); border-color: var(--sel-bg); }
+.git-badge.tag { border-style: dashed; }
+.git-ref.sel, .git-row.sel { background: var(--sel-bg); color: var(--sel-fg); }
+.git-ref.sel .git-ref-sub, .git-ref.sel .git-track, .git-row.sel .git-sha, .git-row.sel .git-when { color: inherit; opacity: 0.75; }
+.git-row.sel .git-badge.head { background: var(--sel-fg); color: var(--sel-bg); border-color: var(--sel-fg); }
+.git-more { margin: 10px 16px; }
+.git-meta { display: flex; flex-direction: column; gap: 6px; padding: 12px 20px; border-bottom: var(--rule); }
+.git-meta-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; color: var(--gray); }
+.git-meta-line b { color: var(--ink); }
+.git-meta-subject { font-size: 15px; font-weight: 700; overflow-wrap: anywhere; }
+.git-meta-body { margin: 0; padding: 0; background: transparent; color: var(--ink); font: 13px/1.55 var(--font); white-space: pre-wrap; overflow-wrap: anywhere; }
+.git-diff .wt-files { padding: 8px 20px 12px; }
+.git-commit { display: flex; gap: 8px; margin-top: 4px; }
+.git-commit-input { flex: 1; min-width: 0; padding: 7px 10px; border: var(--rule); background: var(--paper); color: var(--ink); font: 600 13.5px/1.3 var(--font); outline: none; }
+.git-commit-input::placeholder { color: var(--gray-2); }
+.git-commit-input:focus { box-shadow: inset 0 -3px 0 var(--line); }
+.git-diff .wt-file-h, .git-diff .wt-diff { padding-left: 20px; padding-right: 20px; }
+@container (max-width: 980px) {
+  .git-cols { grid-template-columns: minmax(170px, 210px) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(0, 1.2fr); }
+  .git-diff { grid-column: 1 / -1; border-top: var(--rule); border-right: 0; }
+}
 
 /* 화면 전환 (App의 .stage는 화면이 바뀔 때마다 새로 붙는다) */
 .stage { flex: 1; min-height: 0; display: flex; flex-direction: column; animation: screen-in 0.38s var(--ease-out) both; }
@@ -566,6 +614,8 @@ kbd { display: inline-block; font: 500 11px/1 var(--mono); padding: 3px 5px; col
 .tb-btn:hover:not(:disabled) { background: var(--sel-bg); color: var(--sel-fg); }
 .tb-btn:disabled { color: var(--gray-3); cursor: default; }
 .tb-btn.armed { background: var(--signal); color: var(--on-signal); }
+/* 펼쳐 둔 화면의 버튼 (GIT·CHANGES): 빨강은 사람이 봐야 할 것에만 쓰므로 검정 반전 */
+.tb-btn.on { background: var(--sel-bg); color: var(--sel-fg); }
 .ctx-pct { flex: none; font: 600 11px var(--mono); color: var(--gray); }
 .ctx-pct.hot { color: var(--signal); }
 .divider { margin: 6px 0; padding: 8px 28px; border-top: var(--rule); border-bottom: var(--rule); font: 600 12.5px/1.2 var(--disp); letter-spacing: 0.06em; text-transform: uppercase; }
@@ -922,6 +972,17 @@ pre { font: 12.5px/1.65 var(--mono); background: transparent; padding: 0; overfl
 .search-snippet { font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
 .search-snippet mark { background: var(--sel-bg); color: var(--sel-fg); padding: 0 1px; }
 .search-hit.on .search-snippet mark { background: var(--sel-fg); color: var(--sel-bg); }
+/* 명령 팔레트: 검색 덮개와 같은 모양에 한 줄 행 */
+.palette .search-sheet { width: min(760px, 100%); }
+.search-hit.pal-row { flex-direction: row; align-items: baseline; gap: 12px; padding: 9px 20px; }
+.pal-mark { flex: none; width: 14px; font: 900 15px/1 var(--disp); }
+.pal-label { flex: none; max-width: 55%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14.5px; }
+.pal-note { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; color: var(--gray); }
+.pal-recent, .pal-group { flex: none; font: 600 10.5px/1 var(--disp); letter-spacing: 0.14em; color: var(--gray); }
+.pal-recent { margin-left: auto; }
+.pal-note + .pal-group, .pal-label + .pal-group, .pal-label + .pal-keys, .pal-note + .pal-keys { margin-left: auto; }
+.pal-keys { flex: none; font-size: 11.5px; }
+.search-hit.on .pal-note, .search-hit.on .pal-recent, .search-hit.on .pal-group { color: inherit; opacity: 0.75; }
 /* 파일 찾기·읽기 (FilesOverlay): 왼쪽 목록, 오른쪽 미리 보기 */
 .overlay.files { padding: 16px; }
 /* 창 폭을 거의 다 쓴다 (도움말과 같은 상한) */

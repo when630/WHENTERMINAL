@@ -26,7 +26,7 @@ export function useRefocus(focus: () => void, owner = false): void {
 }
 
 /** 포커스가 가 있어도 되는 곳 (여기면 입력칸으로 끌어오지 않는다) */
-const OWN = 'input, textarea, select, [contenteditable="true"], [data-terminal], [data-keys-own], [role="listbox"]'
+const OWN = 'input, textarea, select, [contenteditable="true"], [data-terminal], [data-keys-own], [role="listbox"], [data-focus-stay]'
 
 /**
  * 누른 뒤 입력칸으로 돌아가도 되는지: 다른 입력칸·터미널·목록이 아니고, 글을 고르는 중이 아닐 때.

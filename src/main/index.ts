@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage,
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { cwdOf, IPC, MAX_PROJECTS, type Conversation, type DeniedCall, type ModelOption, type StoredTask, type UsageInfo, type AgentEventEnvelope, type AgentMode, type PermissionDecision, type PermissionExtra, type PermissionRuleSource, type RateLimitInfo, type RewindScope, type ShellResult, type TerminalShell, type EffortLevel } from '@shared/types'
+import { cwdOf, IPC, MAX_PROJECTS, type Conversation, type DeniedCall, type ModelOption, type StoredTask, type UsageInfo, type AgentEventEnvelope, type AgentMode, type PermissionDecision, type PermissionExtra, type PermissionRuleSource, type RateLimitInfo, type RewindScope, type ShellResult, type TerminalShell, type EffortLevel, type GitDiffTarget } from '@shared/types'
 import { limitAllowed, worstLimit } from '@shared/usage'
 import { newConversationId, ProjectStore } from './store'
 import { memoryFiles, permissionsInfo, setPermissionRule } from './agent/config'
@@ -10,6 +10,7 @@ import { exportMarkdown } from './agent/history'
 import { loginCommand } from './executable'
 import { branchOf, createWorktree, discardWorktree, isGitRepo, mergeWorktree, worktreeChanges } from './worktree'
 import { listChildren, searchFiles } from './files'
+import { gitCheckout, gitCommit, gitDiff, gitLog, gitOverview } from './git-view'
 import { setupArtifactView } from './artifact-view'
 import { fetchRemoteImages, handleFileScheme, registerFileScheme, viewFile } from './file-view'
 import { SettingsStore } from './settings'
@@ -327,6 +328,33 @@ function bootstrap(): void {
     const project = store.get(projectId)
     const conv = store.getConversation(projectId, conversationId)
     return project && conv ? branchOf(cwdOf(project, conv)) : null
+  })
+  // git 화면 (/git): 대화 폴더(작업 공간이면 그 폴더) 기준으로 읽기만 한다
+  const gitCwd = (projectId: string, conversationId: string): string | null => {
+    const project = store.get(projectId)
+    const conv = store.getConversation(projectId, conversationId)
+    return project && conv ? cwdOf(project, conv) : null
+  }
+  ipcMain.handle(IPC.gitOverview, (_e, projectId: string, conversationId: string) => {
+    const cwd = gitCwd(projectId, conversationId)
+    return cwd ? gitOverview(cwd) : null
+  })
+  ipcMain.handle(IPC.gitLog, (_e, projectId: string, conversationId: string, ref: string | null, skip: number) => {
+    const cwd = gitCwd(projectId, conversationId)
+    return cwd ? gitLog(cwd, ref, skip) : []
+  })
+  ipcMain.handle(IPC.gitDiff, (_e, projectId: string, conversationId: string, target: GitDiffTarget) => {
+    const cwd = gitCwd(projectId, conversationId)
+    if (!cwd) throw new Error('대화를 찾을 수 없어요')
+    return gitDiff(cwd, target)
+  })
+  ipcMain.handle(IPC.gitCheckout, (_e, projectId: string, conversationId: string, branch: string) => {
+    const cwd = gitCwd(projectId, conversationId)
+    return cwd ? gitCheckout(cwd, branch) : { ok: false, message: '대화를 찾을 수 없어요' }
+  })
+  ipcMain.handle(IPC.gitCommit, (_e, projectId: string, conversationId: string, path: string | undefined, message: string) => {
+    const cwd = gitCwd(projectId, conversationId)
+    return cwd ? gitCommit(cwd, path, message) : { ok: false, message: '대화를 찾을 수 없어요' }
   })
   // 스크린샷 붙여넣기: 붙여넣은 이미지를 userData/attachments에 저장하고 그 경로를 입력창에 넣는다 (에이전트가 Read로 본다)
   ipcMain.handle(IPC.saveImage, (_e, data: Uint8Array, ext: string) => {

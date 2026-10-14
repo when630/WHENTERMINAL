@@ -71,6 +71,10 @@ export interface PanelControl {
   rewind: () => void
   /** 파일 찾기·읽기 (/files) 열고 닫기 */
   files: () => void
+  /** git 화면 (/git) 열고 닫기 */
+  git: () => void
+  /** 앱이 직접 처리하는 입력창 명령을 실행한다 (명령 팔레트). 입력창의 글은 그대로 둔다 */
+  command: (name: string) => void
 }
 
 export function Chat({ project, projects, conversationId, convs, mode, usage, clearArmed, closeArmedId, projectArmed, onClearRequest, onCloseRequest, onClose, onSelectConversation, onRespond, panelRef, jump, openPanel, away, suggestions }: Props): React.JSX.Element {
@@ -483,6 +487,8 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
       setTool(null)
     },
     rewind: () => openTool({ kind: 'rewind' }),
+    git: () => (tool?.kind === 'git' ? setTool(null) : openTool({ kind: 'git' })),
+    command: (name) => submit(`/${name}`, true),
     files: () => {
       setBrowseOpen((v) => !v)
       if (browseOpen) inputRef.current?.focus()
@@ -510,13 +516,13 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
   }, [notice])
   const noticeShown = usePresence(notice, 220)
 
-  const submit = (raw = draft): void => {
+  const submit = (raw = draft, keepDraft = false): void => {
     const text = raw.trim()
     if (!text) return
     // 앱이 직접 처리하는 명령: /compact [요약 지시], /clear, /close, /rename [이름], 그리고 명령 화면들
-    const cmd = /^\/(compact|clear|reset|new|close|rename|rewind|resume|fork|export|mcp|agents|permissions|hooks|add-dir|memory|status|login|goal|tag|files)\b\s*([\s\S]*)$/.exec(text)
+    const cmd = /^\/(compact|clear|reset|new|close|rename|rewind|resume|fork|export|mcp|agents|permissions|hooks|add-dir|memory|status|login|goal|tag|files|git)\b\s*([\s\S]*)$/.exec(text)
     if (cmd) {
-      setDraft('')
+      if (!keepDraft) setDraft('')
       const arg = cmd[2].trim()
       switch (cmd[1]) {
         case 'compact': return compact(cmd[2])
@@ -542,6 +548,7 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
           return
         case 'rewind': return openTool({ kind: 'rewind' })
         case 'files': return setBrowseOpen(true)
+        case 'git': return openTool({ kind: 'git' })
         case 'resume': return openTool({ kind: 'resume' })
         case 'fork':
           void window.api.forkConversation(project.id, conversationId, arg || undefined).then(onSelectConversation, (err) => setNotice({ ok: false, text: err instanceof Error ? err.message : String(err) }))
@@ -669,8 +676,13 @@ export function Chat({ project, projects, conversationId, convs, mode, usage, cl
               {p.name} NEEDS YOU {n}
             </span>
           ))}
+          {branch && (
+            <button type="button" className={`tb-btn ${tool?.kind === 'git' ? 'on' : ''}`} onClick={() => panelRef.current?.git()} title="브랜치·커밋 기록·diff를 봐요 (/git)">
+              GIT
+            </button>
+          )}
           {conv?.worktree && (
-            <button type="button" className={`tb-btn ${showChanges ? 'armed' : ''}`} onClick={() => { setDetail(null); setShowChanges((v) => !v) }} title={`작업 공간 ${conv.worktree.branch}의 변경을 보고 합쳐요`}>
+            <button type="button" className={`tb-btn ${showChanges ? 'on' : ''}`} onClick={() => { setDetail(null); setShowChanges((v) => !v) }} title={`작업 공간 ${conv.worktree.branch}의 변경을 보고 합쳐요`}>
               CHANGES
             </button>
           )}

@@ -5,6 +5,7 @@ import type { AgentOption, McpServerInfo, MemoryFile, PermissionRuleSource, Perm
 import { ARTIFACT_PARTITION, MODE_LABEL } from '@shared/types'
 import { artifactsOf, relPath as relPathOf, summarizeInput as summarizeInputOf, type TranscriptItem } from './state'
 import { elapsed, useNow } from './time'
+import { GitPanel } from './GitPanel'
 
 // 대화 기록 자리에 펼치는 명령 화면들 (CLI의 /rewind /resume /mcp /agents /permissions /hooks /memory /status).
 // 모양은 작업 공간 CHANGES(WorktreePanel)와 같다: 머리줄 + 본문
@@ -21,6 +22,8 @@ export type ToolPanel =
   | { kind: 'tools'; since?: number }
   /** Artifact 도구로 올린 claude.ai 페이지를 앱 안에서 (상태 패널의 ARTIFACTS 줄) */
   | { kind: 'artifact'; url: string; title: string }
+  /** 브랜치·커밋 기록·diff (/git, 키맵 git) */
+  | { kind: 'git' }
 
 export const PANEL_TITLE: Record<ToolPanel['kind'], string> = {
   rewind: 'REWIND',
@@ -32,6 +35,7 @@ export const PANEL_TITLE: Record<ToolPanel['kind'], string> = {
   status: 'STATUS',
   tools: 'TOOLS',
   artifact: 'ARTIFACT',
+  git: 'GIT',
 }
 
 interface Props {
@@ -76,6 +80,8 @@ export function ToolPanelView(props: Props): React.JSX.Element {
       return <StatusPanel {...props} />
     case 'artifact':
       return <ArtifactPanel {...props} url={panel.url} title={panel.title} />
+    case 'git':
+      return <GitPanel projectId={props.projectId} conversationId={props.conversationId} refreshKey={`${props.busy}:${props.items.length}`} busy={props.busy} onClose={props.onClose} />
   }
 }
 
