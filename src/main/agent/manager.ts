@@ -316,6 +316,7 @@ export class AgentManager {
 
   async setEffort(projectId: string, conversationId: string, effort: EffortLevel | null): Promise<void> {
     this.store.updateConversation(projectId, conversationId, { effort: effort ?? undefined })
+    if (projectId !== QUICK_PROJECT_ID) this.store.setLastEffort(effort)
     try {
       await this.sessions.get(conversationId)?.setEffort(effort)
     } catch (err) {

@@ -2,7 +2,7 @@ import { app } from 'electron'
 import { mkdirSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { openConversations, QUICK_DEFAULT_EFFORT, QUICK_DEFAULT_MODEL, QUICK_PROJECT_ID, type Conversation, type Project, type StoredTask } from '@shared/types'
+import { EFFORT_LEVELS, openConversations, QUICK_DEFAULT_EFFORT, QUICK_DEFAULT_MODEL, QUICK_PROJECT_ID, type Conversation, type EffortLevel, type Project, type StoredTask } from '@shared/types'
 import { draftTitle } from './agent/title'
 import { readJson, writeJson } from './json-file'
 
@@ -13,8 +13,13 @@ export class ProjectStore {
   /** 질문 창의 숨은 프로젝트 (userData/quick.json). list()에는 없고 get()으로만 찾는다 */
   private readonly quickFile = join(app.getPath('userData'), 'quick.json')
   private quickProject: Project
+  /** 마지막으로 고른 effort (userData/prefs.json). 새 대화는 이 값으로 시작한다. 질문 창은 제외 */
+  private readonly prefsFile = join(app.getPath('userData'), 'prefs.json')
+  private lastEffort?: EffortLevel
 
   constructor() {
+    const prefs = readJson(this.prefsFile) as { lastEffort?: EffortLevel } | null
+    if (prefs?.lastEffort && EFFORT_LEVELS.includes(prefs.lastEffort)) this.lastEffort = prefs.lastEffort
     const saved = readJson(this.file)
     if (Array.isArray(saved)) this.projects = saved as Project[]
     const path = join(app.getPath('userData'), 'quick')
@@ -53,7 +58,7 @@ export class ProjectStore {
       id: randomUUID(),
       name: basename(path) || path,
       path,
-      conversations: [newConversation(1)],
+      conversations: [this.newConversation(1)],
     }
     this.projects.push(project)
     this.save()
@@ -79,7 +84,7 @@ export class ProjectStore {
   addConversation(projectId: string, extra: Partial<Conversation> = {}, id?: string): Conversation {
     const project = this.get(projectId)
     if (!project) throw new Error(`프로젝트 없음: ${projectId}`)
-    const conv = { ...newConversation(openConversations(project).length + 1), ...extra, ...(id ? { id } : {}) }
+    const conv = { ...this.newConversation(openConversations(project).length + 1), ...extra, ...(id ? { id } : {}) }
     project.conversations.push(conv)
     this.save()
     return conv
@@ -99,7 +104,7 @@ export class ProjectStore {
     else project.conversations = project.conversations.filter((c) => c.id !== conversationId)
     const rest = openConversations(project)
     if (rest.length === 0) {
-      const fresh = newConversation(project.conversations.length + 1)
+      const fresh = this.newConversation(project.conversations.length + 1)
       project.conversations.push(fresh)
       rest.push(fresh)
     }
@@ -134,7 +139,7 @@ export class ProjectStore {
     const project = this.get(projectId)
     if (!project) throw new Error(`프로젝트 없음: ${projectId}`)
     const reusable = openConversations(project).find((c) => !c.sessionId && !c.lastTask && isFresh(c))
-    const conv = reusable ?? newConversation(project.conversations.length + 1)
+    const conv = reusable ?? this.newConversation(project.conversations.length + 1)
     if (!reusable) project.conversations.push(conv)
     conv.title = draftTitle(text)
     conv.titleSource = 'draft'
@@ -149,6 +154,16 @@ export class ProjectStore {
     this.save()
   }
 
+  /** 고른 effort를 다음 새 대화의 기본으로 기억한다. null(기본값으로)이면 잊는다 */
+  setLastEffort(effort: EffortLevel | null): void {
+    this.lastEffort = effort ?? undefined
+    writeJson(this.prefsFile, { lastEffort: this.lastEffort })
+  }
+
+  private newConversation(n: number): Conversation {
+    return { id: randomUUID(), title: `대화 ${n}`, mode: 'auto', ...(this.lastEffort ? { effort: this.lastEffort } : {}) }
+  }
+
   private save(): void {
     writeJson(this.file, this.projects)
     writeJson(this.quickFile, this.quickProject)
@@ -157,8 +172,4 @@ export class ProjectStore {
 
 export function newConversationId(): string {
   return randomUUID()
-}
-
-function newConversation(n: number): Conversation {
-  return { id: randomUUID(), title: `대화 ${n}`, mode: 'auto' }
 }

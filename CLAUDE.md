@@ -25,7 +25,7 @@
 - 세션 관리: 대화 하나 = SDK 세션 하나이고, 같은 대화의 메시지는 같은 세션에 이어진다. 홈 작업 지시창은 작업마다 새 대화를 만든다
   - 모델은 세션마다 다를 수 있다. 매 턴 시작 메시지(`system/init`)의 `model`을 받아 `Conversation.model/modelLabel`에 저장. 표시 이름은 `supportedModels()`에서 ID가 정확히 같은 행만 쓰고(별칭 행은 '기본값' 같은 이름이라 제외), 없으면 `modelLabel()`이 ID를 풀어 쓴다
   - 대화창 상단 둘째 줄: 왼쪽 하위 대화 탭, 오른쪽 모델·effort·모드(누르면 다음 모드)
-  - effort(`EffortPicker`, 키맵 `cycleEffort`): 고른 값은 `Conversation.effort`. 세션 시작 옵션 `effort`, 살아 있으면 `applyFlagSettings({ effortLevel })`(null이면 모델 기본값). SDK의 `system/init`에는 effort가 오지 않으므로, 고르지 않았을 때는 `resolveSettings`의 `modelSettings[모델].effortLevel`·`effortLevel`을 흐리게 보인다. 단계는 `supportedModels()`의 `supportedEffortLevels`
+  - effort(`EffortPicker`, 키맵 `cycleEffort`): 고른 값은 `Conversation.effort`. 마지막으로 고른 값(질문 창 제외)은 `userData/prefs.json`의 `lastEffort`로 기억해 새 대화가 그 값으로 시작한다(`store.setLastEffort`, 기본값으로 되돌리면 잊음). 세션 시작 옵션 `effort`, 살아 있으면 `applyFlagSettings({ effortLevel })`(null이면 모델 기본값). SDK의 `system/init`에는 effort가 오지 않으므로, 고르지 않았을 때는 `resolveSettings`의 `modelSettings[모델].effortLevel`·`effortLevel`을 흐리게 보인다. 단계는 `supportedModels()`의 `supportedEffortLevels`
   - 브랜치: 대화창 위 경로 줄에 `BRANCH 이름`(*는 커밋 안 한 변경). `branchOf(cwdOf)`(worktree.ts)를 대화를 열 때·상태가 바뀔 때·창 focus·30초마다 읽는다
   - 대화창을 열거나 대화를 옮기면 입력창에 포커스를 주고 커서를 써 둔 글의 끝에 둔다(`caretPlaced`, 처음 그려진 textarea는 커서가 맨 앞이다)
   - 입력 초안(`drafts.ts` `useDraft`): 대화마다(`대화 ID`)·홈 작업 지시창은 프로젝트마다(`home:프로젝트 ID`) localStorage에. 보내면 지운다. 없어진 대화의 초안은 앱을 켤 때 `pruneDrafts`
