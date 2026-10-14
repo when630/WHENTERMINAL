@@ -19,8 +19,8 @@ const LABEL: Record<string, string> = {
 const toMs = (iso: string | null): number | null => (iso ? Date.parse(iso) || null : null)
 const pct = (u: number | null): number | null => (u === null || u === undefined ? null : Math.round(u))
 
-/** SDK 응답 → 화면용. 비어 있는 창은 뺀다 */
-export function toUsage(raw: Raw): UsageInfo {
+/** SDK 응답 → 화면용. 비어 있는 창은 뺀다. prev는 직전 값 (모델별 창이 빠진 응답을 메우는 데) */
+export function toUsage(raw: Raw, prev?: UsageInfo | null): UsageInfo {
   const r = raw.rate_limits
   const windows: UsageWindow[] = []
   const add = (id: string, w: RawWindow, label = LABEL[id] ?? id): void => {
@@ -30,8 +30,14 @@ export function toUsage(raw: Raw): UsageInfo {
     add('five_hour', r.five_hour)
     add('seven_day', r.seven_day)
     // 서버가 모델별 주간 창을 목록으로 주면 그것을, 아니면 예전 Opus/Sonnet 칸을 쓴다
+    // 캐시에서 답하면 model_scoped가 아예 빠져 온다(빈 배열과 다름). 그때는 직전 값을 그대로 둬 칸이 나왔다 사라지지 않게 한다
+    const kept = r.model_scoped === undefined ? (prev?.windows.filter((w) => w.id.startsWith('model:')) ?? []) : []
     if (r.model_scoped && r.model_scoped.length > 0) {
       for (const m of r.model_scoped) add(`model:${m.display_name}`, m, `${m.display_name.toUpperCase()} WEEKLY`)
+    } else if (kept.length > 0) {
+      const now = Date.now()
+      // 그사이 초기화 시각이 지났으면 0%로
+      for (const w of kept) windows.push(w.resetsAt !== null && w.resetsAt <= now ? { ...w, percent: 0, resetsAt: null, status: undefined } : w)
     } else {
       add('seven_day_opus', r.seven_day_opus)
       add('seven_day_sonnet', r.seven_day_sonnet)
@@ -88,8 +94,8 @@ export class UsageAlerts {
 }
 
 /** 살아 있는 세션이 있으면 거기서, 없으면 CLI만 잠깐 띄워 받는다 (실험적 API) */
-export async function fetchUsage(live: Query | null): Promise<UsageInfo> {
+export async function fetchUsage(live: Query | null, prev?: UsageInfo | null): Promise<UsageInfo> {
   const call = (q: Query): Promise<Raw> => q.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET({ skipBehaviors: true })
   const raw = live ? await call(live) : await withProbe(homedir(), call)
-  return toUsage(raw)
+  return toUsage(raw, prev)
 }
