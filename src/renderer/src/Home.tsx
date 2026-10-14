@@ -54,6 +54,10 @@ export function Home(props: Props): React.JSX.Element {
   const wrapRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   useLayoutMotion(scrollRef, props.dispatchOrigin)
+  // 목록은 열마다 따로 스크롤하므로, 키로 고른 카드가 열 밖에 있으면 보이는 곳까지
+  useEffect(() => {
+    scrollRef.current?.querySelector('.cols .selected')?.scrollIntoView({ block: 'nearest' })
+  }, [selectedId])
 
   const unread = reports.filter((r) => r.task.unread).length
   const waiting = running.filter((r) => r.state.permissions.length > 0).length
