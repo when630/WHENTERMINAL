@@ -56,3 +56,29 @@ test('홈: 쉬는 대화는 RUNNING 아래 NO RUNNING에, 작업을 시작하면
   await expect(win.locator('.rep').first()).toHaveClass(/selected/)
   await expect(idle.first()).not.toHaveClass(/selected/)
 })
+
+test.describe('보고서가 많을 때', () => {
+  test.use({
+    seed: {
+      projects: [{ name: 'alpha', conversations: Array.from({ length: 24 }, (_, i) => ({ id: `c${i + 1}`, title: `대화 ${i + 1}`, mode: 'default', lastTask: done(`끝난 일 ${i + 1}`, i * 60_000) })) }],
+    },
+  })
+  test('홈 전체는 스크롤하지 않고 REPORTS 열 안에서만 스크롤한다. 키로 고른 카드는 보이는 곳까지', async ({ win }) => {
+    await win.setViewportSize({ width: 1400, height: 800 })
+    await expect(win.locator('.rep')).toHaveCount(24)
+    const overflow = (sel: string): Promise<number> => win.locator(sel).evaluate((el) => el.scrollHeight - el.clientHeight)
+    expect(await overflow('.home')).toBeLessThanOrEqual(0)
+    expect(await overflow('.col-rep')).toBeGreaterThan(0)
+    // 작업 지시창·머리는 그대로 보인다
+    await expect(win.locator('#ask-input')).toBeInViewport()
+
+    // 보고함 마지막 카드까지 키로 내려가면 열이 따라 스크롤하고, 열 머리는 위에 남는다
+    await win.locator('#ask-input').press('Escape')
+    await win.keyboard.press('l')
+    for (let i = 0; i < 23; i++) await win.keyboard.press('j')
+    await expect(win.locator('.rep.selected')).toContainText('끝난 일 24')
+    await expect(win.locator('.rep.selected')).toBeInViewport()
+    expect(await win.locator('.col-rep').evaluate((el) => el.scrollTop)).toBeGreaterThan(0)
+    await expect(win.locator('.col-rep > .col-h').first()).toBeInViewport()
+  })
+})

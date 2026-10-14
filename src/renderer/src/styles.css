@@ -222,7 +222,8 @@ kbd { display: inline-block; font: 500 11px/1 var(--mono); padding: 3px 5px; col
 
 /* ── 홈 ── */
 .home-wrap { position: relative; flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
-.home { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
+/* 홈 전체는 스크롤하지 않는다: 머리·작업 지시창은 고정, 목록 열(RUNNING·REPORTS)만 각자 스크롤 */
+.home { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
 
 .home-head { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); border-bottom: var(--rule-thick); }
 .hh-cell { padding: 14px 24px 10px; display: flex; flex-direction: column; justify-content: space-between; gap: 6px; min-width: 0; }
@@ -261,8 +262,10 @@ kbd { display: inline-block; font: 500 11px/1 var(--mono); padding: 3px 5px; col
 .roll { position: relative; display: block; overflow: hidden; }
 .roll > span { position: absolute; left: 0; right: 0; top: 0; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-.cols { display: flex; flex-wrap: wrap; align-items: stretch; flex: 1; }
-.col { display: flex; flex-direction: column; min-width: 0; }
+.cols { display: flex; align-items: stretch; flex: 1; min-height: 0; }
+.col { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow-y: auto; }
+/* 열 머리는 스크롤해도 위에 남는다 */
+.col > .col-h:first-child { position: sticky; top: 0; z-index: 2; background: var(--paper); }
 .col-run { flex: 3 1 460px; }
 .col-rep { flex: 2 1 320px; border-left: var(--rule-thick); }
 .col-h { margin: 0; display: flex; align-items: baseline; gap: 10px; padding: 12px 24px 10px; border-bottom: var(--rule); font: 24px/1 var(--kr); }
