@@ -141,6 +141,8 @@ export class ProjectStore {
     const reusable = openConversations(project).find((c) => !c.sessionId && !c.lastTask && isFresh(c))
     const conv = reusable ?? this.newConversation(project.conversations.length + 1)
     if (!reusable) project.conversations.push(conv)
+    // 다시 쓰는 빈 대화는 만들 때의 effort가 남아 있으므로 지금 기억한 값으로 맞춘다 (홈에서는 대화의 effort를 고르지 않는다)
+    else conv.effort = this.lastEffort
     conv.title = draftTitle(text)
     conv.titleSource = 'draft'
     this.save()

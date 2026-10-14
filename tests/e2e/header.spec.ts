@@ -62,6 +62,32 @@ test('effort: 칸에서 고르면 저장되고, Ctrl+Shift+O로 다음 단계, D
   await expect(effort).toHaveClass(/meta-default/)
 })
 
+test('effort: 마지막으로 고른 값으로 새 대화가 시작하고, Default로 되돌리면 잊는다', async ({ win, env }) => {
+  test.setTimeout(60_000)
+  await win.keyboard.press('Alt+a')
+  const effort = win.locator('.meta', { hasText: 'EFFORT' })
+  const list = win.locator('.effort-list')
+  await effort.click()
+  await list.locator('.model-row', { hasText: /^LOW/ }).click({ timeout: 30_000 })
+  await expect.poll(() => convOf(env.userData).effort).toBe('low')
+
+  // 새 탭은 고른 값으로
+  await win.keyboard.press('Control+Shift+t')
+  await expect(win.locator('.tab-wrap')).toHaveCount(2)
+  await expect(effort.locator('.effort-v')).toHaveText('LOW')
+  const second = (): Record<string, unknown> =>
+    (JSON.parse(readFileSync(join(env.userData, 'projects.json'), 'utf8')) as { conversations: Record<string, unknown>[] }[])[0].conversations[1]
+  expect(second().effort).toBe('low')
+
+  // 되돌리면 다음 새 대화는 기본값
+  await effort.click()
+  await list.locator('.model-row').first().click({ timeout: 30_000 })
+  await expect.poll(() => second().effort).toBeUndefined()
+  await win.keyboard.press('Control+Shift+t')
+  await expect(win.locator('.tab-wrap')).toHaveCount(3)
+  await expect(effort).toHaveClass(/meta-default/)
+})
+
 test.describe('브랜치', () => {
   test.use({ seed: { projects: [{ name: 'repo', git: true, files: { 'a.txt': 'hello\n' } }] } })
 

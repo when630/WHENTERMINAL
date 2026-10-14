@@ -96,6 +96,7 @@
   - 전역 호출 키 후보에서 `Control+Space`를 뺀다. macOS 입력 소스 전환 키라 등록이 성공해도 한/영 전환을 가로챈다
   - 트레이 아이콘은 템플릿 이미지(검정+투명), Dock 아이콘 클릭(`activate`)으로 창 다시 열기
 - 구독 한도(사이드바): `src/main/agent/usage.ts`가 SDK `usage_EXPERIMENTAL…`(실험적 API, 이름이 바뀔 수 있음)로 5시간·주간·모델별 주간 창을 받는다. 살아 있는 세션이 없으면 `withProbe`로 CLI만 띄움. 앱 시작·작업 완료 2.5초 뒤·5분마다 갱신, `rate_limit_event`는 해당 창에 바로 반영
+  - 모델별 주간 창(`model_scoped`, 예: FABLE WEEKLY)은 캐시에서 답한 응답에는 아예 빠져 온다. 그때는 직전 값을 그대로 둔다(`toUsage`의 `prev`, 초기화 시각이 지났으면 0%)
   - 경고 기준은 `@shared/usage`(`limitLevel` 80·95·100, `worstLimit`은 5시간·주간 + 지금 모델 계열의 주간만). 입력창 위 `limit-warn` 줄, 100%면 Enter를 한 번 더 눌러야 보낸다(앱 명령은 제외). OS 알림은 `UsageAlerts`가 창마다 단계를 처음 넘을 때 한 번(앱을 켤 때 이미 넘었으면 95 이상만)
 - 대화창 오른쪽 상태 패널(`StatusPanel`, Chat.tsx): 실행 중이거나, 백그라운드 작업(SDK `background_tasks_changed`, `ambient` 제외 → `background` 이벤트)이 있거나, 이 대화에서 Artifact 도구로 올리거나 연(`open`) 페이지(`artifactsOf`, 화면 기록에서 추출)가 있으면 펼친다. CLI 프로세스가 끝나면 백그라운드 목록을 비운다
   - SDK로 띄운 CLI는 Artifact 도구가 기본으로 꺼져 있어(`sdk_default_off`) `subscriptionEnv`가 `CLAUDE_CODE_ARTIFACT=1`을 넣는다

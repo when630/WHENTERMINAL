@@ -61,6 +61,20 @@ test('작업이 끝나도 백그라운드 셸·아티팩트가 있으면 사이�
   await expect(body).toHaveClass(/open/)
 })
 
+test('Artifact open으로 연 페이지도 아티팩트 줄로, read는 아니다', async ({ app, win }) => {
+  await win.keyboard.press('Alt+a')
+  const panel = win.locator('.status-panel')
+  await emit(app, { kind: 'tool_use', toolUseId: 'r1', name: 'Artifact', input: { action: 'read', url: 'https://claude.ai/artifact/read-only' } })
+  await emit(app, { kind: 'tool_result', toolUseId: 'r1', content: '<html>…</html> https://claude.ai/artifact/read-only', isError: false })
+  await emit(app, { kind: 'tool_use', toolUseId: 'o1', name: 'Artifact', input: { action: 'open', url: 'https://claude.ai/artifact/Opened1' } })
+  await emit(app, { kind: 'tool_result', toolUseId: 'o1', content: 'Opened', isError: false })
+  await expect(panel.locator('.sp-art li')).toHaveCount(1)
+  // 제목을 모르면 주소 끝부분
+  await expect(panel.locator('.sp-art button span')).toHaveText('artifact/Opened1')
+  await panel.locator('.sp-art button').click()
+  await expect(win.locator('.td webview')).toHaveAttribute('src', 'https://claude.ai/artifact/Opened1')
+})
+
 test.describe('백그라운드 작업 세부 내용', () => {
   const sessionId = `e2e-${randomUUID()}`
   // CLI가 쓰는 자리(<임시 폴더>/claude/<프로젝트>/<세션 ID>/tasks/<작업 ID>.output)에 출력 파일을 만들어 둔다

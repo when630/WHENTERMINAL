@@ -150,7 +150,7 @@ function bootstrap(): void {
     manager.setLimit(worst?.level ?? 0, hold ? worst.window.resetsAt : null)
   }
   const refreshUsage = (): Promise<UsageInfo | null> => {
-    usageInflight ??= fetchUsage(manager.liveQuery())
+    usageInflight ??= fetchUsage(manager.liveQuery(), usage)
       .then((u) => (usage = u))
       .catch((err: unknown) => {
         console.warn('사용량을 가져오지 못함', err)
