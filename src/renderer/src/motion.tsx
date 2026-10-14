@@ -29,6 +29,8 @@ export function useLayoutMotion(container: RefObject<HTMLElement | null>, dispat
   const boxes = useRef(new Map<string, Box>())
   const kinds = useRef(new Map<string, string>())
   const mounted = useRef(false)
+  /** 바로 앞 렌더에 있던 id. 없다가 다시 나타난 요소는 예전 자리에서 날아오지 않고 새로 들어온다 */
+  const present = useRef(new Set<string>())
 
   useLayoutEffect(() => {
     const root = container.current
@@ -41,7 +43,7 @@ export function useLayoutMotion(container: RefObject<HTMLElement | null>, dispat
       seen.add(id)
       if (el.getAnimations().some((a) => a.playState === 'running')) return
       const now = boxIn(el, root)
-      const prev = boxes.current.get(id)
+      const prev = present.current.has(id) ? boxes.current.get(id) : undefined
       const prevKind = kinds.current.get(id)
       boxes.current.set(id, now)
       kinds.current.set(id, kind)
@@ -56,9 +58,16 @@ export function useLayoutMotion(container: RefObject<HTMLElement | null>, dispat
         dispatchOrigin.current = null
       }
       if (!from) {
-        // 새 보고서는 위에서 떨어지듯 (아래 카드들은 같은 렌더에서 한 칸씩 밀려 내려간다). 나머지는 아래에서 떠오른다
-        const enter = kind === 'report' ? 'translateY(-28px)' : 'translateY(8px)'
-        el.animate([{ opacity: 0, transform: enter }, { opacity: 1, transform: 'none' }], { duration: kind === 'report' ? 520 : 360, easing: EASE })
+        if (kind === 'report') {
+          // 새 보고서는 위에서 밀고 내려온다: 제 높이만큼 위에서 시작하고 자리 윗변 위쪽은 잘라, 자리 윗변에서 빠져나오듯 보인다.
+          // 아래 카드들이 밀려 내려가는 움직임(아래 else, 520ms)과 시간·곡선을 맞춘다
+          el.animate(
+            [{ transform: 'translateY(-100%)', clipPath: 'inset(100% 0 0 0)' }, { transform: 'none', clipPath: 'inset(0 0 0 0)' }],
+            { duration: 520, easing: EASE },
+          )
+          return
+        }
+        el.animate([{ opacity: 0, transform: 'translateY(8px)' }, { opacity: 1, transform: 'none' }], { duration: 360, easing: EASE })
         return
       }
       const dx = from.x - now.x
@@ -80,6 +89,7 @@ export function useLayoutMotion(container: RefObject<HTMLElement | null>, dispat
         el.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'none' }], { duration: 520, easing: EASE })
       }
     })
+    present.current = seen
     // 사라진 id는 잠시 기억해 둔다: 같은 렌더에서 다른 모양으로 다시 나타날 수 있다
     for (const id of boxes.current.keys()) if (!seen.has(id) && boxes.current.size > 200) boxes.current.delete(id)
     mounted.current = true
