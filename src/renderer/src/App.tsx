@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { MAX_PROJECTS, MODE_CYCLE, needsChoice, QUICK_PROJECT_ID, openConversations, type AgentMode, type StoredTask, type PermissionDecision, type PermissionExtra, type Project, type UpdateState, type UsageInfo } from '@shared/types'
-import { applyEvent, collectBackground, collectTasks, mostUrgentConversation, type ConversationMap, type TaskInfo, type TaskRef } from './state'
+import { applyEvent, collectBackground, collectTasks, IDLE_KEY, mostUrgentConversation, type ConversationMap, type TaskInfo, type TaskRef } from './state'
 import { Home, type DispatchOrigin } from './Home'
 import { Chat, type PanelControl } from './Chat'
 import type { ToolPanel } from './panels'
@@ -177,14 +177,19 @@ export function App(): React.JSX.Element {
   const all = useMemo(() => collectTasks(projects, convs), [projects, convs])
   // 홈 카드 태그 필터 (/tag). 키 이동도 거른 목록 기준이라 App에서 거른다
   const [tagFilter, setTagFilter] = useState<string | null>(null)
-  const tags = useMemo(() => [...new Set([...all.running, ...all.reports].map((r) => r.tag).filter((t): t is string => !!t))].sort(), [all])
+  const tags = useMemo(() => [...new Set([...all.running, ...all.idle, ...all.reports].map((r) => r.tag).filter((t): t is string => !!t))].sort(), [all])
   const activeTag = tagFilter && tags.includes(tagFilter) ? tagFilter : null
-  const { running, reports } = useMemo(
-    () => (activeTag ? { running: all.running.filter((r) => r.tag === activeTag), reports: all.reports.filter((r) => r.tag === activeTag) } : all),
-    [all, activeTag],
-  )
+  const { running, idle, reports } = useMemo(() => {
+    if (!activeTag) return all
+    const only = (l: TaskRef[]): TaskRef[] => l.filter((r) => r.tag === activeTag)
+    return { running: only(all.running), idle: only(all.idle), reports: only(all.reports) }
+  }, [all, activeTag])
   const background = useMemo(() => collectBackground(projects, convs), [projects, convs])
-  const flat = useMemo(() => [...running, ...reports], [running, reports])
+  // 홈 카드 키 이동 순서: 진행 중 → 쉬는 대화 → 보고함. 쉬는 대화는 같은 대화의 보고서와 구분하려고 키에 IDLE_KEY를 붙인다
+  const flat = useMemo(
+    () => [...running.map((r) => ({ key: r.conversationId, r })), ...idle.map((r) => ({ key: IDLE_KEY + r.conversationId, r })), ...reports.map((r) => ({ key: r.conversationId, r }))],
+    [running, idle, reports],
+  )
   const unreadTotal = all.reports.filter((r) => r.task.unread).length
 
   // 대화를 열면서 바로 펼칠 명령 화면 (홈 보고서의 TOOLS)
@@ -450,26 +455,26 @@ export function App(): React.JSX.Element {
       if (is('focusAsk')) return take(() => inputRef.current?.focus())
       if (!e.ctrlKey && !e.altKey && !e.metaKey && /^Digit[1-9]$/.test(code)) return take(() => openProject(Number(code.slice(5)) - 1))
 
-      const idx = flat.findIndex((r) => r.conversationId === selectedId)
-      const sel: TaskRef | undefined = flat[idx]
+      const idx = flat.findIndex((x) => x.key === selectedId)
+      const sel: TaskRef | undefined = flat[idx]?.r
       // 위아래, 진행 중 / 보고함 첫 항목 (방향키는 보조로 고정)
       const step = is('down') || e.key === 'ArrowDown' ? 1 : is('up') || e.key === 'ArrowUp' ? -1 : 0
       if (step !== 0 && flat.length > 0) {
         return take(() => {
           const next = idx < 0 ? 0 : Math.min(Math.max(idx + step, 0), flat.length - 1)
-          setSelectedId(flat[next].conversationId)
+          setSelectedId(flat[next].key)
         })
       }
       if (is('toRunning') || e.key === 'ArrowLeft') return take(() => running[0] && setSelectedId(running[0].conversationId))
       if (is('toReports') || e.key === 'ArrowRight') return take(() => reports[0] && setSelectedId(reports[0].conversationId))
       if ((is('open') || e.key === 'Enter') && sel) {
-        return take(() => (running.includes(sel) ? openChat(sel.project.id, sel.conversationId) : openReport(sel.conversationId)))
+        return take(() => (reports.includes(sel) ? openReport(sel.conversationId) : openChat(sel.project.id, sel.conversationId)))
       }
       if (is('archive') && sel && reports.includes(sel)) {
         return take(() => {
           const after = flat[idx + 1] ?? flat[idx - 1]
           archive(sel.conversationId)
-          setSelectedId(after && after !== sel ? after.conversationId : null)
+          setSelectedId(after && after.r !== sel ? after.key : null)
         })
       }
       const decision = decisionOf(e)
@@ -602,6 +607,7 @@ export function App(): React.JSX.Element {
             <Home
               projects={projects}
               running={running}
+              idle={idle}
               reports={reports}
               selectedId={selectedId}
               openReportId={openReportId}

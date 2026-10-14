@@ -3,7 +3,7 @@ import { ALWAYS_SCOPE_LABEL, ALWAYS_SCOPE_TIP, ELICITATION_TOOL, needsChoice, ty
 import { refocusAfterClick, useRefocus } from './focus'
 import { HOME_ROW } from './keys'
 import { boxIn, EASE, Odo, Presence, PresenceList, reducedMotion, Roll, useLayoutMotion, usePresenceList } from './motion'
-import { STAGES, type TaskRef } from './state'
+import { IDLE_KEY, STAGES, type TaskRef } from './state'
 import { elapsed, useNow } from './time'
 import { Markdown } from './Markdown'
 import { AttachButton, useAttach } from './attach'
@@ -17,6 +17,8 @@ export interface DispatchOrigin {
 interface Props {
   projects: Project[]
   running: TaskRef[]
+  /** 쉬는 대화 (NO RUNNING) */
+  idle: TaskRef[]
   reports: TaskRef[]
   selectedId: string | null
   openReportId: string | null
@@ -47,7 +49,7 @@ interface Props {
 }
 
 export function Home(props: Props): React.JSX.Element {
-  const { projects, running, reports, selectedId } = props
+  const { projects, running, idle, reports, selectedId } = props
   const now = useNow(1000)
   const wrapRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -55,9 +57,11 @@ export function Home(props: Props): React.JSX.Element {
 
   const unread = reports.filter((r) => r.task.unread).length
   const waiting = running.filter((r) => r.state.permissions.length > 0).length
-  // 카드가 빠질 때 잠시 남아 나간다. 진행 띠가 보고서로(또는 그 반대로) 바뀌는 건 같은 layout id의 변형이라 붙잡지 않는다
-  const runningRows = usePresenceList(running, (r) => r.conversationId).filter((x) => !x.leaving || !reports.some((r) => r.conversationId === x.key))
-  const reportRows = usePresenceList(reports, (r) => r.conversationId).filter((x) => !x.leaving || !running.some((r) => r.conversationId === x.key))
+  // 카드가 빠질 때 잠시 남아 나간다. 진행 띠 ↔ 쉬는 대화 줄은 같은 layout id의 변형(위아래로 오간다)이라 붙잡지 않는다.
+  // 보고서는 layout id가 따로라(rep:) 진행 띠에서 옮겨 오지 않고 위에서 들어온다
+  const runningRows = usePresenceList(running, (r) => r.conversationId).filter((x) => !x.leaving || !idle.some((r) => r.conversationId === x.key))
+  const idleRows = usePresenceList(idle, (r) => r.conversationId).filter((x) => !x.leaving || !running.some((r) => r.conversationId === x.key))
+  const reportRows = usePresenceList(reports, (r) => r.conversationId)
   const openReport = reports.find((r) => r.conversationId === props.openReportId) ?? null
   // 포커스는 늘 작업 지시창으로: 홈에 오면, 보고서를 닫으면, 덮개를 닫으면 (focus.ts). 카드를 키로 고르려면 Esc로 빠져나온다
   const focusAsk = useCallback((): void => {
@@ -78,13 +82,7 @@ export function Home(props: Props): React.JSX.Element {
         <header className="home-head">
           <div className="hh-cell hh-run">
             <span className="big disp"><Odo n={running.length} /></span>
-            {/* 도는 작업이 없으면 라벨이 위로 빠지고 NO RUNNING이 아래에서 올라온다 (생기면 거꾸로) */}
-            <h1 className="hh-label hh-flip" aria-label={running.length ? 'TASKS RUNNING' : 'NO RUNNING'}>
-              <span className={`hh-flip-col ${running.length ? '' : 'idle'}`} aria-hidden="true">
-                <span>TASKS<br />RUNNING</span>
-                <span>NO<br />RUNNING</span>
-              </span>
-            </h1>
+            <h1 className="hh-label">TASKS<br />RUNNING</h1>
           </div>
           <div className="hh-cell hh-time">
             <span className="hh-small">
@@ -123,6 +121,12 @@ export function Home(props: Props): React.JSX.Element {
             <Presence as="div" show={runningRows.length === 0} className="empty">맡긴 작업이 모두 끝났어요. 위에서 새 작업을 맡겨 보세요.</Presence>
             {runningRows.map(({ item: r, leaving }) => (
               <TaskCard key={r.conversationId} r={r} now={now} selected={r.conversationId === selectedId} leaving={leaving} onSelect={props.onSelect} onOpen={props.onOpenTask} onRespond={props.onRespond} />
+            ))}
+            <Presence as="h2" show={idleRows.length > 0} className="col-h col-h-sub">
+              NO RUNNING <span className="disp">{idle.length}</span>
+            </Presence>
+            {idleRows.map(({ item: r, leaving }) => (
+              <IdleCard key={r.conversationId} r={r} now={now} selected={IDLE_KEY + r.conversationId === selectedId} leaving={leaving} onSelect={props.onSelect} onOpen={props.onOpenTask} />
             ))}
           </section>
 
@@ -328,6 +332,35 @@ function TaskCard({ r, now, selected, leaving, onSelect, onOpen, onRespond }: {
 
 const RESULT_LABEL: Record<string, string> = { done: 'DONE', error: 'ERROR', stopped: 'STOPPED' }
 
+/** 쉬는 대화 한 줄 (NO RUNNING). 작업을 시작하면 위 RUNNING의 진행 띠로 올라가고, 끝나면 이 줄로 내려온다 (같은 layout id) */
+function IdleCard({ r, now, selected, leaving, onSelect, onOpen }: {
+  r: TaskRef
+  now: number
+  selected: boolean
+  leaving: boolean
+  onSelect: (key: string) => void
+  onOpen: (r: TaskRef) => void
+}): React.JSX.Element {
+  const { task, state } = r
+  return (
+    <article
+      className={`idle-row ${selected ? 'selected' : ''} ${leaving ? 'leaving' : ''}`}
+      data-layout-id={r.conversationId}
+      data-layout-kind="idle"
+      onClick={() => onSelect(IDLE_KEY + r.conversationId)}
+      onDoubleClick={() => onOpen(r)}
+    >
+      <span className="lx-in">
+        <span className="idle-key" aria-hidden="true">{HOME_ROW[r.projectIndex] ?? ''}</span>
+        <span className="idle-proj">{r.project.name}</span>
+        <span className="idle-tt">{task.instruction || r.title}</span>
+        <span className={`idle-st ${state.status === 'error' ? 'bad' : ''}`}>{RESULT_LABEL[state.status] ?? 'IDLE'}</span>
+        <span className="idle-ago mono">{task.finishedAt ? elapsed(task.finishedAt, now) : ''}</span>
+      </span>
+    </article>
+  )
+}
+
 function ReportCard({ r, now, selected, hidden, leaving, onOpen }: {
   r: TaskRef
   now: number
@@ -342,7 +375,7 @@ function ReportCard({ r, now, selected, hidden, leaving, onOpen }: {
       type="button"
       className={`rep ${task.unread ? 'unread' : ''} ${selected ? 'selected' : ''} ${leaving ? 'leaving' : ''}`}
       style={hidden ? { visibility: 'hidden' } : undefined}
-      data-layout-id={r.conversationId}
+      data-layout-id={`rep:${r.conversationId}`}
       data-layout-kind="report"
       onClick={() => onOpen(r.conversationId)}
     >
@@ -390,7 +423,7 @@ function ReportSheet({ r, wrapRef, scrollRef, closeRef, onClosed, onOpenChat, on
   const fromBox = (): { dx: number; dy: number; sx: number; sy: number } | null => {
     const wrap = wrapRef.current
     const sheet = sheetRef.current
-    const card = scrollRef.current?.querySelector(`[data-layout-id="${r.conversationId}"][data-layout-kind="report"]`)
+    const card = scrollRef.current?.querySelector(`[data-layout-id="rep:${r.conversationId}"]`)
     if (!wrap || !sheet || !card) return null
     const c = boxIn(card, wrap)
     const s = boxIn(sheet, wrap)

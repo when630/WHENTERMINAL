@@ -570,23 +570,35 @@ export interface TaskRef {
   task: TaskInfo
 }
 
-/** 진행 중 작업(최근 시작 순)과 보고서(최근 완료 순) */
-export function collectTasks(projects: Project[], convs: ConversationMap): { running: TaskRef[]; reports: TaskRef[] } {
+/** 홈에서 쉬는 대화 카드를 고를 때의 키 (같은 대화의 보고서 카드와 구분) */
+export const IDLE_KEY = 'idle:'
+
+/**
+ * 진행 중 작업(최근 시작 순), 쉬는 대화(열린 대화 중 한 번이라도 작업을 끝낸 것, 최근 끝난 순), 보고서(최근 완료 순).
+ * 끝난 작업은 쉬는 대화와 보고서 양쪽에 나온다 (진행 띠는 아래 NO RUNNING으로 내려가고, 보고서는 따로 위에서 들어온다)
+ */
+export function collectTasks(projects: Project[], convs: ConversationMap): { running: TaskRef[]; idle: TaskRef[]; reports: TaskRef[] } {
   const running: TaskRef[] = []
+  const idle: TaskRef[] = []
   const reports: TaskRef[] = []
   projects.forEach((project, projectIndex) => {
     for (const c of project.conversations) {
       const state = convs[c.id]
       const task = state?.task
       if (!state || !task) continue
-      const ref = { project, projectIndex, conversationId: c.id, title: c.title, tag: c.tag, state, task }
-      if (isActive(state.status)) running.push(ref)
-      else if (task.finishedAt && !task.archived) reports.push(ref)
+      const ref = (): TaskRef => ({ project, projectIndex, conversationId: c.id, title: c.title, tag: c.tag, state, task })
+      if (isActive(state.status)) {
+        running.push(ref())
+        continue
+      }
+      if (task.finishedAt && !c.closedAt) idle.push(ref())
+      if (task.finishedAt && !task.archived) reports.push(ref())
     }
   })
   running.sort((a, b) => b.task.startedAt - a.task.startedAt)
+  idle.sort((a, b) => (b.task.finishedAt ?? 0) - (a.task.finishedAt ?? 0))
   reports.sort((a, b) => (b.task.finishedAt ?? 0) - (a.task.finishedAt ?? 0))
-  return { running, reports }
+  return { running, idle, reports }
 }
 
 export function firstPendingPermission(project: Project, convs: ConversationMap): { conversationId: string; request: PermissionRequest } | null {

@@ -152,7 +152,7 @@ export function usePresenceList<T>(items: T[], keyOf: (item: T) => string, ms = 
   return out
 }
 
-type Tag = 'span' | 'div' | 'section' | 'nav' | 'p' | 'i' | 'ul' | 'ol' | 'li'
+type Tag = 'span' | 'div' | 'section' | 'nav' | 'p' | 'i' | 'ul' | 'ol' | 'li' | 'h2'
 
 /**
  * show가 false가 돼도 잠시 마지막 내용을 'leaving' 클래스로 남기는 감싸개 (usePresence를 요소 하나에 바로).
