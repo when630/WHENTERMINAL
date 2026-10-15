@@ -30,6 +30,9 @@
   /* 문법 색 (파일 보기의 원문). 빨강(신호색)은 쓰지 않는다 */
   --syn-keyword: #5b2bb5; --syn-string: #1c7a3a; --syn-number: #a35200; --syn-comment: #8a8a8a;
   --syn-type: #1557b0; --syn-fn: #0a0a0a; --syn-attr: #7a4a00;
+  /* diff: 더한 줄 초록·뺀 줄 빨강. -fg·-bg는 코드 면(늘 어두움) 위, -ink는 종이 위 숫자(+12 −3) */
+  --diff-add-fg: #8ee6a6; --diff-add-bg: rgba(46, 160, 67, 0.26); --diff-add-ink: #1a7f37;
+  --diff-del-fg: #ffa198; --diff-del-bg: rgba(248, 81, 73, 0.24); --diff-del-ink: #cf222e;
   --rule: 2px solid var(--line);
   --rule-thick: 6px solid var(--line);
   --font: 'Pretendard Variable', Pretendard, 'Apple SD Gothic Neo', 'Malgun Gothic', system-ui, sans-serif;
@@ -53,18 +56,24 @@
 
 /* ── 색 테마 (설정에서 고름). 구조는 같고 색 토큰만 바뀐다. 포스터 외에는 대비·채도를 낮춰 오래 봐도 덜 피곤하게 ── */
 :root[data-theme='paper'] {
+  --diff-add-fg: #b5d69a; --diff-add-bg: rgba(120, 160, 80, 0.24); --diff-add-ink: #4f6b2a;
+  --diff-del-fg: #f0a68f; --diff-del-bg: rgba(196, 85, 58, 0.26); --diff-del-ink: #9c3f29;
   --syn-keyword: #6b3f8f; --syn-string: #4f6b2a; --syn-number: #9a5a1c; --syn-comment: #9a9083; --syn-type: #2f5f86; --syn-fn: #2e2a25; --syn-attr: #7d5530;
   --paper: #f4efe6; --ink: #2e2a25; --signal: #c4553a; --signal-ink: #9c3f29; --on-signal: #fbf6ee;
   --wash: #ebe5da; --wash-2: #e0d9cc; --gray: #6f675d; --gray-2: #a39a8e; --gray-3: #cdc5b8;
   --line: #4a443c; --code-bg: #2e2a25; --code-fg: #ece6da; --shadow: rgba(60, 40, 20, 0.12);
 }
 :root[data-theme='sage'] {
+  --diff-add-fg: #a9d39c; --diff-add-bg: rgba(90, 150, 80, 0.24); --diff-add-ink: #3f6b3a;
+  --diff-del-fg: #eba28e; --diff-del-bg: rgba(182, 83, 60, 0.26); --diff-del-ink: #8f3f2c;
   --syn-keyword: #5d4a8a; --syn-string: #3f6b3a; --syn-number: #93602a; --syn-comment: #8d978e; --syn-type: #2f5d73; --syn-fn: #273029; --syn-attr: #6f5a34;
   --paper: #e8ece4; --ink: #273029; --signal: #b6533c; --signal-ink: #8f3f2c; --on-signal: #f5f7f2;
   --wash: #dfe4da; --wash-2: #d3d9cd; --gray: #5f6a61; --gray-2: #96a097; --gray-3: #c2cabf;
   --line: #3f4a42; --code-bg: #273029; --code-fg: #e3e8df; --shadow: rgba(20, 40, 25, 0.12);
 }
 :root[data-theme='sumi'] {
+  --diff-add-fg: #a8c98a; --diff-add-bg: rgba(130, 170, 100, 0.18); --diff-add-ink: #a8c98a;
+  --diff-del-fg: #f0a08a; --diff-del-bg: rgba(224, 122, 95, 0.2); --diff-del-ink: #f0a08a;
   --syn-keyword: #c9a0e8; --syn-string: #a8c98a; --syn-number: #e6b673; --syn-comment: #7a756c; --syn-type: #8fbce6; --syn-fn: #ebe6dc; --syn-attr: #d9b38c;
   --paper: #1f1e1c; --ink: #d8d2c6; --signal: #e07a5f; --signal-ink: #f0a08a; --on-signal: #1f1e1c;
   --wash: #2a2926; --wash-2: #34322e; --gray: #9a948a; --gray-2: #6e6a63; --gray-3: #47443f;
@@ -72,6 +81,8 @@
   --shadow: rgba(0, 0, 0, 0.45); color-scheme: dark;
 }
 :root[data-theme='night'] {
+  --diff-add-fg: #9fd08f; --diff-add-bg: rgba(110, 180, 100, 0.18); --diff-add-ink: #9fd08f;
+  --diff-del-fg: #f2a593; --diff-del-bg: rgba(229, 128, 107, 0.2); --diff-del-ink: #f2a593;
   --syn-keyword: #c3a6f0; --syn-string: #9fd08f; --syn-number: #f0bd7a; --syn-comment: #6b7684; --syn-type: #82b8f0; --syn-fn: #e1e7ee; --syn-attr: #d6b48e;
   --paper: #1a1e24; --ink: #c5cdd6; --signal: #e5806b; --signal-ink: #f2a593; --on-signal: #1a1e24;
   --wash: #232831; --wash-2: #2c323c; --gray: #8c96a3; --gray-2: #616b78; --gray-3: #3d4550;
@@ -475,9 +486,15 @@ kbd { display: inline-block; font: 500 11px/1 var(--mono); padding: 3px 5px; col
 .wt-file { border-bottom: var(--rule); }
 .wt-file-h { padding: 8px 28px; font-size: 12.5px; font-weight: 700; background: var(--wash); }
 .wt-diff { margin: 0; padding: 8px 28px 12px; max-height: none; background: var(--code-bg); color: var(--code-fg); }
-.wt-diff .add { display: inline; box-shadow: inset 4px 0 0 var(--signal); }
-.wt-diff .del { color: color-mix(in srgb, var(--code-fg) 45%, var(--code-bg)); text-decoration: line-through; }
+.wt-diff > span { display: block; min-height: 1.65em; margin: 0 -28px; padding: 0 28px; }
+.wt-diff .add { background: var(--diff-add-bg); color: var(--diff-add-fg); box-shadow: inset 4px 0 0 var(--diff-add-fg); }
+.wt-diff .del { background: var(--diff-del-bg); color: var(--diff-del-fg); box-shadow: inset 4px 0 0 var(--diff-del-fg); }
 .wt-diff .hunk { color: color-mix(in srgb, var(--code-fg) 60%, var(--code-bg)); }
+.wt-file-h { display: flex; align-items: center; gap: 12px; }
+.wt-file-h > span:first-child { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.diff-count { flex: none; display: inline-flex; gap: 8px; margin-left: auto; font-size: 12px; font-weight: 700; }
+.diff-count .plus { color: var(--diff-add-ink); }
+.diff-count .minus { color: var(--diff-del-ink); }
 .wt-files li { cursor: pointer; }
 /* git 화면 (/git): 브랜치·작업 공간 | 커밋 기록(갈래 선) | diff. 좁으면 diff가 아래로 */
 .git { container-type: inline-size; }
@@ -504,11 +521,15 @@ kbd { display: inline-block; font: 500 11px/1 var(--mono); padding: 3px 5px; col
 .git-sha { flex: none; font-size: 12px; color: var(--gray); }
 .git-subject { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .git-when { flex: none; font-size: 11.5px; color: var(--gray); }
+.git-author { flex: none; max-width: 120px; overflow: hidden; text-overflow: ellipsis; font-size: 12px; font-weight: 600; color: var(--gray); }
+.git-badge.remote { color: var(--gray); border-style: dotted; font-weight: 600; }
+.git-ref.remote .git-ref-name { font-weight: 600; }
+.git-local-only { flex: none; padding: 1px 5px; border: 1.5px dotted currentColor; font: 700 9.5px/1.2 var(--disp); letter-spacing: 0.06em; color: var(--gray); }
 .git-badge { flex: none; max-width: 180px; overflow: hidden; text-overflow: ellipsis; padding: 1px 6px; border: 1.5px solid currentColor; font: 700 10.5px/1.3 var(--font); white-space: nowrap; }
 .git-badge.head { background: var(--sel-bg); color: var(--sel-fg); border-color: var(--sel-bg); }
 .git-badge.tag { border-style: dashed; }
 .git-ref.sel, .git-row.sel { background: var(--sel-bg); color: var(--sel-fg); }
-.git-ref.sel .git-ref-sub, .git-ref.sel .git-track, .git-row.sel .git-sha, .git-row.sel .git-when { color: inherit; opacity: 0.75; }
+.git-ref.sel .git-ref-sub, .git-ref.sel .git-track, .git-ref.sel .git-local-only, .git-row.sel .git-sha, .git-row.sel .git-when, .git-row.sel .git-author, .git-row.sel .git-badge.remote { color: inherit; opacity: 0.75; }
 .git-row.sel .git-badge.head { background: var(--sel-fg); color: var(--sel-bg); border-color: var(--sel-fg); }
 .git-more { margin: 10px 16px; }
 .git-meta { display: flex; flex-direction: column; gap: 6px; padding: 12px 20px; border-bottom: var(--rule); }
@@ -522,6 +543,7 @@ kbd { display: inline-block; font: 500 11px/1 var(--mono); padding: 3px 5px; col
 .git-commit-input::placeholder { color: var(--gray-2); }
 .git-commit-input:focus { box-shadow: inset 0 -3px 0 var(--line); }
 .git-diff .wt-file-h, .git-diff .wt-diff { padding-left: 20px; padding-right: 20px; }
+.git-diff .wt-diff > span { margin: 0 -20px; padding: 0 20px; }
 @container (max-width: 980px) {
   .git-cols { grid-template-columns: minmax(170px, 210px) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(0, 1.2fr); }
   .git-diff { grid-column: 1 / -1; border-top: var(--rule); border-right: 0; }
@@ -863,8 +885,8 @@ kbd { display: inline-block; font: 500 11px/1 var(--mono); padding: 3px 5px; col
 pre { font: 12.5px/1.65 var(--mono); background: transparent; padding: 0; overflow-x: auto; max-height: 360px; margin: 0; white-space: pre-wrap; word-break: break-all; color: inherit; }
 .diff { display: flex; flex-direction: column; font: 12.5px/1.65 var(--mono); }
 .diff span { white-space: pre-wrap; word-break: break-all; }
-.diff .add { box-shadow: inset 4px 0 0 var(--signal); padding-left: 12px; margin-left: -16px; }
-.diff .del { color: color-mix(in srgb, var(--code-fg) 50%, var(--code-bg)); text-decoration: line-through; }
+.diff .add { background: var(--diff-add-bg); color: var(--diff-add-fg); box-shadow: inset 4px 0 0 var(--diff-add-fg); padding-left: 12px; margin-left: -16px; }
+.diff .del { background: var(--diff-del-bg); color: var(--diff-del-fg); box-shadow: inset 4px 0 0 var(--diff-del-fg); padding-left: 12px; margin-left: -16px; }
 
 .permission { display: flex; flex-direction: column; gap: 12px; padding: 18px 28px; background: var(--signal); color: var(--on-signal); animation: wipe 0.65s var(--ease-out) both; }
 @keyframes wipe { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
@@ -1367,3 +1389,7 @@ button.pn-row:hover:not(:disabled) .pn-sub, button.pn-row:hover:not(:disabled) .
 .sp-files-wrap { min-height: 0; display: flex; flex-direction: column; }
 .tagbar-tags { display: contents; }
 .term-tabs-in { display: contents; }
+/* 설정의 글 입력칸 (worktree 폴더) */
+.set-input { min-width: 0; width: 100%; padding: 6px 10px; border: var(--rule); background: var(--paper); color: var(--ink); font-size: 13px; outline: none; }
+.set-input::placeholder { color: var(--gray-2); }
+.set-input:focus { box-shadow: inset 0 -3px 0 var(--line); }

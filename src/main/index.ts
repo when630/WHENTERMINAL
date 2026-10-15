@@ -261,7 +261,7 @@ function bootstrap(): void {
     if (settingsStore.get().worktree) {
       if (await isGitRepo(project.path)) {
         try {
-          extra.worktree = await createWorktree(project.path, join(app.getPath('userData'), 'worktrees'), id)
+          extra.worktree = await createWorktree(project.path, settingsStore.get().worktreeDir, id)
         } catch (err) {
           console.warn('worktree를 만들지 못해 프로젝트 폴더에서 실행', err)
         }

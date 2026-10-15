@@ -14,8 +14,11 @@ interface Props {
   onClose: () => void
 }
 
-/** 왼쪽 칸의 줄: 커밋 안 한 변경(작업 공간마다) 또는 브랜치 (null = 모든 브랜치) */
-type RefRow = { kind: 'working'; path: string; label: string; sub: string; here: boolean; branch?: string } | { kind: 'branch'; name: string | null }
+/**
+ * 왼쪽 칸의 줄: 커밋 안 한 변경(작업 공간마다) 또는 브랜치 (null = 모든 브랜치). remote면 원격 추적 브랜치(origin/main)
+ * head: 이 줄 위에 붙는 묶음 머리 (LOCAL·REMOTE · origin)
+ */
+type RefRow = { kind: 'working'; path: string; label: string; sub: string; here: boolean; branch?: string } | { kind: 'branch'; name: string | null; remote?: boolean; head?: string }
 
 const LOG_PAGE = 300
 const COLS = 3
@@ -170,7 +173,9 @@ export function GitPanel({ projectId, conversationId, refreshKey, busy, onClose 
       label: w.here ? 'UNCOMMITTED' : baseName(w.path),
       sub: w.here ? `${overview.changed} FILES` : w.branch ?? w.sha,
     }))
-    return [...working, { kind: 'branch', name: null }, ...overview.branches.map((b): RefRow => ({ kind: 'branch', name: b.name }))]
+    const local = overview.branches.map((b, i): RefRow => ({ kind: 'branch', name: b.name, head: i === 0 ? 'LOCAL' : undefined }))
+    const remote = overview.remoteBranches.map((b, i, all): RefRow => ({ kind: 'branch', name: b.name, remote: true, head: i === 0 || all[i - 1].remote !== b.remote ? `REMOTE · ${b.remote}` : undefined }))
+    return [...working, { kind: 'branch', name: null }, ...local, ...remote]
   }, [overview])
   const commits = useMemo(() => (log && log.ref === shownRef ? log.rows : []), [log, shownRef])
   const graph = useMemo(() => layoutGraph(commits), [commits])
@@ -246,8 +251,17 @@ export function GitPanel({ projectId, conversationId, refreshKey, busy, onClose 
   const commitIndex = commits.findIndex((c) => target?.kind === 'commit' && c.sha === target.sha)
 
   const branchOf = (name: string): GitOverview['branches'][number] | undefined => overview?.branches.find((b) => b.name === name)
+  const remoteOf = (name: string): GitOverview['remoteBranches'][number] | undefined => overview?.remoteBranches.find((b) => b.name === name)
+  /** 커밋 기록의 ref 표시: 지금 브랜치(HEAD) · 태그 · 원격 · 로컬 */
+  const badgeKind = (x: string): string => {
+    if (x.startsWith('HEAD')) return 'head'
+    if (x.startsWith('tag:')) return 'tag'
+    if (overview?.branches.some((b) => b.name === x)) return 'local'
+    return overview?.remotes.some((r) => x.startsWith(`${r}/`)) ? 'remote' : 'local'
+  }
   // 체크아웃할 수 있는 브랜치: 왼쪽에서 고른 로컬 브랜치 중 지금 브랜치가 아니고 다른 작업 공간에 체크아웃되지 않은 것
-  const picked = target?.kind !== 'working' && shownRef ? branchOf(shownRef) : undefined
+  const shownRow = refRows.find((r): r is Extract<RefRow, { kind: 'branch' }> => r.kind === 'branch' && r.name === shownRef)
+  const picked = target?.kind !== 'working' && shownRef && !shownRow?.remote ? branchOf(shownRef) : undefined
   const checkoutable = picked && !picked.current && !picked.worktree ? picked : undefined
   const busyTip = '대화가 실행 중이에요. 끝난 뒤에 해 주세요'
 
@@ -382,14 +396,31 @@ export function GitPanel({ projectId, conversationId, refreshKey, busy, onClose 
                   </div>
                 )
               }
+              if (row.remote && row.name) {
+                const r = remoteOf(row.name)
+                return (
+                  <div key={`r:${row.name}`} className="git-ref-wrap">
+                    {row.head && <h3 className="git-h">{row.head}</h3>}
+                    <div role="option" aria-selected={on} className={`git-ref remote ${on ? 'sel' : ''}`} onClick={() => pickRef(row)} title={r ? `${r.name} · ${r.subject}${r.tracked ? `\n로컬 ${r.tracked} 브랜치가 따라가요` : '\n따라가는 로컬 브랜치가 없어요'}` : row.name}>
+                      <span className="git-ref-name">{r?.branch ?? row.name}</span>
+                      {r?.tracked && r.tracked !== r.branch && <span className="git-ref-sub mono">{r.tracked}</span>}
+                      {r && <span className="git-ref-sub mono">{elapsed(r.date, now)}</span>}
+                    </div>
+                  </div>
+                )
+              }
               const b = row.name ? branchOf(row.name) : undefined
               return (
                 <div key={`b:${row.name ?? '*'}`} className="git-ref-wrap">
                   {row.name === null && <h3 className="git-h">BRANCHES</h3>}
+                  {row.head && <h3 className="git-h">{row.head}</h3>}
                   <div role="option" aria-selected={on} className={`git-ref ${on ? 'sel' : ''} ${b?.current ? 'current' : ''}`} onClick={() => pickRef(row)} title={b ? `${b.name} · ${b.subject}${b.worktree ? `\n작업 공간 ${b.worktree}에 체크아웃되어 있어요` : ''}` : '모든 브랜치의 기록을 함께 봐요'}>
                     <span className="git-ref-name">{row.name ?? 'ALL BRANCHES'}</span>
                     {b?.current && <span className="git-head">HEAD</span>}
                     {b?.worktree && <span className="wt-tag">WT</span>}
+                    {b && !b.upstream && overview.remotes.length > 0 && (
+                      <span className="git-local-only" title="원격에 올리지 않은 브랜치예요 (upstream 없음)">LOCAL ONLY</span>
+                    )}
                     {b && (b.ahead > 0 || b.behind > 0) && (
                       <span className="git-track mono" title={`${b.upstream}보다 앞선 커밋 ${b.ahead}개, 뒤처진 커밋 ${b.behind}개`}>
                         {b.ahead > 0 && `↑${b.ahead}`}
@@ -423,9 +454,10 @@ export function GitPanel({ projectId, conversationId, refreshKey, busy, onClose 
                   <Graph row={graph[i]} lanes={graphLanes} merge={c.parents.length > 1} />
                   <span className="git-sha mono">{c.short}</span>
                   {c.refs.map((x) => (
-                    <span key={x} className={`git-badge ${x.startsWith('HEAD') ? 'head' : x.startsWith('tag:') ? 'tag' : ''}`}>{x.replace(/^HEAD -> /, '')}</span>
+                    <span key={x} className={`git-badge ${badgeKind(x)}`}>{x.replace(/^HEAD -> /, '')}</span>
                   ))}
                   <span className="git-subject">{c.subject}</span>
+                  <span className="git-author">{c.author}</span>
                   <span className="git-when mono">{elapsed(c.date, now)}</span>
                 </div>
               )

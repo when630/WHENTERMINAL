@@ -47,6 +47,9 @@ function sanitize(raw: unknown): Settings {
   }
   const maxConcurrent = Number.isInteger(o.maxConcurrent) && o.maxConcurrent! >= 0 && o.maxConcurrent! <= 16 ? o.maxConcurrent! : DEFAULT_SETTINGS.maxConcurrent
   const worktree = typeof o.worktree === 'boolean' ? o.worktree : DEFAULT_SETTINGS.worktree
+  const dir = typeof o.worktreeDir === 'string' ? o.worktreeDir.trim().replace(/[\\/]+$/, '') : ''
+  // 경로에 쓸 수 없는 글자(Windows)·NUL이 있으면 기본값
+  const worktreeDir = dir && dir.length <= 260 && !/[\0<>"|?*]/.test(dir) ? dir : DEFAULT_SETTINGS.worktreeDir
   const openAtLogin = typeof o.openAtLogin === 'boolean' ? o.openAtLogin : DEFAULT_SETTINGS.openAtLogin
   const appIcon = APP_ICONS.some((i) => i.id === o.appIcon) ? o.appIcon! : DEFAULT_SETTINGS.appIcon
   const terminalShell = TERMINAL_SHELLS.includes(o.terminalShell as TerminalShell) ? o.terminalShell! : DEFAULT_SETTINGS.terminalShell
@@ -54,5 +57,5 @@ function sanitize(raw: unknown): Settings {
   const away = bool(o.away, DEFAULT_SETTINGS.away)
   const promptSuggestions = bool(o.promptSuggestions, DEFAULT_SETTINGS.promptSuggestions)
   const budgetWhenHot = bool(o.budgetWhenHot, DEFAULT_SETTINGS.budgetWhenHot)
-  return { theme, appIcon, notify, maxConcurrent, worktree, openAtLogin, terminalShell, away, promptSuggestions, budgetWhenHot, keymap }
+  return { theme, appIcon, notify, maxConcurrent, worktree, worktreeDir, openAtLogin, terminalShell, away, promptSuggestions, budgetWhenHot, keymap }
 }

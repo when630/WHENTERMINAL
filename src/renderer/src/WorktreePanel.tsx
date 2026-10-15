@@ -107,9 +107,22 @@ export function WorktreePanel({ projectId, conversationId, refreshKey, onClose, 
   )
 }
 
+/** +12 −3 (바뀐 줄이 없으면 그리지 않는다) */
+function DiffCount({ n }: { n?: { add: number; del: number } }): React.JSX.Element | null {
+  if (!n || (!n.add && !n.del)) return null
+  return (
+    <span className="diff-count mono">
+      {n.add > 0 && <span className="plus">+{n.add}</span>}
+      {n.del > 0 && <span className="minus">−{n.del}</span>}
+    </span>
+  )
+}
+
 /** 바뀐 파일 목록과 파일별 diff (작업 공간 CHANGES·git 화면). 목록의 파일을 누르면 그 diff로 */
 export function DiffBody({ files, diff }: { files: { path: string; status: string }[]; diff: string }): React.JSX.Element {
   const parts = splitDiff(diff)
+  // 파일마다 더한 줄·뺀 줄 수 (머리줄 ---/+++는 splitDiff가 이미 뺐다)
+  const counts = new Map(parts.map((f) => [f.path, { add: f.lines.filter((l) => l.startsWith('+')).length, del: f.lines.filter((l) => l.startsWith('-')).length }]))
   const jump = (path: string, e: React.MouseEvent): void => {
     const box = (e.currentTarget as HTMLElement).closest('.wt-diffs')
     box?.querySelector(`[data-diff-path="${CSS.escape(path)}"]`)?.scrollIntoView({ block: 'start', behavior: 'smooth' })
@@ -122,18 +135,22 @@ export function DiffBody({ files, diff }: { files: { path: string; status: strin
             <li key={f.path} onClick={(e) => jump(f.path, e)}>
               <span className={`wt-st st-${f.status}`}>{STATUS_LABEL[f.status] ?? f.status}</span>
               <span className="mono">{f.path}</span>
+              <DiffCount n={counts.get(f.path)} />
             </li>
           ))}
         </ul>
       )}
       {parts.map((f) => (
         <div key={f.path} className="wt-file" data-diff-path={f.path}>
-          <div className="wt-file-h mono">{f.path}</div>
+          <div className="wt-file-h mono">
+            <span>{f.path}</span>
+            <DiffCount n={counts.get(f.path)} />
+          </div>
           <pre className="wt-diff">
+            {/* 줄마다 블록이라 줄바꿈 글자 없이도 복사하면 줄이 나뉜다. 바뀐 줄은 칸 폭 전체에 색을 깐다 */}
             {f.lines.map((l, i) => (
-              <span key={i} className={l.startsWith('@@') ? 'hunk' : l.startsWith('+') ? 'add' : l.startsWith('-') ? 'del' : ''}>
+              <span key={i} className={l.startsWith('@@') ? 'hunk' : l.startsWith('+') ? 'add' : l.startsWith('-') ? 'del' : 'ctx'}>
                 {l}
-                {'\n'}
               </span>
             ))}
           </pre>

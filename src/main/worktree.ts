@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process'
-import { existsSync, mkdirSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
-import { basename, join } from 'node:path'
+import { basename, isAbsolute, join, relative, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import type { GitBranch } from '@shared/types'
 
@@ -67,14 +67,40 @@ export async function isGitRepo(path: string): Promise<boolean> {
 }
 
 /**
- * 하위 대화용 작업 공간 (OPEN-002): 같은 프로젝트의 대화끼리 파일을 덮어쓰지 않게, HEAD에서 새 브랜치를 따서 따로 체크아웃한다.
- * 위치는 userData/worktrees/<프로젝트>-<대화 앞 8자>
+ * 작업 공간 폴더가 저장소 안이면 git이 새 파일로 보지 않게 저장소의 info/exclude에 적는다 (.gitignore는 건드리지 않는다).
+ * 이미 무시되는 경로면 그대로
  */
-export async function createWorktree(projectPath: string, root: string, conversationId: string): Promise<{ path: string; branch: string }> {
+async function ignoreInRepo(projectPath: string, root: string): Promise<void> {
+  const top = await git(projectPath, 'rev-parse', '--show-toplevel')
+  const rel = relative(resolve(top), root)
+  if (!rel || rel.startsWith('..') || isAbsolute(rel)) return
+  try {
+    await git(projectPath, 'check-ignore', '-q', root)
+    return
+  } catch {
+    // 무시되지 않음 (종료 코드 1) → 적는다
+  }
+  const exclude = join(resolve(projectPath, await git(projectPath, 'rev-parse', '--git-common-dir')), 'info', 'exclude')
+  const line = `/${rel.split(/[\\/]/).join('/')}/`
+  const cur = existsSync(exclude) ? readFileSync(exclude, 'utf8') : ''
+  if (cur.split(/\r?\n/).includes(line)) return
+  mkdirSync(join(exclude, '..'), { recursive: true })
+  appendFileSync(exclude, `${cur && !cur.endsWith('\n') ? '\n' : ''}# WHENTERMINAL 하위 대화 작업 공간\n${line}\n`)
+}
+
+/**
+ * 하위 대화용 작업 공간 (OPEN-002): 같은 프로젝트의 대화끼리 파일을 덮어쓰지 않게, HEAD에서 새 브랜치를 따서 따로 체크아웃한다.
+ * 위치는 설정 worktreeDir: 상대 경로면 프로젝트 폴더 기준(기본 .claude/worktrees/<대화 앞 8자>, 프로젝트와 같은 드라이브),
+ * 절대 경로면 여러 프로젝트가 같이 쓰므로 <프로젝트>-<대화 앞 8자>
+ */
+export async function createWorktree(projectPath: string, dir: string, conversationId: string): Promise<{ path: string; branch: string }> {
   const short = conversationId.slice(0, 8)
   const branch = `wt/${short}`
-  const path = join(root, `${basename(projectPath)}-${short}`)
+  const shared = isAbsolute(dir)
+  const root = shared ? dir : resolve(projectPath, dir)
+  const path = join(root, shared ? `${basename(projectPath)}-${short}` : short)
   mkdirSync(root, { recursive: true })
+  await ignoreInRepo(projectPath, root).catch((err) => console.warn('작업 공간 폴더를 git 무시 목록에 넣지 못함', err))
   await git(projectPath, 'worktree', 'add', '-b', branch, path, 'HEAD')
   return { path, branch }
 }
