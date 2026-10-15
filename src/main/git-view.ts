@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process'
 import { resolve } from 'node:path'
 import { promisify } from 'node:util'
-import type { GitBranchInfo, GitDiff, GitCommitInfo, GitDiffTarget, GitOverview, GitWorktreeInfo } from '@shared/types'
+import type { GitBranchInfo, GitRemoteBranchInfo, GitDiff, GitCommitInfo, GitDiffTarget, GitOverview, GitWorktreeInfo } from '@shared/types'
 
 // git 화면(/git): 브랜치·작업 공간·커밋 기록(갈래 선)·커밋별 diff를 읽기만 한다. 체크아웃·병합 같은 쓰기는 하지 않는다
 
@@ -70,8 +70,19 @@ export async function gitOverview(cwd: string): Promise<GitOverview | null> {
       worktree: elsewhere?.path,
     }
   })
+  const remotes = ((await tryGit(cwd, 'remote')) ?? '').split(/\r?\n/).filter(Boolean)
+  // 원격 이름에 /가 들어갈 수 있어 긴 이름부터 맞춘다
+  const byLength = [...remotes].sort((a, b) => b.length - a.length)
+  const remoteRefs = (await tryGit(cwd, 'for-each-ref', '--sort=-committerdate', `--format=%(refname:lstrip=2)%1f%(symref)%1f%(objectname:short)%1f%(committerdate:unix)%1f%(subject)`, 'refs/remotes')) ?? ''
+  const remoteBranches: GitRemoteBranchInfo[] = remoteRefs.split(/\r?\n/).filter(Boolean).flatMap((line) => {
+    const [name, symref, sha, date, subject] = line.split(SEP)
+    // origin/HEAD → origin/main 같은 별칭
+    if (symref) return []
+    const remote = byLength.find((r) => name.startsWith(`${r}/`)) ?? name.split('/')[0]
+    return [{ name, remote, branch: name.slice(remote.length + 1), sha, date: Number(date) * 1000, subject: subject ?? '', tracked: branches.find((b) => b.upstream === name)?.name }]
+  })
   const status = (await tryGit(here?.path ?? cwd, 'status', '--porcelain')) ?? ''
-  return { root: resolve(top), head, detached, branches, worktrees, changed: status.split(/\r?\n/).filter(Boolean).length }
+  return { root: resolve(top), head, detached, branches, remoteBranches, remotes, worktrees, changed: status.split(/\r?\n/).filter(Boolean).length }
 }
 
 /** 커밋 기록 (부모 포함, 갈래 선은 화면이 그린다). ref가 null이면 모든 브랜치. 커밋이 없는 저장소면 빈 목록 */

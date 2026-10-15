@@ -300,6 +300,16 @@ export function SettingsScreen({ settings, activeHotkey, update, onClose, onSave
             </button>
             <span className="krow-side" />
           </div>
+          {settings.worktree && (
+            <div className="krow">
+              <span className="krow-label">
+                Worktree folder
+                <span className="krow-note">상대 경로면 프로젝트 폴더 기준이에요(프로젝트와 같은 드라이브). 저장소 안이면 git이 새 파일로 보지 않게 .git/info/exclude에 적어 둬요. 이미 만든 작업 공간은 그 자리에 둬요</span>
+              </span>
+              <WorktreeDirInput value={settings.worktreeDir} onSave={(worktreeDir) => void save({ ...settings, worktreeDir })} />
+              <span className="krow-side" />
+            </div>
+          )}
         </section>
 
         {TOGGLES.map((t) => (
@@ -540,5 +550,33 @@ function UpdateSection({ update }: { update: UpdateState | null }): React.JSX.El
         </span>
       </div>
     </section>
+  )
+}
+
+/** 하위 대화 worktree 폴더. 칸을 떠나거나 Enter면 저장, 비우면 기본값(.claude/worktrees) */
+function WorktreeDirInput({ value, onSave }: { value: string; onSave: (dir: string) => void }): React.JSX.Element {
+  const [text, setText] = useState(value)
+  useEffect(() => setText(value), [value])
+  const commit = (): void => {
+    const next = text.trim() || '.claude/worktrees'
+    setText(next)
+    if (next !== value) onSave(next)
+  }
+  return (
+    <input
+      className="set-input mono"
+      value={text}
+      spellCheck={false}
+      aria-label="worktree 폴더"
+      placeholder=".claude/worktrees"
+      onChange={(e) => setText(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+          e.preventDefault()
+          e.currentTarget.blur()
+        }
+      }}
+    />
   )
 }

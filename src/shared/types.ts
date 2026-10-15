@@ -382,7 +382,12 @@ export interface GitOverview {
   /** 이 대화 폴더의 지금 브랜치 (분리된 HEAD면 짧은 커밋, 커밋이 하나도 없으면 브랜치 이름) */
   head: string
   detached: boolean
+  /** 로컬 브랜치 */
   branches: GitBranchInfo[]
+  /** 원격 추적 브랜치 (origin/main …, 마지막으로 fetch한 때 기준). origin/HEAD 같은 별칭은 빼고 */
+  remoteBranches: GitRemoteBranchInfo[]
+  /** 원격 이름 (origin …). 커밋 기록의 ref 표시를 로컬·원격으로 가를 때 쓴다 */
+  remotes: string[]
   worktrees: GitWorktreeInfo[]
   /** 이 대화 폴더에서 커밋하지 않은 파일 수 (새 파일 포함) */
   changed: number
@@ -401,6 +406,21 @@ export interface GitBranchInfo {
   behind: number
   /** 다른 작업 공간에 체크아웃되어 있으면 그 폴더 */
   worktree?: string
+}
+
+export interface GitRemoteBranchInfo {
+  /** origin/main */
+  name: string
+  /** origin */
+  remote: string
+  /** main */
+  branch: string
+  sha: string
+  /** 마지막 커밋 시각 (ms) */
+  date: number
+  subject: string
+  /** 이 원격 브랜치를 upstream으로 둔 로컬 브랜치 */
+  tracked?: string
 }
 
 export interface GitWorktreeInfo {
